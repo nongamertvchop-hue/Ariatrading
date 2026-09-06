@@ -40,7 +40,7 @@ def test_true_support_break_is_wait():
 def test_resistance_rejection_then_confirmation_short():
     zone = PriceZone(1.1090, 1.1100, RESISTANCE, 3)
     candles = [
-        {"open": 1.1080, "high": 1.1105, "low": 1.1075, "close": 1.1085},
+        {"open": 1.1092, "high": 1.1105, "low": 1.1075, "close": 1.1085},
         {"open": 1.1085, "high": 1.1095, "low": 1.1070, "close": 1.1078},
         {"open": 1.1078, "high": 1.1085, "low": 1.1050, "close": 1.1055},
     ]
