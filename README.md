@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.7.0**
+**Current version: 0.8.0**
 
 ## Core idea
 
@@ -27,7 +27,8 @@ The project is layered around the two core setups rather than adding many unrela
 7. **Setup scoring** — transparent 0-100 heuristic components rank zone quality, structure, breakout behavior, confirmation and MTF alignment. A score is **not** a win probability.
 8. **Risk/backtest** — hypothetical stop/target planning and sequential historical simulation, including timestamp-aligned MTF scoring.
 9. **Research validation** — chronological train/validation/out-of-sample splitting plus descriptive R-based metrics and uncertainty estimates.
-10. **Realtime data layer** — a feed interface and MT5 adapter can continuously read live market data while the strategy evaluates only completed candles.
+10. **Execution simulation** — optional historical spread, commission, slippage, latency, session and price-precision frictions, kept separate from strategy decisions.
+11. **Realtime data layer** — a feed interface and MT5 adapter can continuously read live market data while the strategy evaluates only completed candles.
 
 ### Key modules
 
@@ -45,6 +46,7 @@ The project is layered around the two core setups rather than adding many unrela
 - `strategy/risk.py` — hypothetical stop/target planning and conservative exit simulation.
 - `strategy/backtest.py` — sequential historical backtest, R-multiple statistics and timestamp-aligned MTF integration.
 - `strategy/validation.py` — chronological splits, descriptive research metrics, profit factor, drawdown and bootstrap expectancy intervals.
+- `strategy/execution.py` — conservative execution-friction simulation; no broker actions.
 - `strategy/realtime.py` — closed-candle realtime monitoring with duplicate-bar suppression and nearest-zone selection.
 - `adapters/mt5_feed.py` — read-only MetaTrader 5 market-data adapter.
 - `requirements-realtime.txt` — optional dependency for MT5 realtime data access.
@@ -80,6 +82,19 @@ The validation layer deliberately separates descriptive evaluation from strategy
 - bootstrap expectancy intervals quantify uncertainty in the supplied sample;
 - none of these metrics are forecasts or guarantees of future results.
 
+## Execution simulation
+
+`ExecutionModel` provides a research-only layer for testing how trading frictions change historical results:
+
+- spread is applied through bid/ask effects;
+- slippage shifts realized entry/exit prices;
+- commission is represented in price units so the layer remains independent of account currency and position sizing;
+- latency is modeled as skipped initial bars;
+- optional session boundaries and price precision can be enforced;
+- the original strategy, risk plan and broker adapter remain separate.
+
+This is deliberately a simulation layer, not live execution.
+
 ## Backtest assumptions
 
 - Zones are built only from candles already closed before the signal candle.
@@ -91,11 +106,11 @@ The validation layer deliberately separates descriptive evaluation from strategy
 - One hypothetical position is allowed at a time.
 - If one candle touches both stop and target, the simulator assumes the stop happened first because OHLC data does not reveal intrabar order.
 - Optional MTF context is timestamp-aligned and cannot use a higher-timeframe candle that was still forming at entry.
-- No spread, commission, slippage, news filter, or execution latency is modeled yet.
+- Execution friction simulation is optional and separate from the baseline backtest.
 
 ## Testing
 
-The `tests/` directory covers candle/level behavior plus sequence, fake-breakout protection, timeframe utilities, market structure, multi-timeframe context, timestamp lookahead protection, setup scoring, backtesting, research validation, risk/exit simulation, and realtime feed behavior including duplicate-bar suppression and nearest-zone selection.
+The `tests/` directory covers candle/level behavior plus sequence, fake-breakout protection, timeframe utilities, market structure, multi-timeframe context, timestamp lookahead protection, setup scoring, backtesting, research validation, execution frictions, risk/exit simulation, and realtime feed behavior including duplicate-bar suppression and nearest-zone selection.
 
 ## Continuation protocol
 
