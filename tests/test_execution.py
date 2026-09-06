@@ -23,7 +23,7 @@ def candle(ts, high, low):
 
 def test_execution_model_applies_spread_and_slippage_to_realized_r():
     p = plan()
-    bars = [candle(datetime(2026, 1, 1, 1, tzinfo=timezone.utc), 1.1055, 1.1010)]
+    bars = [candle(datetime(2026, 1, 1, 1, tzinfo=timezone.utc), 1.1060, 1.1010)]
 
     result = simulate_realistic_exit(
         p,
@@ -41,7 +41,7 @@ def test_latency_can_delay_exit_detection():
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     bars = [
         candle(start, 1.1055, 1.1010),
-        candle(start + timedelta(minutes=1), 1.1015, 1.1000),
+        candle(start + timedelta(minutes=1), 1.1060, 1.1000),
     ]
 
     result = simulate_realistic_exit(p, bars, ExecutionModel(latency_bars=1))
@@ -52,7 +52,7 @@ def test_latency_can_delay_exit_detection():
 
 def test_session_filter_requires_time_and_skips_out_of_session_bars():
     p = plan()
-    bars = [candle(datetime(2026, 1, 1, 1, tzinfo=timezone.utc), 1.1055, 1.1010)]
+    bars = [candle(datetime(2026, 1, 1, 1, tzinfo=timezone.utc), 1.1060, 1.1010)]
 
     result = simulate_realistic_exit(
         p,
