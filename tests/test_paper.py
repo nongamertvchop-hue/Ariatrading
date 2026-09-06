@@ -113,7 +113,7 @@ def test_execution_costs_are_applied_before_risk_geometry():
     position = engine.open_from_signal(signal, signal_time=dt(1), entry_time=dt(2), entry_price=101.0)
     assert position is not None
     assert position.entry_price == 101.2
-    assert position.risk_distance == 2.2
+    assert position.risk_distance == pytest.approx(2.2)
     assert position.stop == 99.0
     assert position.target == 103.4
     closed = engine.on_bar({"time": dt(3), "high": 104.0, "low": 101.0})
