@@ -10,8 +10,8 @@ bars, with conservative STOP-first handling when both levels are touched in a
 single OHLC bar.
 """
 
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from math import isfinite
 
 from .engine import EngineSignal, LONG, SHORT, WAIT
@@ -20,6 +20,8 @@ from .risk import LOSS, OPEN, WIN, RiskPlan, build_risk_plan
 
 
 CLOSED = "CLOSED"
+SAFE = "SAFE"
+NO_BREAKOUT = "NO_BREAKOUT"
 
 
 @dataclass(frozen=True)
@@ -51,10 +53,12 @@ class PaperAccount:
 
 
 class PaperTradingEngine:
-    """Single-position, deterministic paper account.
+    """Single-position, deterministic paper account for research only.
 
-    Only LONG/SHORT signals with ``protection == SAFE`` and ``breakout_state``
-    equal to ``NO_BREAKOUT`` are accepted. WAIT is always ignored.
+    Only LONG/SHORT signals with SAFE protection and NO_BREAKOUT state are
+    accepted. WAIT is always ignored. Execution costs are applied before risk
+    levels are built so stop/target geometry is consistent with the simulated
+    fill price.
     """
 
     def __init__(
@@ -110,18 +114,21 @@ class PaperTradingEngine:
 
         ``entry_time`` must be strictly later than ``signal_time`` so the
         simulator cannot accidentally fill on the candle that generated the
-        signal.
+        signal. The fill is adjusted for the configured spread/slippage before
+        stop/target levels are calculated.
         """
         if signal.action == WAIT:
             return None
         if signal.action not in {LONG, SHORT}:
             raise ValueError("signal action must be LONG, SHORT, or WAIT")
-        if signal.protection != "SAFE":
+        if signal.protection != SAFE:
             return None
-        if signal.breakout_state not in {"NO_BREAKOUT", ""}:
+        if signal.breakout_state not in {NO_BREAKOUT, ""}:
             return None
         if signal.zone is None:
             raise ValueError("approved signal must include a zone")
+        self._validate_timestamp(signal_time, "signal_time")
+        self._validate_timestamp(entry_time, "entry_time")
         if entry_time <= signal_time:
             raise ValueError("entry_time must be later than signal_time")
         if not isfinite(entry_price) or entry_price <= 0:
@@ -129,14 +136,14 @@ class PaperTradingEngine:
         if self._position is not None:
             return None
 
+        effective_entry = self._apply_entry_cost(entry_price, signal.action)
         plan: RiskPlan = build_risk_plan(
             signal.action,
-            entry_price,
+            effective_entry,
             signal.zone,
             self._stop_buffer,
             self._reward_risk,
         )
-        effective_entry = self._apply_entry_cost(entry_price, signal.action)
         position = PaperPosition(
             trade_id=self._next_trade_id,
             direction=signal.action,
@@ -155,18 +162,23 @@ class PaperTradingEngine:
         """Advance the open position using one later OHLC bar.
 
         Returns the closed position when SL/TP is reached; otherwise returns
-        ``None`` and leaves the position open.
+        ``None`` and leaves the position open. If both levels are touched in
+        one bar, STOP wins because OHLC data cannot reveal intrabar ordering.
         """
         position = self._position
         if position is None:
             return None
+
         timestamp = bar.get("time")
-        if timestamp is None or not isinstance(timestamp, datetime):
-            raise ValueError("bar time must be a datetime")
+        self._validate_timestamp(timestamp, "bar time")
         if timestamp <= position.entry_time:
             raise ValueError("bar time must be later than entry_time")
-        high = float(bar["high"])
-        low = float(bar["low"])
+
+        try:
+            high = float(bar["high"])
+            low = float(bar["low"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("bar high/low must be numeric") from exc
         if not all(isfinite(value) for value in (high, low)) or high < low:
             raise ValueError("bar high/low must be finite and high >= low")
 
@@ -179,28 +191,26 @@ class PaperTradingEngine:
             hit_target = low <= position.target
 
         if not hit_stop and not hit_target:
-            self._position = PaperPosition(**{**position.__dict__, "bars_held": bars_held})
+            self._position = replace(position, bars_held=bars_held)
             return None
 
         outcome = LOSS if hit_stop else WIN
-        exit_price = position.stop if hit_stop else position.target
-        exit_price = self._apply_exit_cost(exit_price, position.direction)
+        raw_exit = position.stop if hit_stop else position.target
+        exit_price = self._apply_exit_cost(raw_exit, position.direction)
         gross_r = (
             (exit_price - position.entry_price) / position.risk_distance
             if position.direction == LONG
             else (position.entry_price - exit_price) / position.risk_distance
         )
         realized_r = gross_r - (self._execution_model.commission / position.risk_distance)
-        closed = PaperPosition(
-            **{
-                **position.__dict__,
-                "status": CLOSED,
-                "exit_time": timestamp,
-                "exit_price": exit_price,
-                "outcome": outcome,
-                "r_multiple": realized_r,
-                "bars_held": bars_held,
-            }
+        closed = replace(
+            position,
+            status=CLOSED,
+            exit_time=timestamp,
+            exit_price=exit_price,
+            outcome=outcome,
+            r_multiple=realized_r,
+            bars_held=bars_held,
         )
         self._realized_r += realized_r
         self._balance = self._initial_balance + self._realized_r
@@ -211,6 +221,17 @@ class PaperTradingEngine:
             self._losses += 1
         self._position = None
         return closed
+
+    @staticmethod
+    def _validate_timestamp(value: object, field_name: str) -> None:
+        if not isinstance(value, datetime):
+            raise ValueError(f"{field_name} must be a datetime")
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError(f"{field_name} must be timezone-aware")
+        if value.tzinfo != timezone.utc:
+            # Normalize only for validation consistency; callers still retain
+            # their original aware datetime values in the position record.
+            value.astimezone(timezone.utc)
 
     def _apply_entry_cost(self, price: float, direction: str) -> float:
         model = self._execution_model
