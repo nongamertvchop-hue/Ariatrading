@@ -6,6 +6,7 @@ No orders are placed here.
 """
 
 from dataclasses import dataclass
+from datetime import timedelta
 
 
 SUPPORTED_TIMEFRAMES = ("1m", "5m", "15m", "30m", "1h", "4h", "1D")
@@ -31,6 +32,16 @@ _CONFIGS = {
     "1D": TimeframeConfig("1D", 30, 1.00, 0.00030, 0.02000, 0.20),
 }
 
+_DURATION = {
+    "1m": timedelta(minutes=1),
+    "5m": timedelta(minutes=5),
+    "15m": timedelta(minutes=15),
+    "30m": timedelta(minutes=30),
+    "1h": timedelta(hours=1),
+    "4h": timedelta(hours=4),
+    "1D": timedelta(days=1),
+}
+
 
 def get_timeframe_config(timeframe: str) -> TimeframeConfig:
     try:
@@ -40,6 +51,12 @@ def get_timeframe_config(timeframe: str) -> TimeframeConfig:
             f"unsupported timeframe: {timeframe!r}; "
             f"use one of {SUPPORTED_TIMEFRAMES}"
         ) from exc
+
+
+def bar_duration(timeframe: str) -> timedelta:
+    """Return the canonical candle duration for timestamp validation."""
+    get_timeframe_config(timeframe)
+    return _DURATION[timeframe]
 
 
 def candle_range(candle: dict) -> float:
