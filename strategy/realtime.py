@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol, Sequence
 
-from .candles import Candle
 from .engine import EngineSignal, WAIT, evaluate_long, evaluate_short
 from .levels_v2 import PriceZone, find_resistance_zones, find_support_zones
+from .timeframe import adaptive_zone_tolerance, get_timeframe_config
 
 
 @dataclass(frozen=True)
@@ -62,9 +62,10 @@ class LiveEvaluation:
 
 
 class RealtimeMonitor:
-    """Poll a BarFeed and evaluate only when a new closed candle appears."""
+    """Poll a BarFeed and evaluate exactly once per newly closed candle."""
 
     def __init__(self, feed: BarFeed, symbol: str, timeframe: str, lookback: int = 100):
+        get_timeframe_config(timeframe)
         if lookback < 10:
             raise ValueError("lookback must be at least 10")
         self.feed = feed
@@ -73,7 +74,13 @@ class RealtimeMonitor:
         self.lookback = lookback
         self._last_bar_time: datetime | None = None
 
-    def evaluate_once(self) -> LiveEvaluation:
+    @property
+    def last_bar_time(self) -> datetime | None:
+        """Timestamp of the most recently evaluated closed candle."""
+        return self._last_bar_time
+
+    def evaluate_once(self) -> LiveEvaluation | None:
+        """Evaluate a newly closed candle, or return None if nothing is new."""
         bars = list(self.feed.closed_bars(self.symbol, self.timeframe, self.lookback))
         if len(bars) < 5:
             raise ValueError("not enough closed bars for evaluation")
@@ -81,22 +88,21 @@ class RealtimeMonitor:
             raise ValueError("bars must be sorted oldest first")
 
         latest = bars[-1]
-        candles = [
-            Candle(b.open, b.high, b.low, b.close).as_dict() if hasattr(Candle, "as_dict")
-            else {"open": b.open, "high": b.high, "low": b.low, "close": b.close}
-            for b in bars
-        ]
+        if self._last_bar_time is not None and latest.time <= self._last_bar_time:
+            return None
 
+        candles = [b.as_dict() for b in bars]
         history = candles[:-1]
-        supports = find_support_zones(history)
-        resistances = find_resistance_zones(history)
+        tolerance = adaptive_zone_tolerance(history, self.timeframe)
+        supports = find_support_zones(history, tolerance=tolerance)
+        resistances = find_resistance_zones(history, tolerance=tolerance)
 
         long_signal = self._best_signal(
             [evaluate_long(candles, zone, self.timeframe) for zone in supports]
-        )
+        ) if supports else EngineSignal(WAIT, "no support zone", self.timeframe)
         short_signal = self._best_signal(
             [evaluate_short(candles, zone, self.timeframe) for zone in resistances]
-        )
+        ) if resistances else EngineSignal(WAIT, "no resistance zone", self.timeframe)
         signal = self._select_signal(long_signal, short_signal)
 
         self._last_bar_time = latest.time
@@ -106,20 +112,39 @@ class RealtimeMonitor:
             evaluated_at=datetime.now(timezone.utc),
             bar_time=latest.time,
             signal=signal,
-            support=supports[-1] if supports else None,
-            resistance=resistances[-1] if resistances else None,
+            support=self._nearest_support(latest.close, supports),
+            resistance=self._nearest_resistance(latest.close, resistances),
         )
 
     @staticmethod
     def _best_signal(signals: Sequence[EngineSignal]) -> EngineSignal:
         if not signals:
             raise ValueError("no candidate zones")
-        actionable = [s for s in signals if s.action != WAIT]
-        if not actionable:
-            return signals[-1]
         return max(
-            actionable,
-            key=lambda s: (s.score.total if s.score is not None else -1, s.entry_reference or 0.0),
+            signals,
+            key=lambda s: (
+                1 if s.action != WAIT else 0,
+                s.score.total if s.score is not None else -1,
+                s.entry_reference or 0.0,
+            ),
+        )
+
+    @staticmethod
+    def _nearest_support(price: float, zones: Sequence[PriceZone]) -> PriceZone | None:
+        candidates = [z for z in zones if z.center <= price or z.low <= price <= z.high]
+        return min(
+            candidates,
+            key=lambda z: (0.0 if z.low <= price <= z.high else price - z.high, -z.touches),
+            default=None,
+        )
+
+    @staticmethod
+    def _nearest_resistance(price: float, zones: Sequence[PriceZone]) -> PriceZone | None:
+        candidates = [z for z in zones if z.center >= price or z.low <= price <= z.high]
+        return min(
+            candidates,
+            key=lambda z: (0.0 if z.low <= price <= z.high else z.low - price, -z.touches),
+            default=None,
         )
 
     @staticmethod
