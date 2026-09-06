@@ -71,7 +71,7 @@ def test_signal_from_bar_n_opens_on_bar_n_plus_1_only():
 def test_existing_position_is_managed_on_subsequent_bar():
     runner = PaperSessionRunner(
         FakeMonitor([evaluation(1), evaluation(2), evaluation(3)]),
-        paper=PaperTradingEngine(reward_risk=1.0 / 3.0),
+        paper=PaperTradingEngine(reward_risk=1.0 / 6.0),
     )
 
     runner.process_once()
