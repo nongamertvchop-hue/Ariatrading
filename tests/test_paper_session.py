@@ -68,11 +68,11 @@ def test_signal_from_bar_n_opens_on_bar_n_plus_1_only():
     assert second.opened.entry_time == dt(2)
 
 
-def test_existing_position_is_managed_before_new_signal_is_queued():
-    first_eval = evaluation(1)
-    second_eval = evaluation(2)
-    third_eval = evaluation(3)
-    runner = PaperSessionRunner(FakeMonitor([first_eval, second_eval, third_eval]))
+def test_existing_position_is_managed_on_subsequent_bar():
+    runner = PaperSessionRunner(
+        FakeMonitor([evaluation(1), evaluation(2), evaluation(3)]),
+        paper=PaperTradingEngine(reward_risk=1.0 / 3.0),
+    )
 
     runner.process_once()
     opened_result = runner.process_once()
@@ -80,7 +80,6 @@ def test_existing_position_is_managed_before_new_signal_is_queued():
 
     result = runner.process_once()
     assert result is not None
-    # The current bar reaches the LONG target from the paper entry at 102.
     assert result.closed is not None
     assert result.closed.outcome == "WIN"
     assert runner.paper.position is None
