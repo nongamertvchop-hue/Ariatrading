@@ -39,6 +39,11 @@ def test_live_monitor_uses_closed_bars_only_and_returns_evaluation():
     assert result.timeframe == "1m"
     assert result.bar_time == bars[-1].time
     assert result.signal.action in {"LONG", "SHORT", "WAIT"}
+    assert result.snapshot is not None
+    assert result.snapshot.symbol == "EURUSD"
+    assert result.snapshot.bar_time == bars[-1].time
+    assert result.snapshot.current_close == bars[-1].close
+    assert result.supervisor is not None
 
 
 def test_live_monitor_does_not_evaluate_same_closed_bar_twice():
