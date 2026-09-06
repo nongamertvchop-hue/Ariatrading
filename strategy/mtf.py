@@ -34,6 +34,14 @@ _DURATION = {
 }
 
 
+def bar_duration(timeframe: str) -> timedelta:
+    """Return the fixed candle duration used for timestamp alignment."""
+    try:
+        return _DURATION[timeframe]
+    except KeyError as exc:
+        raise ValueError(f"unsupported timeframe: {timeframe}") from exc
+
+
 def build_mtf_context(
     structures: dict[str, MarketStructure],
     entry_timeframe: str,
@@ -97,15 +105,14 @@ def closed_candles_at(
     its own close must be at or before the entry timestamp. This prevents
     higher-timeframe look-ahead bias in historical validation.
     """
-    if timeframe not in _DURATION:
-        raise ValueError(f"unsupported timeframe: {timeframe}")
+    duration = bar_duration(timeframe)
     if timestamp.tzinfo is None:
         raise ValueError("timestamp must be timezone-aware")
 
     ordered = sorted(candles, key=_bar_time)
     return [
         bar for bar in ordered
-        if _bar_time(bar) + _DURATION[timeframe] <= timestamp
+        if _bar_time(bar) + duration <= timestamp
     ]
 
 
@@ -117,9 +124,9 @@ def build_timestamp_aligned_mtf_context(
 ) -> MultiTimeframeContext:
     """Build MTF context using only bars fully closed by the entry timestamp.
 
-    ``entry_timestamp`` is the close time of the entry/signal candle. All
-    timeframe structures are independently truncated before analysis, so a
-    future higher-timeframe candle can never influence the signal.
+    ``entry_timestamp`` is the close time of the signal candle. All timeframe
+    structures are independently truncated before analysis, so a future
+    higher-timeframe candle can never influence the signal.
     """
     if entry_timeframe not in _ORDER:
         raise ValueError(f"unsupported timeframe: {entry_timeframe}")
