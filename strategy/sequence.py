@@ -4,8 +4,10 @@ Sequence:
     APPROACH -> TEST -> (FAKE BREAK + RECLAIM or CLEAN REJECTION) -> CONFIRM -> SIGNAL
 
 The dedicated fake-breakout classifier is used here, so breakout state and
-sequence state cannot silently disagree. Only completed candles at or before
-the evaluation point are used.
+sequence state cannot silently disagree. Confirmation requires the new candle
+to close back beyond the zone with directional pressure; it does not require
+breaking the reaction candle's extreme because the core idea is a level hold,
+not a momentum-breakout strategy.
 
 Educational/demo only. No orders are placed here.
 """
@@ -97,8 +99,8 @@ def evaluate_sequence(
                 continue
             if candle_pressure(current) != "BUYING":
                 return SequenceResult(WAIT, CONFIRM, "support reacted but confirmation candle is not strongly bullish", test_index, current_index, breakout_state=breakout.state)
-            if current.close <= test.high or current.close <= zone.high:
-                return SequenceResult(WAIT, CONFIRM, "buyers have not confirmed a break above the test candle", test_index, current_index, breakout_state=breakout.state)
+            if current.close <= zone.high:
+                return SequenceResult(WAIT, CONFIRM, "buyers have not confirmed a close above support", test_index, current_index, breakout_state=breakout.state)
             state = RECLAIM if reclaim else REJECT
             return SequenceResult(LONG, CONFIRM, "support test followed by bullish confirmation", test_index, current_index, current.close, breakout.state)
 
@@ -113,8 +115,8 @@ def evaluate_sequence(
             continue
         if candle_pressure(current) != "SELLING":
             return SequenceResult(WAIT, CONFIRM, "resistance reacted but confirmation candle is not strongly bearish", test_index, current_index, breakout_state=breakout.state)
-        if current.close >= test.low or current.close >= zone.low:
-            return SequenceResult(WAIT, CONFIRM, "sellers have not confirmed a break below the test candle", test_index, current_index, breakout_state=breakout.state)
+        if current.close >= zone.low:
+            return SequenceResult(WAIT, CONFIRM, "sellers have not confirmed a close below resistance", test_index, current_index, breakout_state=breakout.state)
         state = RECLAIM if reclaim else REJECT
         return SequenceResult(SHORT, CONFIRM, "resistance test followed by bearish confirmation", test_index, current_index, current.close, breakout.state)
 
