@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.5.1**
+Current version: **0.6.0**
 
 ## Versioning rule
 
@@ -15,25 +15,21 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.5.1
+## Current milestone — 0.6.0
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure is available.
 - Fake-breakout classification is integrated into the sequence engine.
 - Multi-timeframe context and setup scoring are available.
-- Timestamp-aligned MTF context now excludes higher-timeframe candles that have not fully closed at the entry timestamp.
-- Automated test workflow remains the project gate.
-- Realtime monitoring uses closed candles only and now evaluates each newly closed candle at most once.
+- Timestamp-aligned MTF context excludes higher-timeframe candles that have not fully closed at the entry timestamp.
+- Sequential backtests can now accept timestamped multi-timeframe data and inject the aligned MTF context into setup scoring.
+- Realtime monitoring uses closed candles only and evaluates each newly closed candle at most once.
 - Realtime zone selection is nearest-zone based rather than relying on list order.
-- Realtime zone tolerance now adapts to the selected timeframe.
+- Realtime zone tolerance adapts to the selected timeframe.
+- Automated tests cover the new MTF lookahead and realtime state safeguards.
 - MT5 integration remains read-only; no order execution is implemented.
 
 ## Next milestones
-
-### 0.6.0 — Historical MTF integration
-- Feed timestamp-aligned MTF context directly into sequential backtests.
-- Add explicit timestamp requirements to historical candle data.
-- Test that future higher-timeframe bars cannot affect an earlier entry.
 
 ### 0.7.0 — Research validation
 - Add train/validation/out-of-sample splits.
