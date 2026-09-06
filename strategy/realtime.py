@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Protocol, Sequence
 
 from .engine import EngineSignal, WAIT, evaluate_long, evaluate_short
+from .forecast import ForecastResult, forecast
 from .levels_v2 import PriceZone, find_resistance_zones, find_support_zones
 from .timeframe import adaptive_zone_tolerance, get_timeframe_config
 
@@ -59,6 +60,7 @@ class LiveEvaluation:
     signal: EngineSignal
     support: PriceZone | None
     resistance: PriceZone | None
+    forecast: ForecastResult | None = None
 
 
 class RealtimeMonitor:
@@ -105,6 +107,10 @@ class RealtimeMonitor:
         ) if resistances else EngineSignal(WAIT, "no resistance zone", self.timeframe)
         signal = self._select_signal(long_signal, short_signal)
 
+        support = self._nearest_support(latest.close, supports)
+        resistance = self._nearest_resistance(latest.close, resistances)
+        forecast_result = forecast(candles, support=support, resistance=resistance)
+
         self._last_bar_time = latest.time
         return LiveEvaluation(
             symbol=self.symbol,
@@ -112,8 +118,9 @@ class RealtimeMonitor:
             evaluated_at=datetime.now(timezone.utc),
             bar_time=latest.time,
             signal=signal,
-            support=self._nearest_support(latest.close, supports),
-            resistance=self._nearest_resistance(latest.close, resistances),
+            support=support,
+            resistance=resistance,
+            forecast=forecast_result,
         )
 
     @staticmethod
