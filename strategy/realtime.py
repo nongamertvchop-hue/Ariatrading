@@ -15,6 +15,7 @@ from typing import Protocol, Sequence
 from .engine import EngineSignal, WAIT, evaluate_long, evaluate_short
 from .forecast import ForecastResult, forecast
 from .levels_v2 import PriceZone, find_resistance_zones, find_support_zones
+from .realtime_guard import RealtimeGuard
 from .timeframe import adaptive_zone_tolerance, get_timeframe_config
 
 
@@ -61,12 +62,14 @@ class LiveEvaluation:
     support: PriceZone | None
     resistance: PriceZone | None
     forecast: ForecastResult | None = None
+    data_quality: str = "ok"
 
 
 class RealtimeMonitor:
-    """Poll a BarFeed and evaluate exactly once per newly closed candle."""
+    """Poll a BarFeed with quality checks and evaluate once per new closed candle."""
 
-    def __init__(self, feed: BarFeed, symbol: str, timeframe: str, lookback: int = 100):
+    def __init__(self, feed: BarFeed, symbol: str, timeframe: str, lookback: int = 100,
+                 max_staleness_bars: int = 2):
         get_timeframe_config(timeframe)
         if lookback < 10:
             raise ValueError("lookback must be at least 10")
@@ -74,6 +77,7 @@ class RealtimeMonitor:
         self.symbol = symbol
         self.timeframe = timeframe
         self.lookback = lookback
+        self.guard = RealtimeGuard(timeframe, max_staleness_bars=max_staleness_bars)
         self._last_bar_time: datetime | None = None
 
     @property
@@ -81,18 +85,18 @@ class RealtimeMonitor:
         """Timestamp of the most recently evaluated closed candle."""
         return self._last_bar_time
 
-    def evaluate_once(self) -> LiveEvaluation | None:
-        """Evaluate a newly closed candle, or return None if nothing is new."""
+    def evaluate_once(self, now: datetime | None = None) -> LiveEvaluation | None:
+        """Evaluate a newly closed candle, or return None if data is not new/valid."""
         bars = list(self.feed.closed_bars(self.symbol, self.timeframe, self.lookback))
         if len(bars) < 5:
             raise ValueError("not enough closed bars for evaluation")
-        if any(bars[i].time >= bars[i + 1].time for i in range(len(bars) - 1)):
-            raise ValueError("bars must be sorted oldest first")
+        quality = self.guard.validate(bars, now=now)
+        if not quality.ok:
+            if quality.reason == "duplicate or old closed bar":
+                return None
+            raise RuntimeError(f"realtime data rejected: {quality.reason}")
 
         latest = bars[-1]
-        if self._last_bar_time is not None and latest.time <= self._last_bar_time:
-            return None
-
         candles = [b.as_dict() for b in bars]
         history = candles[:-1]
         tolerance = adaptive_zone_tolerance(history, self.timeframe)
@@ -111,6 +115,7 @@ class RealtimeMonitor:
         resistance = self._nearest_resistance(latest.close, resistances)
         forecast_result = forecast(candles, support=support, resistance=resistance)
 
+        self.guard.accept(bars, now=now)
         self._last_bar_time = latest.time
         return LiveEvaluation(
             symbol=self.symbol,
@@ -121,6 +126,7 @@ class RealtimeMonitor:
             support=support,
             resistance=resistance,
             forecast=forecast_result,
+            data_quality=quality.reason,
         )
 
     @staticmethod
