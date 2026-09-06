@@ -27,6 +27,7 @@ def test_swing_detection():
         {"high": 11, "low": 7},
         {"high": 8, "low": 5},
         {"high": 10, "low": 7},
+        {"high": 9, "low": 6},
     ]
     assert find_swing_lows(candles, strength=1) == [6, 5]
     assert find_swing_highs(candles, strength=1) == [11, 10]
