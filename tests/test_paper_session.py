@@ -141,10 +141,12 @@ def test_duplicate_monitor_evaluation_does_not_replay_same_bar():
 
     runner = PaperSessionRunner(DuplicateMonitor())
     first_result = runner.process_once()
-    second_result = runner.process_once()
+    duplicate_result = runner.process_once()
+    next_result = runner.process_once()
 
     assert first_result is not None
-    assert second_result is not None
+    assert duplicate_result is None
+    assert next_result is not None
     assert len(runner.journal.events) == 2
     assert runner.paper.position is not None
     assert runner.paper.position.signal_time == dt(1)
