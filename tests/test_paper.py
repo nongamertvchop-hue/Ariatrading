@@ -36,6 +36,22 @@ def test_signal_must_open_on_later_bar():
         raise AssertionError("same-bar entry must be rejected")
 
 
+def test_naive_signal_time_is_rejected():
+    engine = PaperTradingEngine()
+    signal = EngineSignal(LONG, "confirmed", "1m", zone=support())
+    try:
+        engine.open_from_signal(
+            signal,
+            signal_time=datetime(2026, 1, 1, 0, 1),
+            entry_time=dt(2),
+            entry_price=101.0,
+        )
+    except ValueError as exc:
+        assert "timezone-aware" in str(exc)
+    else:
+        raise AssertionError("naive timestamps must be rejected")
+
+
 def test_long_position_closes_at_target():
     engine = PaperTradingEngine(reward_risk=2.0)
     signal = EngineSignal(LONG, "confirmed", "1m", zone=support())
@@ -50,7 +66,7 @@ def test_long_position_closes_at_target():
     assert engine.account.wins == 1
 
 
-def test_long_stop_wins_takes_conservative_priority_when_both_hit():
+def test_long_stop_wins_conservative_priority_when_both_hit():
     engine = PaperTradingEngine(reward_risk=2.0)
     signal = EngineSignal(LONG, "confirmed", "1m", zone=support())
     engine.open_from_signal(signal, signal_time=dt(1), entry_time=dt(2), entry_price=101.0)
@@ -71,6 +87,16 @@ def test_short_position_closes_at_target():
     assert closed.r_multiple == 2.0
 
 
+def test_short_stop_wins_conservative_priority_when_both_hit():
+    engine = PaperTradingEngine(reward_risk=2.0)
+    signal = EngineSignal(SHORT, "confirmed", "1m", zone=resistance())
+    engine.open_from_signal(signal, signal_time=dt(1), entry_time=dt(2), entry_price=99.0)
+    closed = engine.on_bar({"time": dt(3), "high": 102.0, "low": 95.0})
+    assert closed is not None
+    assert closed.outcome == "LOSS"
+    assert closed.r_multiple == -1.0
+
+
 def test_unsafe_or_breakout_signal_is_not_opened():
     engine = PaperTradingEngine()
     unsafe = EngineSignal(LONG, "blocked", "1m", zone=support(), protection="BLOCKED")
@@ -86,13 +112,16 @@ def test_second_position_is_not_opened_while_one_is_active():
     assert engine.open_from_signal(signal, signal_time=dt(3), entry_time=dt(4), entry_price=101.0) is None
 
 
-def test_execution_costs_are_applied_deterministically():
+def test_execution_costs_are_applied_before_risk_geometry():
     model = ExecutionModel(spread=0.2, slippage=0.1, commission=0.0, price_digits=2)
     engine = PaperTradingEngine(reward_risk=1.0, execution_model=model)
     signal = EngineSignal(LONG, "confirmed", "1m", zone=support())
     position = engine.open_from_signal(signal, signal_time=dt(1), entry_time=dt(2), entry_price=101.0)
     assert position is not None
     assert position.entry_price == 101.2
-    closed = engine.on_bar({"time": dt(3), "high": 102.5, "low": 101.0})
+    assert position.risk_distance == 2.2
+    assert position.target == 103.4
+    closed = engine.on_bar({"time": dt(3), "high": 104.0, "low": 101.0})
     assert closed is not None
     assert closed.outcome == "WIN"
+    assert closed.r_multiple == (103.2 - 101.2) / 2.2
