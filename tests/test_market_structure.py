@@ -19,8 +19,8 @@ def test_bearish_structure_from_confirmed_swings():
     candles = [
         {"open": 1.15, "high": 1.20, "low": 1.10, "close": 1.18},
         {"open": 1.18, "high": 1.30, "low": 1.05, "close": 1.10},
-        {"open": 1.10, "high": 1.25, "low": 1.00, "close": 1.08},
-        {"open": 1.08, "high": 1.20, "low": 1.02, "close": 1.10},
+        {"open": 1.10, "high": 1.18, "low": 1.00, "close": 1.08},
+        {"open": 1.08, "high": 1.25, "low": 1.02, "close": 1.10},
         {"open": 1.10, "high": 1.15, "low": 0.90, "close": 0.98},
         {"open": 0.98, "high": 1.10, "low": 0.92, "close": 0.95},
         {"open": 0.95, "high": 1.05, "low": 0.88, "close": 0.92},
