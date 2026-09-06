@@ -43,11 +43,15 @@ def test_forecast_is_deterministic_for_same_input():
     assert forecast(candles) == forecast(candles)
 
 
-def test_forecast_does_not_change_when_unseen_future_bar_is_appended():
-    candles = make_candles()
-    before = forecast(candles[:-1])
-    after = forecast(candles[:-1])
-    assert before == after
+def test_replay_point_is_unchanged_by_later_unseen_candles():
+    candles = make_candles(50)
+    baseline = replay_forecasts(candles, "1m", warmup=10)
+    changed = [dict(c) for c in candles]
+    changed[-1]["close"] += 50.0
+    changed[-1]["high"] = changed[-1]["close"] + 0.1
+    changed[-1]["low"] = min(changed[-1]["open"], changed[-1]["close"]) - 0.05
+    replay_changed = replay_forecasts(changed, "1m", warmup=10)
+    assert baseline.points[0] == replay_changed.points[0]
 
 
 def test_forecast_rejects_invalid_horizons():
