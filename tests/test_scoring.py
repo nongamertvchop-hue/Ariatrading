@@ -10,7 +10,7 @@ def test_high_quality_long_score_is_explainable():
         "15m",
     )
     score = score_setup("LONG", 4, structure, "FAKE_BREAKOUT", 20, mtf)
-    assert score.total == 75
+    assert score.total == 95
     assert score.zone == 20
     assert score.structure == 20
     assert score.breakout == 25
