@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.5.1**
+**Current version: 0.6.0**
 
 ## Core idea
 
@@ -25,7 +25,7 @@ The project is layered around the two core setups rather than adding many unrela
 5. **Fake-breakout engine** — the sequence engine uses the breakout classifier, so a fake break becomes an explicit RECLAIM path.
 6. **Multi-timeframe context** — higher and entry timeframe structures can be supplied to describe directional alignment. Timestamp-aligned context uses only candles whose full intervals have closed.
 7. **Setup scoring** — transparent 0-100 heuristic components rank zone quality, structure, breakout behavior, confirmation and MTF alignment. A score is **not** a win probability.
-8. **Risk/backtest** — hypothetical stop/target planning and sequential historical simulation.
+8. **Risk/backtest** — hypothetical stop/target planning and sequential historical simulation, including optional timestamp-aligned MTF scoring.
 9. **Realtime data layer** — a feed interface and MT5 adapter can continuously read live market data while the strategy evaluates only completed candles.
 
 ### Key modules
@@ -42,7 +42,7 @@ The project is layered around the two core setups rather than adding many unrela
 - `strategy/scoring.py` — explainable setup-quality score.
 - `strategy/engine.py` — unified LONG/SHORT/WAIT interface with structure and optional MTF score.
 - `strategy/risk.py` — hypothetical stop/target planning and conservative exit simulation.
-- `strategy/backtest.py` — sequential historical backtest and R-multiple statistics.
+- `strategy/backtest.py` — sequential historical backtest, R-multiple statistics and optional timestamp-aligned MTF integration.
 - `strategy/realtime.py` — closed-candle realtime monitoring with duplicate-bar suppression and nearest-zone selection.
 - `adapters/mt5_feed.py` — read-only MetaTrader 5 market-data adapter.
 - `requirements-realtime.txt` — optional dependency for MT5 realtime data access.
@@ -67,6 +67,8 @@ Realtime monitoring is **read-only**. The code does not call `order_send()` and 
 
 This matters because MT5 timestamps identify the candle's opening time. A higher-timeframe candle that has already opened can still be forming when a lower-timeframe setup occurs. Excluding it prevents higher-timeframe look-ahead bias.
 
+`run_backtest()` can now receive `mtf_candles_by_timeframe`. When this option is used, candle timestamps must be timezone-aware datetimes. The backtest derives the signal candle close timestamp from its timeframe and asks the MTF layer for only information available at that moment. If timestamps are absent, it fails closed rather than guessing.
+
 ## Backtest assumptions
 
 - Zones are built only from candles already closed before the signal candle.
@@ -77,8 +79,8 @@ This matters because MT5 timestamps identify the candle's opening time. A higher
 - Default target is 2R, configurable for research.
 - One hypothetical position is allowed at a time.
 - If one candle touches both stop and target, the simulator assumes the stop happened first because OHLC data does not reveal intrabar order.
+- Optional MTF context is timestamp-aligned and cannot use a higher-timeframe candle that was still forming at entry.
 - No spread, commission, slippage, news filter, or execution latency is modeled yet.
-- Historical MTF context is not yet wired directly into `run_backtest`; that is the next architecture milestone.
 
 ## Testing
 
