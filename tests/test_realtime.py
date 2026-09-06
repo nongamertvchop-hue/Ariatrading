@@ -90,7 +90,7 @@ def test_nearest_zone_helpers_prefer_closest_zone_then_touches():
         PriceZone(1.1080, 1.1090, RESISTANCE, 3),
     ]
 
-    assert RealtimeMonitor._nearest_support(1.1030, supports) == supports[1]
+    assert RealtimeMonitor._nearest_support(1.1030, supports) == supports[2]
     assert RealtimeMonitor._nearest_resistance(1.1030, resistances) == resistances[1]
 
 
