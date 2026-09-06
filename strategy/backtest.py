@@ -9,9 +9,11 @@ execution is performed.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from .engine import LONG, SHORT, WAIT, EngineSignal, evaluate_long, evaluate_short
 from .levels_v2 import PriceZone, find_resistance_zones, find_support_zones
+from .mtf import bar_duration, build_timestamp_aligned_mtf_context
 from .risk import LOSS, OPEN, WIN, RiskPlan, TradeResult, build_risk_plan, simulate_exit
 from .timeframe import adaptive_confirmation_buffer, adaptive_zone_tolerance, get_timeframe_config
 
@@ -87,12 +89,34 @@ def _empty_result(timeframe: str) -> BacktestResult:
     return BacktestResult(timeframe, 0, 0, 0, 0, (), ())
 
 
+def _mtf_for_current(
+    candles_by_timeframe: dict[str, list[dict]] | None,
+    timeframe: str,
+    current: dict,
+) -> object | None:
+    """Build timestamp-aligned MTF context for a closed historical candle."""
+    if candles_by_timeframe is None:
+        return None
+    timestamp = current.get("time")
+    if not isinstance(timestamp, datetime):
+        raise ValueError("MTF backtest requires timezone-aware datetime candle times")
+    if timestamp.tzinfo is None:
+        raise ValueError("MTF backtest requires timezone-aware datetime candle times")
+    entry_timestamp = timestamp + bar_duration(timeframe)
+    return build_timestamp_aligned_mtf_context(
+        candles_by_timeframe,
+        timeframe,
+        entry_timestamp,
+    )
+
+
 def run_backtest(
     candles: list[dict],
     timeframe: str,
     warmup: int | None = None,
     reward_risk: float = 2.0,
     max_hold_bars: int = 20,
+    mtf_candles_by_timeframe: dict[str, list[dict]] | None = None,
 ) -> BacktestResult:
     """Run a sequential signal + SL/TP backtest.
 
@@ -100,6 +124,11 @@ def run_backtest(
     by an adaptive distance. Target is `reward_risk` times the initial risk.
     One hypothetical position is allowed at a time. If both stop and target are
     touched in one candle, the conservative simulator counts the stop first.
+
+    If timestamped multi-timeframe candles are supplied, MTF context is aligned
+    to each signal candle close and only fully closed higher-timeframe candles
+    are used. Without timestamps, MTF integration is intentionally unavailable
+    rather than guessing and risking look-ahead bias.
     """
     config = get_timeframe_config(timeframe)
     if reward_risk <= 0:
@@ -123,15 +152,25 @@ def run_backtest(
         supports, resistances = _latest_zones(prior, timeframe)
         support = _nearest_support(current, supports)
         resistance = _nearest_resistance(current, resistances)
+        mtf = _mtf_for_current(mtf_candles_by_timeframe, timeframe, current)
 
         candidates: list[EngineSignal] = []
         if support is not None:
-            candidates.append(evaluate_long(candles[: i + 1], support, timeframe))
+            candidates.append(evaluate_long(candles[: i + 1], support, timeframe, mtf=mtf))
         if resistance is not None:
-            candidates.append(evaluate_short(candles[: i + 1], resistance, timeframe))
+            candidates.append(evaluate_short(candles[: i + 1], resistance, timeframe, mtf=mtf))
 
         directional = [s for s in candidates if s.action in {LONG, SHORT}]
-        signal = directional[0] if len(directional) == 1 else EngineSignal(WAIT, "no unique directional setup", timeframe)
+        if len(directional) == 1:
+            signal = directional[0]
+        elif len(directional) > 1:
+            scored = [s for s in directional if s.score is not None]
+            if len(scored) == 2 and scored[0].score.total != scored[1].score.total:
+                signal = max(scored, key=lambda s: s.score.total)
+            else:
+                signal = EngineSignal(WAIT, "no unique directional setup", timeframe)
+        else:
+            signal = EngineSignal(WAIT, "no unique directional setup", timeframe)
         signals.append(signal)
 
         if signal.action in {LONG, SHORT} and signal.entry_reference is not None and signal.zone is not None:
