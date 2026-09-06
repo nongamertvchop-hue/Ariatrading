@@ -44,18 +44,30 @@ class PaperSessionRunner:
         self.paper = paper or PaperTradingEngine()
         self.journal = journal or PaperTradeJournal()
         self._pending_signal: LiveEvaluation | None = None
+        self._last_processed_bar_time: datetime | None = None
 
     @property
     def pending_signal(self) -> LiveEvaluation | None:
         return self._pending_signal
 
+    @property
+    def last_processed_bar_time(self) -> datetime | None:
+        """Timestamp of the most recently processed closed candle."""
+        return self._last_processed_bar_time
+
     def process_once(self, now: datetime | None = None) -> PaperSessionResult | None:
-        """Process the next newly closed candle in deterministic order."""
+        """Process the next newly closed candle in deterministic order.
+
+        The runner is idempotent at the candle level: a duplicate or old
+        evaluation is ignored before it can mutate the paper account or journal.
+        """
         evaluation = self.monitor.evaluate_once(now=now)
         if evaluation is None:
             return None
         if evaluation.snapshot is None:
             raise RuntimeError("realtime evaluation must include a market snapshot")
+        if self._last_processed_bar_time is not None and evaluation.bar_time <= self._last_processed_bar_time:
+            return None
 
         bar_time = evaluation.bar_time
         signal_event = self.journal.record_signal(
@@ -119,6 +131,7 @@ class PaperSessionRunner:
         ):
             self._pending_signal = evaluation
 
+        self._last_processed_bar_time = bar_time
         return PaperSessionResult(
             evaluation=evaluation,
             opened=opened,
