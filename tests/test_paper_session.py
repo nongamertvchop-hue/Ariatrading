@@ -54,8 +54,11 @@ class FakeMonitor:
         return next(self._evaluations, None)
 
 
-def test_signal_from_bar_n_opens_on_bar_n_plus_1_only():
-    runner = PaperSessionRunner(FakeMonitor([evaluation(1), evaluation(2)]))
+def test_signal_from_bar_n_opens_at_next_bar_open_only():
+    first_eval = evaluation(1)
+    second_eval = evaluation(2)
+    runner = PaperSessionRunner(FakeMonitor([first_eval, second_eval]))
+
     first = runner.process_once()
     assert first is not None
     assert first.opened is None
@@ -66,6 +69,8 @@ def test_signal_from_bar_n_opens_on_bar_n_plus_1_only():
     assert second.opened is not None
     assert second.opened.signal_time == dt(1)
     assert second.opened.entry_time == dt(2)
+    assert second.opened.entry_price == second_eval.snapshot.candle.open
+    assert second.opened.entry_price != second_eval.snapshot.current_close
 
 
 def test_existing_position_is_managed_on_subsequent_bar():
@@ -95,6 +100,7 @@ def test_journal_contains_signal_and_open_events():
     assert event_types == ["SIGNAL", "SIGNAL", "OPEN"]
     assert len(journal.trade_events(1)) == 1
     assert journal.trade_events(1)[0].event_type == "OPEN"
+    assert journal.trade_events(1)[0].entry_price == 100.0
 
 
 def test_wait_does_not_create_pending_trade():
