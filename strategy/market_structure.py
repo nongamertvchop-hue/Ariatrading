@@ -1,9 +1,8 @@
 """Indicator-free market-structure analysis built from confirmed swings.
 
 The module labels confirmed swing highs/lows as HH, HL, LH, or LL and derives
-an intentionally simple structural bias. Only candles supplied to the
-function are used; callers should pass data that was already closed at the
-analysis point.
+an intentionally simple bullish/bearish/range/unknown bias. A directional
+bias requires at least two confirmed highs and two confirmed lows.
 
 Educational research only. No orders are placed here.
 """
@@ -55,7 +54,7 @@ def analyze_market_structure(candles: list[dict], strength: int = 2) -> MarketSt
         lows.append(StructurePoint(index, price, kind))
 
     points = tuple(sorted((*highs, *lows), key=lambda p: p.index))
-    if not highs or not lows:
+    if len(highs) < 2 or len(lows) < 2:
         bias = UNKNOWN
     elif highs[-1].kind == HH and lows[-1].kind == HL:
         bias = BULLISH
