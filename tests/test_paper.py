@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from strategy.engine import EngineSignal, LONG, SHORT, WAIT
 from strategy.execution import ExecutionModel
 from strategy.levels_v2 import PriceZone, SUPPORT, RESISTANCE
@@ -11,11 +13,11 @@ def dt(minute: int) -> datetime:
 
 
 def support() -> PriceZone:
-    return PriceZone(SUPPORT, 99.0, 100.0, 3, (dt(0), dt(1), dt(2)))
+    return PriceZone(low=99.0, high=100.0, kind=SUPPORT, touches=3)
 
 
 def resistance() -> PriceZone:
-    return PriceZone(RESISTANCE, 100.0, 101.0, 3, (dt(0), dt(1), dt(2)))
+    return PriceZone(low=100.0, high=101.0, kind=RESISTANCE, touches=3)
 
 
 def test_wait_is_ignored():
@@ -28,28 +30,20 @@ def test_wait_is_ignored():
 def test_signal_must_open_on_later_bar():
     engine = PaperTradingEngine()
     signal = EngineSignal(LONG, "confirmed", "1m", zone=support())
-    try:
+    with pytest.raises(ValueError, match="later"):
         engine.open_from_signal(signal, signal_time=dt(1), entry_time=dt(1), entry_price=101.0)
-    except ValueError as exc:
-        assert "later" in str(exc)
-    else:
-        raise AssertionError("same-bar entry must be rejected")
 
 
 def test_naive_signal_time_is_rejected():
     engine = PaperTradingEngine()
     signal = EngineSignal(LONG, "confirmed", "1m", zone=support())
-    try:
+    with pytest.raises(ValueError, match="timezone-aware"):
         engine.open_from_signal(
             signal,
             signal_time=datetime(2026, 1, 1, 0, 1),
             entry_time=dt(2),
             entry_price=101.0,
         )
-    except ValueError as exc:
-        assert "timezone-aware" in str(exc)
-    else:
-        raise AssertionError("naive timestamps must be rejected")
 
 
 def test_long_position_closes_at_target():
@@ -120,8 +114,10 @@ def test_execution_costs_are_applied_before_risk_geometry():
     assert position is not None
     assert position.entry_price == 101.2
     assert position.risk_distance == 2.2
+    assert position.stop == 99.0
     assert position.target == 103.4
     closed = engine.on_bar({"time": dt(3), "high": 104.0, "low": 101.0})
     assert closed is not None
     assert closed.outcome == "WIN"
-    assert closed.r_multiple == (103.2 - 101.2) / 2.2
+    assert closed.exit_price == 103.2
+    assert closed.r_multiple == pytest.approx(2.0 / 2.2)
