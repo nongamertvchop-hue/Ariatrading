@@ -6,12 +6,18 @@ for a paper fill only on bar N+1, preserving the strategy's no-lookahead rule.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
+from typing import Protocol
 
+from .engine import LONG, SHORT
+from .journal import JournalEvent, PaperTradeJournal
 from .paper import PaperPosition, PaperTradingEngine
-from .journal import PaperTradeJournal, JournalEvent
 from .realtime import LiveEvaluation, RealtimeMonitor
-from .engine import LONG, SHORT, WAIT
+
+
+class _MonitorLike(Protocol):
+    def evaluate_once(self, now: datetime | None = None) -> LiveEvaluation | None:
+        """Return the next newly closed-bar evaluation."""
 
 
 @dataclass(frozen=True)
@@ -29,7 +35,7 @@ class PaperSessionRunner:
 
     def __init__(
         self,
-        monitor: RealtimeMonitor,
+        monitor: RealtimeMonitor | _MonitorLike,
         *,
         paper: PaperTradingEngine | None = None,
         journal: PaperTradeJournal | None = None,
@@ -48,6 +54,8 @@ class PaperSessionRunner:
         evaluation = self.monitor.evaluate_once(now=now)
         if evaluation is None:
             return None
+        if evaluation.snapshot is None:
+            raise RuntimeError("realtime evaluation must include a market snapshot")
 
         bar_time = evaluation.bar_time
         signal_event = self.journal.record_signal(
@@ -57,16 +65,25 @@ class PaperSessionRunner:
             signal=evaluation.signal,
         )
 
-        # Existing positions consume the current closed candle first.
-        closed = self.paper.on_bar(evaluation.snapshot.candle.as_dict() | {"time": bar_time}) if self.paper.position else None
+        # Manage an already-open position with the current closed candle first.
+        closed = None
         close_event = None
-        if closed is not None:
-            close_event = self.journal.record_close(
-                event_time=closed.exit_time or bar_time,
-                symbol=evaluation.symbol,
-                timeframe=evaluation.timeframe,
-                position=closed,
-            )
+        if self.paper.position is not None:
+            bar = {
+                "time": bar_time,
+                "open": evaluation.snapshot.candle.open,
+                "high": evaluation.snapshot.candle.high,
+                "low": evaluation.snapshot.candle.low,
+                "close": evaluation.snapshot.candle.close,
+            }
+            closed = self.paper.on_bar(bar)
+            if closed is not None:
+                close_event = self.journal.record_close(
+                    event_time=closed.exit_time or bar_time,
+                    symbol=evaluation.symbol,
+                    timeframe=evaluation.timeframe,
+                    position=closed,
+                )
 
         # A signal from the immediately preceding evaluation can fill only now.
         opened = None
@@ -91,7 +108,6 @@ class PaperSessionRunner:
                     )
 
         # Only an approved directional signal is eligible for the next bar.
-        # WAIT and blocked signals naturally expire after one bar.
         if (
             evaluation.signal.action in {LONG, SHORT}
             and evaluation.supervisor is not None
