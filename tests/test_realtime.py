@@ -11,16 +11,94 @@ class FakeFeed:
         return self.bars[-count:]
 
 
-def test_live_monitor_uses_closed_bars_only_and_returns_evaluation():
+def make_bars(count=20):
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     bars = []
-    for i in range(20):
+    for i in range(count):
         base = 1.10 + (i % 5) * 0.0001
-        bars.append(LiveBar(start + timedelta(minutes=i), base, base + 0.0004, base - 0.0002, base + 0.0001))
+        bars.append(
+            LiveBar(
+                start + timedelta(minutes=i),
+                base,
+                base + 0.0004,
+                base - 0.0002,
+                base + 0.0001,
+            )
+        )
+    return bars
+
+
+def test_live_monitor_uses_closed_bars_only_and_returns_evaluation():
+    bars = make_bars()
 
     result = RealtimeMonitor(FakeFeed(bars), "EURUSD", "1m", lookback=20).evaluate_once()
 
+    assert result is not None
     assert result.symbol == "EURUSD"
     assert result.timeframe == "1m"
     assert result.bar_time == bars[-1].time
     assert result.signal.action in {"LONG", "SHORT", "WAIT"}
+
+
+def test_live_monitor_does_not_evaluate_same_closed_bar_twice():
+    bars = make_bars()
+    feed = FakeFeed(bars)
+    monitor = RealtimeMonitor(feed, "EURUSD", "1m", lookback=20)
+
+    first = monitor.evaluate_once()
+    second = monitor.evaluate_once()
+
+    assert first is not None
+    assert second is None
+    assert monitor.last_bar_time == bars[-1].time
+
+
+def test_live_monitor_evaluates_after_a_new_closed_bar_arrives():
+    bars = make_bars()
+    feed = FakeFeed(bars)
+    monitor = RealtimeMonitor(feed, "EURUSD", "1m", lookback=20)
+
+    first = monitor.evaluate_once()
+    feed.bars.append(
+        LiveBar(
+            bars[-1].time + timedelta(minutes=1),
+            1.1010,
+            1.1014,
+            1.1008,
+            1.1012,
+        )
+    )
+    second = monitor.evaluate_once()
+
+    assert first is not None
+    assert second is not None
+    assert second.bar_time == feed.bars[-1].time
+    assert second.bar_time > first.bar_time
+
+
+def test_nearest_zone_helpers_prefer_closest_zone_then_touches():
+    from strategy.levels_v2 import PriceZone, RESISTANCE, SUPPORT
+
+    supports = [
+        PriceZone(1.0900, 1.0910, SUPPORT, 2),
+        PriceZone(1.0950, 1.0960, SUPPORT, 4),
+        PriceZone(1.0980, 1.0990, SUPPORT, 3),
+    ]
+    resistances = [
+        PriceZone(1.1010, 1.1020, RESISTANCE, 2),
+        PriceZone(1.1040, 1.1050, RESISTANCE, 4),
+        PriceZone(1.1080, 1.1090, RESISTANCE, 3),
+    ]
+
+    assert RealtimeMonitor._nearest_support(1.1030, supports) == supports[1]
+    assert RealtimeMonitor._nearest_resistance(1.1030, resistances) == resistances[1]
+
+
+def test_live_monitor_rejects_invalid_timeframe_early():
+    bars = make_bars()
+    try:
+        RealtimeMonitor(FakeFeed(bars), "EURUSD", "2m", lookback=20)
+    except ValueError as exc:
+        assert "unsupported timeframe" in str(exc)
+    else:
+        raise AssertionError("expected unsupported timeframe error")
