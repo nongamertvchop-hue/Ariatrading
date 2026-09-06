@@ -12,9 +12,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol, Sequence
 
+from .candles import Candle
 from .engine import EngineSignal, WAIT, evaluate_long, evaluate_short
 from .forecast import ForecastResult, forecast
 from .levels_v2 import PriceZone, find_resistance_zones, find_support_zones
+from .market_snapshot import MarketSnapshot
 from .realtime_guard import RealtimeGuard
 from .realtime_supervisor import ALLOW, SupervisorDecision, supervise
 from .timeframe import adaptive_zone_tolerance, get_timeframe_config
@@ -65,6 +67,7 @@ class LiveEvaluation:
     forecast: ForecastResult | None = None
     data_quality: str = "ok"
     supervisor: SupervisorDecision | None = None
+    snapshot: MarketSnapshot | None = None
 
 
 class RealtimeMonitor:
@@ -138,6 +141,18 @@ class RealtimeMonitor:
                 score=signal.score,
             )
 
+        snapshot = MarketSnapshot(
+            symbol=self.symbol,
+            timeframe=self.timeframe,
+            bar_time=latest.time,
+            candle=Candle(latest.open, latest.high, latest.low, latest.close),
+            current_close=latest.close,
+            support=support,
+            resistance=resistance,
+            forecast=forecast_result,
+            data_quality=quality,
+        )
+
         self.guard.accept(bars, now=now)
         self._last_bar_time = latest.time
         return LiveEvaluation(
@@ -151,6 +166,7 @@ class RealtimeMonitor:
             forecast=forecast_result,
             data_quality=quality.reason,
             supervisor=supervisor,
+            snapshot=snapshot,
         )
 
     @staticmethod
