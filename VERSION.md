@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.6.0**
+Current version: **0.7.0**
 
 ## Versioning rule
 
@@ -15,26 +15,22 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.6.0
+## Current milestone — 0.7.0
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure is available.
 - Fake-breakout classification is integrated into the sequence engine.
 - Multi-timeframe context and setup scoring are available.
 - Timestamp-aligned MTF context excludes higher-timeframe candles that have not fully closed at the entry timestamp.
-- Sequential backtests can now accept timestamped multi-timeframe data and inject the aligned MTF context into setup scoring.
+- Sequential backtests can accept timestamped multi-timeframe data and inject aligned MTF context into setup scoring.
 - Realtime monitoring uses closed candles only and evaluates each newly closed candle at most once.
 - Realtime zone selection is nearest-zone based rather than relying on list order.
 - Realtime zone tolerance adapts to the selected timeframe.
-- Automated tests cover the new MTF lookahead and realtime state safeguards.
+- Research validation now includes chronological train/validation/out-of-sample splitting, descriptive R-based metrics, profit factor, drawdown, and bootstrap expectancy uncertainty estimates.
+- Automated tests cover the new validation, MTF lookahead, and realtime state safeguards.
 - MT5 integration remains read-only; no order execution is implemented.
 
 ## Next milestones
-
-### 0.7.0 — Research validation
-- Add train/validation/out-of-sample splits.
-- Add expectancy, profit factor, drawdown, trade-count and R-distribution reporting.
-- Add parameter-robustness and bootstrap-style uncertainty analysis.
 
 ### 0.8.0 — Realistic execution simulation
 - Model spread, commission, slippage, latency, session boundaries and symbol precision.
