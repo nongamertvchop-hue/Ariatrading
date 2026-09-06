@@ -30,8 +30,9 @@ def make_bars(count=20):
 
 def test_live_monitor_uses_closed_bars_only_and_returns_evaluation():
     bars = make_bars()
+    now = bars[-1].time + timedelta(seconds=30)
 
-    result = RealtimeMonitor(FakeFeed(bars), "EURUSD", "1m", lookback=20).evaluate_once()
+    result = RealtimeMonitor(FakeFeed(bars), "EURUSD", "1m", lookback=20).evaluate_once(now=now)
 
     assert result is not None
     assert result.symbol == "EURUSD"
@@ -44,9 +45,10 @@ def test_live_monitor_does_not_evaluate_same_closed_bar_twice():
     bars = make_bars()
     feed = FakeFeed(bars)
     monitor = RealtimeMonitor(feed, "EURUSD", "1m", lookback=20)
+    now = bars[-1].time + timedelta(seconds=30)
 
-    first = monitor.evaluate_once()
-    second = monitor.evaluate_once()
+    first = monitor.evaluate_once(now=now)
+    second = monitor.evaluate_once(now=now)
 
     assert first is not None
     assert second is None
@@ -57,8 +59,9 @@ def test_live_monitor_evaluates_after_a_new_closed_bar_arrives():
     bars = make_bars()
     feed = FakeFeed(bars)
     monitor = RealtimeMonitor(feed, "EURUSD", "1m", lookback=20)
+    first_now = bars[-1].time + timedelta(seconds=30)
+    first = monitor.evaluate_once(now=first_now)
 
-    first = monitor.evaluate_once()
     feed.bars.append(
         LiveBar(
             bars[-1].time + timedelta(minutes=1),
@@ -68,7 +71,8 @@ def test_live_monitor_evaluates_after_a_new_closed_bar_arrives():
             1.1012,
         )
     )
-    second = monitor.evaluate_once()
+    second_now = feed.bars[-1].time + timedelta(seconds=30)
+    second = monitor.evaluate_once(now=second_now)
 
     assert first is not None
     assert second is not None
