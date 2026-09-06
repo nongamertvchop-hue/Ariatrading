@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.8.1**
+**Current version: 0.9.0**
 
 ## Core idea
 
@@ -28,8 +28,10 @@ The project is layered so every stage can be used together without duplicating s
 8. **Risk/backtest** — hypothetical SL/TP planning and sequential historical simulation.
 9. **Execution simulation** — optional spread, commission, slippage, latency, session and precision effects, isolated from strategy decisions.
 10. **Research validation** — chronological splits, R-based metrics, profit factor, drawdown and bootstrap expectancy uncertainty.
-11. **Realtime data** — closed-candle monitoring with duplicate suppression and nearest-zone selection.
-12. **Integration facade** — `strategy.pipeline.run_research()` connects the research stages into one consistent API.
+11. **Walk-forward validation** — expanding-history, rolling out-of-sample windows with hard test boundaries.
+12. **Realtime data** — closed-candle monitoring with duplicate suppression and nearest-zone selection.
+13. **Paper session** — next-bar paper entry, lifecycle management, and append-only event journaling.
+14. **Integration facade** — `strategy.pipeline.run_research()` connects the core research stages into one consistent API.
 
 ## Key modules
 
@@ -45,11 +47,15 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/scoring.py` — explainable setup quality score.
 - `strategy/engine.py` — central LONG/SHORT/WAIT strategy interface.
 - `strategy/risk.py` — hypothetical risk plans and baseline exit simulation.
-- `strategy/backtest.py` — sequential backtest plus optional MTF/execution integration.
+- `strategy/backtest.py` — sequential backtest plus bounded research windows and optional MTF/execution integration.
 - `strategy/execution.py` — research-only execution-friction simulation.
 - `strategy/validation.py` — research metrics and chronological validation tools.
+- `strategy/walk_forward.py` — rolling out-of-sample research windows.
 - `strategy/pipeline.py` — high-level end-to-end research facade.
 - `strategy/realtime.py` — closed-candle realtime monitor.
+- `strategy/paper.py` — deterministic single-position paper simulator.
+- `strategy/paper_session.py` — realtime-to-paper orchestration with next-bar entry and idempotency.
+- `strategy/journal.py` — SIGNAL/OPEN/CLOSE research event journal.
 - `adapters/mt5_feed.py` — read-only MT5 market-data adapter.
 
 ## System flow
@@ -74,19 +80,17 @@ APPROACH -> TEST -> RECLAIM/REJECT -> CONFIRM
         v
 LONG / SHORT / WAIT
         |
-        v
-Hypothetical Risk Plan
+        +---- Historical path -> Risk -> Backtest -> Validation
         |
-        +---- Baseline OHLC exit simulation
-        +---- Optional execution-cost simulation
+        +---- Realtime path -> Supervisor -> Paper Session -> Journal
         |
         v
-Research Metrics / Chronological Validation
+Walk-forward / Out-of-sample research
 ```
 
 The realtime path uses the same strategy engine rather than a separate live strategy:
 
-`MT5 terminal -> MT5BarFeed -> RealtimeMonitor -> engine -> LONG/SHORT/WAIT`
+`MT5 terminal -> MT5BarFeed -> RealtimeMonitor -> engine -> LONG/SHORT/WAIT -> Supervisor -> PaperSessionRunner`
 
 The MT5 adapter is read-only. It does not call `order_send()`.
 
@@ -108,6 +112,8 @@ Use `strategy.pipeline.run_research()` when a single coherent result is preferre
 4. chronological train/validation/out-of-sample split;
 5. bootstrap expectancy uncertainty interval.
 
+For rolling out-of-sample validation, use `strategy.walk_forward.walk_forward_backtest()`. This is an expanding-history evaluation tool, not a parameter optimizer or a claim of future profitability.
+
 The components remain separately callable for unit testing and research experiments.
 
 ## Backtest and execution assumptions
@@ -115,26 +121,37 @@ The components remain separately callable for unit testing and research experime
 - Only closed historical information is used to construct zones and structure.
 - Confirmed swings require right-side confirmation candles.
 - A signal requires a separate reaction/test and confirmation sequence.
-- Entry reference is the confirmation close.
+- Historical backtest entry uses the strategy's confirmation reference.
+- Paper-session entry from a realtime signal uses the next bar's open.
 - Stop is beyond the reaction zone by an adaptive buffer.
 - Default target is 2R.
-- One hypothetical position is allowed at a time.
+- One hypothetical paper position is allowed at a time.
 - If stop and target are both touched in one OHLC candle, stop is assumed first.
 - Execution simulation is optional and separate from strategy logic.
 - Commission is represented in price units rather than account currency.
 - No broker order is submitted anywhere in the repository.
 
+## Walk-forward validation
+
+`walk_forward_backtest()` repeatedly evaluates non-overlapping test windows. Each fold retains all earlier candles as history, while strategy decisions inside the test window only see candles available before each decision. Exit simulation is capped at the fold boundary, preventing a trade in one OOS window from consuming future observations in another window.
+
+This reduces a common validation mistake: reporting performance from a full-sample backtest as though it were untouched future data. Walk-forward evaluation is still historical evidence, not proof of profitability.
+
+## Paper monitoring
+
+The paper session runner is deliberately non-ordering. It records each evaluated signal, fills approved signals at the next bar's open, manages the existing position before evaluating a new entry opportunity, and ignores duplicate/old candles. Journal events are append-only and can be exported as plain dictionaries for later analysis.
+
 ## Validation
 
-The validation layer is deliberately descriptive. It reports historical behavior; it does not prove future profitability. Parameter selection should be performed on training data, checked on validation data, and finally evaluated once on untouched out-of-sample data.
+The validation layer is deliberately descriptive. It reports historical behavior; it does not prove future profitability. Parameter selection should be performed on training data, checked on validation data, and finally evaluated on untouched out-of-sample data. Robustness checks should include multiple time periods, execution-cost assumptions, and conservative OHLC ambiguity handling.
 
 ## Testing
 
-The `tests/` directory covers all major layers, including candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk, baseline and realistic execution simulation, backtesting, validation, realtime state handling, and the integrated research facade.
+The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk, baseline and realistic execution simulation, bounded backtesting, validation, walk-forward windows, realtime state handling, paper trading, paper-session lifecycle, journaling, and the integrated research facade.
 
 ## Version / continuation protocol
 
-Current version: **0.8.1**.
+Current version: **0.9.0**.
 
 At the start of a new chat:
 
