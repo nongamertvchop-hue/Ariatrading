@@ -59,12 +59,13 @@ def walk_forward_backtest(
     mtf_candles_by_timeframe: dict[str, list[dict]] | None = None,
     execution_model: ExecutionModel | None = None,
 ) -> WalkForwardResult:
-    """Run expanding-history, rolling out-of-sample backtests.
+    """Run expanding-history, non-overlapping out-of-sample backtests.
 
-    The first test window starts after ``history_bars``. Each following fold
-    advances by ``step_bars`` while retaining all prior candles as history.
-    Strategy decisions in a test fold can use only candles before that decision;
-    exit simulation is capped at the fold's ``test_end`` boundary.
+    The first test window starts after ``history_bars``. Subsequent folds begin
+    after the previous fold when ``step_bars`` is at least ``test_bars``. The
+    default is ``step_bars == test_bars`` so test observations are never counted
+    in more than one fold. Strategy decisions can use all earlier candles, while
+    exit simulation is capped at each fold's ``test_end`` boundary.
     """
     if history_bars < 1:
         raise ValueError("history_bars must be >= 1")
@@ -72,8 +73,8 @@ def walk_forward_backtest(
         raise ValueError("test_bars must be >= 1")
     if step_bars is None:
         step_bars = test_bars
-    if step_bars < 1:
-        raise ValueError("step_bars must be >= 1")
+    if step_bars < test_bars:
+        raise ValueError("step_bars must be >= test_bars for non-overlapping folds")
     if len(candles) <= history_bars:
         raise ValueError("candles must contain data after the history window")
 
