@@ -41,21 +41,29 @@ def test_walk_forward_creates_non_overlapping_test_windows():
     assert result.total_test_bars == 30
 
 
-def test_walk_forward_uses_expanding_history_but_caps_exits_at_test_boundary():
+def test_walk_forward_rejects_overlapping_test_windows():
+    with pytest.raises(ValueError, match="step_bars must be >= test_bars"):
+        walk_forward_backtest(
+            make_candles(50),
+            "15m",
+            history_bars=20,
+            test_bars=10,
+            step_bars=5,
+        )
+
+
+def test_walk_forward_caps_exits_at_test_boundary():
     result = walk_forward_backtest(
         make_candles(45),
         "15m",
         history_bars=20,
         test_bars=10,
-        step_bars=5,
     )
 
-    assert result.fold_count == 5
+    assert result.fold_count == 3
     assert [(f.test_start, f.test_end) for f in result.folds] == [
         (20, 30),
-        (25, 35),
         (30, 40),
-        (35, 45),
         (40, 45),
     ]
     for fold in result.folds:
