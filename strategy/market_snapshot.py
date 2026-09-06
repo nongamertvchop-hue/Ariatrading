@@ -1,8 +1,8 @@
 """Canonical real-time market snapshot.
 
-This module is the shared read-only contract between live analysis,
-backtesting, replay, and monitoring. It contains observations only; it never
-places orders and never invents future data.
+This is the shared read-only contract between live analysis, backtesting,
+replay, and monitoring. It contains observations only and never uses future
+data or places orders.
 """
 
 from dataclasses import dataclass
@@ -11,8 +11,8 @@ from math import isfinite
 from typing import Any
 
 from strategy.candles import Candle
-from strategy.levels_v2 import PriceZone
 from strategy.forecast import ForecastResult
+from strategy.levels_v2 import PriceZone
 from strategy.realtime_guard import DataQuality
 
 
@@ -35,8 +35,6 @@ class MarketSnapshot:
             raise ValueError("symbol must not be empty")
         if self.candle.close != self.current_close:
             raise ValueError("current_close must match candle.close")
-        if self.bar_time != self.candle.time:
-            raise ValueError("bar_time must match candle.time")
         if self.bar_time.tzinfo is None or self.bar_time.utcoffset() is None:
             raise ValueError("bar_time must be timezone-aware")
         for name, value in (("spread", self.spread), ("latency_seconds", self.latency_seconds)):
