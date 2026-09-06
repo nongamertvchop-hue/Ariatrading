@@ -16,6 +16,7 @@ from .engine import EngineSignal, WAIT, evaluate_long, evaluate_short
 from .forecast import ForecastResult, forecast
 from .levels_v2 import PriceZone, find_resistance_zones, find_support_zones
 from .realtime_guard import RealtimeGuard
+from .realtime_supervisor import ALLOW, SupervisorDecision, supervise
 from .timeframe import adaptive_zone_tolerance, get_timeframe_config
 
 
@@ -63,13 +64,14 @@ class LiveEvaluation:
     resistance: PriceZone | None
     forecast: ForecastResult | None = None
     data_quality: str = "ok"
+    supervisor: SupervisorDecision | None = None
 
 
 class RealtimeMonitor:
-    """Poll a BarFeed with quality checks and evaluate once per new closed candle."""
+    """Poll a BarFeed with quality and consistency checks."""
 
     def __init__(self, feed: BarFeed, symbol: str, timeframe: str, lookback: int = 100,
-                 max_staleness_bars: int = 2):
+                 max_staleness_bars: int = 2, min_forecast_confidence: float = 0.45):
         get_timeframe_config(timeframe)
         if lookback < 10:
             raise ValueError("lookback must be at least 10")
@@ -78,6 +80,7 @@ class RealtimeMonitor:
         self.timeframe = timeframe
         self.lookback = lookback
         self.guard = RealtimeGuard(timeframe, max_staleness_bars=max_staleness_bars)
+        self.min_forecast_confidence = min_forecast_confidence
         self._last_bar_time: datetime | None = None
 
     @property
@@ -114,6 +117,26 @@ class RealtimeMonitor:
         support = self._nearest_support(latest.close, supports)
         resistance = self._nearest_resistance(latest.close, resistances)
         forecast_result = forecast(candles, support=support, resistance=resistance)
+        supervisor = supervise(
+            signal,
+            forecast_result=forecast_result,
+            min_confidence=self.min_forecast_confidence,
+        )
+        final_signal = signal
+        if supervisor.action != ALLOW:
+            final_signal = EngineSignal(
+                WAIT,
+                "realtime supervisor: " + "; ".join(supervisor.reasons),
+                self.timeframe,
+                zone=signal.zone,
+                protection="BLOCKED",
+                breakout_state=signal.breakout_state,
+                entry_reference=signal.entry_reference,
+                test_index=signal.test_index,
+                confirmation_index=signal.confirmation_index,
+                structure_bias=signal.structure_bias,
+                score=signal.score,
+            )
 
         self.guard.accept(bars, now=now)
         self._last_bar_time = latest.time
@@ -122,11 +145,12 @@ class RealtimeMonitor:
             timeframe=self.timeframe,
             evaluated_at=datetime.now(timezone.utc),
             bar_time=latest.time,
-            signal=signal,
+            signal=final_signal,
             support=support,
             resistance=resistance,
             forecast=forecast_result,
             data_quality=quality.reason,
+            supervisor=supervisor,
         )
 
     @staticmethod
