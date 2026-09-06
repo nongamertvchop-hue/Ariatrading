@@ -7,8 +7,9 @@ Educational research only. No orders are placed here.
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
-from .market_structure import BEARISH, BULLISH, MarketStructure, RANGE, UNKNOWN
+from .market_structure import BEARISH, BULLISH, MarketStructure, RANGE, UNKNOWN, analyze_market_structure
 from .timeframe import SUPPORTED_TIMEFRAMES
 
 
@@ -22,6 +23,15 @@ class MultiTimeframeContext:
 
 
 _ORDER = {name: i for i, name in enumerate(SUPPORTED_TIMEFRAMES)}
+_DURATION = {
+    "1m": timedelta(minutes=1),
+    "5m": timedelta(minutes=5),
+    "15m": timedelta(minutes=15),
+    "30m": timedelta(minutes=30),
+    "1h": timedelta(hours=1),
+    "4h": timedelta(hours=4),
+    "1D": timedelta(days=1),
+}
 
 
 def build_mtf_context(
@@ -33,10 +43,7 @@ def build_mtf_context(
         raise ValueError(f"unsupported timeframe: {entry_timeframe}")
 
     entry = structures.get(entry_timeframe)
-    if entry is None:
-        entry_bias = UNKNOWN
-    else:
-        entry_bias = entry.bias
+    entry_bias = UNKNOWN if entry is None else entry.bias
 
     higher = [
         (tf, s.bias)
@@ -47,7 +54,6 @@ def build_mtf_context(
 
     middle_bias = RANGE
     if higher:
-        # The closest higher timeframe is the middle/context layer.
         middle_bias = higher[0][1]
     higher_bias = higher[-1][1] if higher else UNKNOWN
 
@@ -68,6 +74,64 @@ def build_mtf_context(
         entry_bias,
         alignment,
     )
+
+
+def _bar_time(bar: dict) -> datetime:
+    value = bar["time"]
+    if not isinstance(value, datetime):
+        raise TypeError("candle time must be a datetime")
+    if value.tzinfo is None:
+        raise ValueError("candle time must be timezone-aware")
+    return value
+
+
+def closed_candles_at(
+    candles: list[dict],
+    timeframe: str,
+    timestamp: datetime,
+) -> list[dict]:
+    """Return only candles whose full interval closed by ``timestamp``.
+
+    MT5 timestamps represent the candle opening time. Therefore a higher
+    timeframe candle that opened before an entry is not automatically usable:
+    its own close must be at or before the entry timestamp. This prevents
+    higher-timeframe look-ahead bias in historical validation.
+    """
+    if timeframe not in _DURATION:
+        raise ValueError(f"unsupported timeframe: {timeframe}")
+    if timestamp.tzinfo is None:
+        raise ValueError("timestamp must be timezone-aware")
+
+    ordered = sorted(candles, key=_bar_time)
+    return [
+        bar for bar in ordered
+        if _bar_time(bar) + _DURATION[timeframe] <= timestamp
+    ]
+
+
+def build_timestamp_aligned_mtf_context(
+    candles_by_timeframe: dict[str, list[dict]],
+    entry_timeframe: str,
+    entry_timestamp: datetime,
+    strength: int = 2,
+) -> MultiTimeframeContext:
+    """Build MTF context using only bars fully closed by the entry timestamp.
+
+    ``entry_timestamp`` is the close time of the entry/signal candle. All
+    timeframe structures are independently truncated before analysis, so a
+    future higher-timeframe candle can never influence the signal.
+    """
+    if entry_timeframe not in _ORDER:
+        raise ValueError(f"unsupported timeframe: {entry_timeframe}")
+
+    structures: dict[str, MarketStructure] = {}
+    for timeframe, candles in candles_by_timeframe.items():
+        if timeframe not in _ORDER:
+            continue
+        closed = closed_candles_at(candles, timeframe, entry_timestamp)
+        structures[timeframe] = analyze_market_structure(closed, strength=strength)
+
+    return build_mtf_context(structures, entry_timeframe)
 
 
 def mtf_direction_score(direction: str, context: MultiTimeframeContext) -> int:
