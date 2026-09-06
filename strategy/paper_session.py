@@ -86,6 +86,9 @@ class PaperSessionRunner:
                 )
 
         # A signal from the immediately preceding evaluation can fill only now.
+        # The fill uses the current bar's OPEN, because the signal was known only
+        # from the previous completed bar. Using the current close would consume
+        # information that was unavailable at the decision boundary.
         opened = None
         open_event = None
         pending = self._pending_signal
@@ -97,7 +100,7 @@ class PaperSessionRunner:
                     signal,
                     signal_time=pending.bar_time,
                     entry_time=bar_time,
-                    entry_price=evaluation.snapshot.current_close,
+                    entry_price=evaluation.snapshot.candle.open,
                 )
                 if opened is not None:
                     open_event = self.journal.record_open(
