@@ -86,20 +86,47 @@ def _mtf_for_current(candles_by_timeframe, timeframe: str, current: dict):
     return build_timestamp_aligned_mtf_context(candles_by_timeframe, timeframe, timestamp + bar_duration(timeframe))
 
 
-def run_backtest(candles: list[dict], timeframe: str, warmup: int | None = None, reward_risk: float = 2.0,
-                 max_hold_bars: int = 20, mtf_candles_by_timeframe: dict[str, list[dict]] | None = None,
-                 execution_model: ExecutionModel | None = None) -> BacktestResult:
-    """Run strategy -> risk -> optional execution-cost simulation sequentially."""
+def run_backtest(
+    candles: list[dict],
+    timeframe: str,
+    warmup: int | None = None,
+    reward_risk: float = 2.0,
+    max_hold_bars: int = 20,
+    mtf_candles_by_timeframe: dict[str, list[dict]] | None = None,
+    execution_model: ExecutionModel | None = None,
+    start_index: int | None = None,
+    end_index: int | None = None,
+) -> BacktestResult:
+    """Run strategy/risk sequentially over a bounded research window.
+
+    ``start_index`` and ``end_index`` define the candles whose close is treated
+    as the decision/test window. History before ``start_index`` remains visible
+    to the strategy, while exit simulation is capped at ``end_index`` so a trade
+    cannot consume observations from a later out-of-sample window.
+    """
     config = get_timeframe_config(timeframe)
     if reward_risk <= 0 or max_hold_bars < 1:
         raise ValueError("reward_risk must be > 0 and max_hold_bars must be >= 1")
     if not candles:
         return BacktestResult(timeframe, 0, 0, 0, 0, (), ())
 
-    start = min(max(config.lookback + 2, 10, warmup or 0), len(candles))
+    if start_index is None:
+        start_index = 0
+    if end_index is None:
+        end_index = len(candles)
+    if not 0 <= start_index < len(candles):
+        raise ValueError("start_index must be within candles")
+    if not start_index < end_index <= len(candles):
+        raise ValueError("end_index must be > start_index and <= len(candles)")
+
+    warm_start = min(max(config.lookback + 2, 10, warmup or 0), len(candles))
+    evaluation_start = max(start_index, warm_start)
+    if evaluation_start >= end_index:
+        return BacktestResult(timeframe, 0, 0, 0, 0, (), ())
+
     signals, trades = [], []
-    i = start
-    while i < len(candles):
+    i = evaluation_start
+    while i < end_index:
         current, prior = candles[i], candles[:i]
         supports, resistances = _latest_zones(prior, timeframe)
         mtf = _mtf_for_current(mtf_candles_by_timeframe, timeframe, current)
@@ -121,22 +148,49 @@ def run_backtest(candles: list[dict], timeframe: str, warmup: int | None = None,
         signals.append(signal)
 
         if signal.action in {LONG, SHORT} and signal.entry_reference is not None and signal.zone is not None:
-            plan: RiskPlan = build_risk_plan(signal.action, signal.entry_reference, signal.zone,
-                                             adaptive_confirmation_buffer(prior, timeframe), reward_risk)
-            future = candles[i + 1:i + 1 + max_hold_bars]
-            trade = simulate_exit(plan, future, max_hold_bars) if execution_model is None else simulate_realistic_exit(plan, future, execution_model, max_hold_bars)
+            plan: RiskPlan = build_risk_plan(
+                signal.action,
+                signal.entry_reference,
+                signal.zone,
+                adaptive_confirmation_buffer(prior, timeframe),
+                reward_risk,
+            )
+            future = candles[i + 1:min(end_index, i + 1 + max_hold_bars)]
+            trade = (
+                simulate_exit(plan, future, max_hold_bars)
+                if execution_model is None
+                else simulate_realistic_exit(plan, future, execution_model, max_hold_bars)
+            )
             trades.append(trade)
-            if trade.bars_held > 0:
+            if trade.bars_held > 0 and trade.outcome in {WIN, LOSS}:
                 i += trade.bars_held + 1
                 continue
         i += 1
 
-    return BacktestResult(timeframe, len(signals), sum(s.action == LONG for s in signals),
-                          sum(s.action == SHORT for s in signals), sum(s.action == WAIT for s in signals),
-                          tuple(trades), tuple(signals))
+    return BacktestResult(
+        timeframe,
+        len(signals),
+        sum(s.action == LONG for s in signals),
+        sum(s.action == SHORT for s in signals),
+        sum(s.action == WAIT for s in signals),
+        tuple(trades),
+        tuple(signals),
+    )
 
 
-def run_all_timeframes(candles_by_timeframe: dict[str, list[dict]], reward_risk: float = 2.0,
-                       max_hold_bars: int = 20, execution_model: ExecutionModel | None = None):
-    return {tf: run_backtest(c, tf, reward_risk=reward_risk, max_hold_bars=max_hold_bars,
-                             execution_model=execution_model) for tf, c in candles_by_timeframe.items()}
+def run_all_timeframes(
+    candles_by_timeframe: dict[str, list[dict]],
+    reward_risk: float = 2.0,
+    max_hold_bars: int = 20,
+    execution_model: ExecutionModel | None = None,
+):
+    return {
+        tf: run_backtest(
+            c,
+            tf,
+            reward_risk=reward_risk,
+            max_hold_bars=max_hold_bars,
+            execution_model=execution_model,
+        )
+        for tf, c in candles_by_timeframe.items()
+    }
