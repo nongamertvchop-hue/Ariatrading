@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.6.0**
+**Current version: 0.7.0**
 
 ## Core idea
 
@@ -25,8 +25,9 @@ The project is layered around the two core setups rather than adding many unrela
 5. **Fake-breakout engine** — the sequence engine uses the breakout classifier, so a fake break becomes an explicit RECLAIM path.
 6. **Multi-timeframe context** — higher and entry timeframe structures can be supplied to describe directional alignment. Timestamp-aligned context uses only candles whose full intervals have closed.
 7. **Setup scoring** — transparent 0-100 heuristic components rank zone quality, structure, breakout behavior, confirmation and MTF alignment. A score is **not** a win probability.
-8. **Risk/backtest** — hypothetical stop/target planning and sequential historical simulation, including optional timestamp-aligned MTF scoring.
-9. **Realtime data layer** — a feed interface and MT5 adapter can continuously read live market data while the strategy evaluates only completed candles.
+8. **Risk/backtest** — hypothetical stop/target planning and sequential historical simulation, including timestamp-aligned MTF scoring.
+9. **Research validation** — chronological train/validation/out-of-sample splitting plus descriptive R-based metrics and uncertainty estimates.
+10. **Realtime data layer** — a feed interface and MT5 adapter can continuously read live market data while the strategy evaluates only completed candles.
 
 ### Key modules
 
@@ -42,7 +43,8 @@ The project is layered around the two core setups rather than adding many unrela
 - `strategy/scoring.py` — explainable setup-quality score.
 - `strategy/engine.py` — unified LONG/SHORT/WAIT interface with structure and optional MTF score.
 - `strategy/risk.py` — hypothetical stop/target planning and conservative exit simulation.
-- `strategy/backtest.py` — sequential historical backtest, R-multiple statistics and optional timestamp-aligned MTF integration.
+- `strategy/backtest.py` — sequential historical backtest, R-multiple statistics and timestamp-aligned MTF integration.
+- `strategy/validation.py` — chronological splits, descriptive research metrics, profit factor, drawdown and bootstrap expectancy intervals.
 - `strategy/realtime.py` — closed-candle realtime monitoring with duplicate-bar suppression and nearest-zone selection.
 - `adapters/mt5_feed.py` — read-only MetaTrader 5 market-data adapter.
 - `requirements-realtime.txt` — optional dependency for MT5 realtime data access.
@@ -67,7 +69,16 @@ Realtime monitoring is **read-only**. The code does not call `order_send()` and 
 
 This matters because MT5 timestamps identify the candle's opening time. A higher-timeframe candle that has already opened can still be forming when a lower-timeframe setup occurs. Excluding it prevents higher-timeframe look-ahead bias.
 
-`run_backtest()` can now receive `mtf_candles_by_timeframe`. When this option is used, candle timestamps must be timezone-aware datetimes. The backtest derives the signal candle close timestamp from its timeframe and asks the MTF layer for only information available at that moment. If timestamps are absent, it fails closed rather than guessing.
+`run_backtest()` can receive `mtf_candles_by_timeframe`. When this option is used, candle timestamps must be timezone-aware datetimes. The backtest derives the signal candle close timestamp from its timeframe and asks the MTF layer for only information available at that moment. If timestamps are absent, it fails closed rather than guessing.
+
+## Research validation
+
+The validation layer deliberately separates descriptive evaluation from strategy construction:
+
+- chronological train/validation/test splits preserve time order;
+- profit factor, expectancy in R, win rate and maximum drawdown summarize historical behavior;
+- bootstrap expectancy intervals quantify uncertainty in the supplied sample;
+- none of these metrics are forecasts or guarantees of future results.
 
 ## Backtest assumptions
 
@@ -84,7 +95,7 @@ This matters because MT5 timestamps identify the candle's opening time. A higher
 
 ## Testing
 
-The `tests/` directory covers candle/level behavior plus sequence, fake-breakout protection, timeframe utilities, market structure, multi-timeframe context, timestamp lookahead protection, setup scoring, backtesting, risk/exit simulation, and realtime feed behavior including duplicate-bar suppression and nearest-zone selection.
+The `tests/` directory covers candle/level behavior plus sequence, fake-breakout protection, timeframe utilities, market structure, multi-timeframe context, timestamp lookahead protection, setup scoring, backtesting, research validation, risk/exit simulation, and realtime feed behavior including duplicate-bar suppression and nearest-zone selection.
 
 ## Continuation protocol
 
