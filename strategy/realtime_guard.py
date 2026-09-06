@@ -8,10 +8,17 @@ data cannot silently become a signal. Research/paper monitoring only.
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from math import isfinite
-from typing import Sequence
+from typing import Sequence, Protocol
 
-from .realtime import LiveBar
 from .timeframe import bar_duration, get_timeframe_config
+
+
+class _BarLike(Protocol):
+    time: datetime
+    open: float
+    high: float
+    low: float
+    close: float
 
 
 @dataclass(frozen=True)
@@ -37,7 +44,7 @@ class RealtimeGuard:
     def last_evaluated(self) -> datetime | None:
         return self._last_evaluated
 
-    def validate(self, bars: Sequence[LiveBar], now: datetime | None = None) -> DataQuality:
+    def validate(self, bars: Sequence[_BarLike], now: datetime | None = None) -> DataQuality:
         if not bars:
             return DataQuality(False, "empty feed")
         for bar in bars:
@@ -46,6 +53,8 @@ class RealtimeGuard:
             values = (bar.open, bar.high, bar.low, bar.close)
             if not all(isfinite(float(v)) for v in values):
                 return DataQuality(False, "non-finite OHLC value", bar.time)
+            if bar.high < max(bar.open, bar.close) or bar.low > min(bar.open, bar.close) or bar.high < bar.low:
+                return DataQuality(False, "invalid OHLC geometry", bar.time)
         for left, right in zip(bars, bars[1:]):
             if left.time >= right.time:
                 return DataQuality(False, "bars must be strictly chronological", right.time)
@@ -63,7 +72,7 @@ class RealtimeGuard:
             return DataQuality(False, "duplicate or old closed bar", latest.time, age)
         return DataQuality(True, "ok", latest.time, age)
 
-    def accept(self, bars: Sequence[LiveBar], now: datetime | None = None) -> DataQuality:
+    def accept(self, bars: Sequence[_BarLike], now: datetime | None = None) -> DataQuality:
         quality = self.validate(bars, now)
         if quality.ok:
             self._last_evaluated = bars[-1].time
