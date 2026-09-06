@@ -2,6 +2,8 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
+**Current version: 0.5.0**
+
 ## Core idea
 
 Ariatrading deliberately starts with only two reversal setups:
@@ -20,10 +22,11 @@ The project is layered around the two core setups rather than adding many unrela
 2. **Zone intelligence** — repeated confirmed swings form support/resistance zones.
 3. **Candle intelligence** — completed candles are classified by simple buying/selling pressure.
 4. **Sequence engine** — APPROACH -> TEST -> RECLAIM/REJECT -> CONFIRM.
-5. **Fake-breakout engine** — the sequence engine now uses the same breakout classifier, so a fake break becomes an explicit RECLAIM path instead of a disconnected filter.
+5. **Fake-breakout engine** — the sequence engine uses the breakout classifier, so a fake break becomes an explicit RECLAIM path.
 6. **Multi-timeframe context** — higher and entry timeframe structures can be supplied to describe directional alignment. This is context, not a new entry setup.
 7. **Setup scoring** — transparent 0-100 heuristic components rank zone quality, structure, breakout behavior, confirmation and MTF alignment. A score is **not** a win probability.
 8. **Risk/backtest** — hypothetical stop/target planning and sequential historical simulation.
+9. **Realtime data layer** — a feed interface and MT5 adapter can continuously read live market data while the strategy evaluates only completed candles.
 
 ### Key modules
 
@@ -40,10 +43,19 @@ The project is layered around the two core setups rather than adding many unrela
 - `strategy/engine.py` — unified LONG/SHORT/WAIT interface with structure and optional MTF score.
 - `strategy/risk.py` — hypothetical stop/target planning and conservative exit simulation.
 - `strategy/backtest.py` — sequential historical backtest and R-multiple statistics.
+- `strategy/realtime.py` — closed-candle realtime monitoring interface.
+- `adapters/mt5_feed.py` — read-only MetaTrader 5 market-data adapter.
+- `requirements-realtime.txt` — optional dependency for MT5 realtime data access.
 
-## Design principle
+## Realtime market-data design
 
-The system should answer **"What did price actually do?"** before answering **"Should this setup be considered?"**. Indicators are intentionally excluded from the core logic. Additional modules should strengthen the evidence for the same two setups rather than create an ever-growing list of entry patterns.
+The realtime layer is deliberately separated from the strategy engine:
+
+`MT5 terminal -> MT5BarFeed -> RealtimeMonitor -> existing strategy engine -> LONG/SHORT/WAIT`
+
+The MT5 Python integration can retrieve the current tick and historical bars from a connected terminal. For strategy evaluation, Ariatrading requests bars starting at position 1, because MT5 position 0 is the currently forming candle. Therefore an in-progress candle is never treated as a confirmed signal candle. This keeps live monitoring aligned with the closed-candle rule used by historical research. See the official MT5 documentation for `initialize`, `symbol_info_tick`, and `copy_rates_from_pos`.
+
+Realtime monitoring is **read-only** in v0.5.0. The code does not call `order_send()` and does not place trades.
 
 ## Backtest assumptions
 
@@ -59,8 +71,19 @@ The system should answer **"What did price actually do?"** before answering **"S
 
 ## Testing
 
-The `tests/` directory covers candle/level behavior plus sequence, fake-breakout protection, timeframe utilities, market structure, multi-timeframe context, setup scoring, backtesting, and risk/exit simulation.
+The `tests/` directory covers candle/level behavior plus sequence, fake-breakout protection, timeframe utilities, market structure, multi-timeframe context, setup scoring, backtesting, risk/exit simulation, and realtime feed behavior.
+
+## Continuation protocol
+
+At the start of a new chat:
+
+1. Read `VERSION.md` and this `README.md`.
+2. Inspect the latest Git history.
+3. Identify the current milestone and unfinished work.
+4. Continue from the existing implementation; do not recreate completed modules.
+5. Any behavior change must have a test or a clear reason why a test is not practical.
+6. Update `VERSION.md` after a meaningful strategy/architecture milestone.
 
 ## Important
 
-This repository is for programming practice and historical research. It does not establish that a strategy is profitable and it does not place live orders. Timeframe parameters are engineering defaults, not proven optimal values. Any future optimization should use separate training/validation/out-of-sample data to reduce overfitting. Before any execution integration, the backtest must also model realistic spread, commission, slippage, latency and symbol-specific price precision.
+This repository is for programming practice and historical/realtime market-data research. It does not establish that a strategy is profitable and it does not place live orders. Timeframe parameters are engineering defaults, not proven optimal values. Any future optimization should use separate training/validation/out-of-sample data to reduce overfitting. Before any execution integration, the backtest must also model realistic spread, commission, slippage, latency and symbol-specific price precision.
