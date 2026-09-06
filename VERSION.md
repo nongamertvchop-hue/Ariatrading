@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.8.0**
+Current version: **0.8.1**
 
 ## Versioning rule
 
@@ -15,20 +15,16 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.8.0
+## Current milestone — 0.8.1
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
-- Confirmed-swing market structure is available.
-- Fake-breakout classification is integrated into the sequence engine.
-- Multi-timeframe context and setup scoring are available.
+- Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
 - Timestamp-aligned MTF context excludes higher-timeframe candles that have not fully closed at the entry timestamp.
-- Sequential backtests can accept timestamped multi-timeframe data and inject aligned MTF context into setup scoring.
-- Realtime monitoring uses closed candles only and evaluates each newly closed candle at most once.
-- Realtime zone selection is nearest-zone based rather than relying on list order.
-- Realtime zone tolerance adapts to the selected timeframe.
-- Research validation includes chronological train/validation/out-of-sample splitting, descriptive R-based metrics, profit factor, drawdown, and bootstrap expectancy uncertainty estimates.
-- Historical execution simulation now models configurable spread, commission, slippage, bar-based latency, session boundaries and price precision without placing orders.
-- Automated tests cover execution frictions, validation, MTF lookahead, and realtime state safeguards.
+- Sequential backtests can use timestamp-aligned MTF context and the optional execution-friction model.
+- Historical execution simulation models spread, commission, slippage, bar-based latency, session boundaries and price precision without placing orders.
+- A high-level `strategy.pipeline.run_research()` facade now runs backtest -> execution simulation -> metrics -> chronological split -> bootstrap uncertainty as one consistent research workflow.
+- Package exports expose the main engine, execution model and research facade from `strategy`.
+- Integration tests cover the end-to-end research facade.
 - MT5 integration remains read-only; no order execution is implemented.
 
 ## Next milestones
