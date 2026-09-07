@@ -6,7 +6,7 @@ change signals, thresholds, or execution behavior.
 """
 
 from dataclasses import dataclass
-from math import isfinite
+from math import isfinite, log
 
 from .ml_features import MLSample
 
@@ -79,7 +79,7 @@ def _psi(train: list[float], test: list[float], bins: int, epsilon: float) -> fl
     for expected_count, actual_count in zip(expected, actual):
         expected_pct = max(expected_count / train_total, epsilon)
         actual_pct = max(actual_count / test_total, epsilon)
-        total += (actual_pct - expected_pct) * __import__("math").log(actual_pct / expected_pct)
+        total += (actual_pct - expected_pct) * log(actual_pct / expected_pct)
     return total
 
 
@@ -113,7 +113,11 @@ def analyze_feature_drift(
         test_mean = _mean(test)
         train_std = _std(train, train_mean)
         test_std = _std(test, test_mean)
-        mean_shift_std = (test_mean - train_mean) / train_std if train_std else (0.0 if test_mean == train_mean else float("inf"))
+        mean_shift_std = (
+            (test_mean - train_mean) / train_std
+            if train_std
+            else (0.0 if test_mean == train_mean else float("inf"))
+        )
         diagnostics.append(
             FeatureDrift(
                 feature_index=feature_index,
