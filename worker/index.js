@@ -287,14 +287,46 @@ async function fetchLivePrice(symbol, apiKey) {
   } finally { clearTimeout(timeout); }
 }
 
+async function fetchLiveCandle(symbol, timeframe, apiKey) {
+  const url = new URL("https://api.twelvedata.com/time_series");
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("interval", TIMEFRAME_CONFIG[timeframe].interval);
+  url.searchParams.set("outputsize", "2");
+  url.searchParams.set("timezone", "UTC");
+  url.searchParams.set("apikey", apiKey);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`market data provider returned HTTP ${response.status}`);
+    const payload = await response.json();
+    if (payload.status === "error" || !Array.isArray(payload.values)) throw new Error(payload.message || "market data provider returned an invalid response");
+    if (!payload.values.length) throw new Error("market data provider returned no live candle");
+    const raw = payload.values[0];
+    return validateCandle({ open: raw.open, high: raw.high, low: raw.low, close: raw.close, datetime: raw.datetime });
+  } finally { clearTimeout(timeout); }
+}
+
 async function handleLivePrice(request, env) {
   if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
   const url = new URL(request.url);
   const symbol = (url.searchParams.get("symbol") || "EUR/USD").trim().toUpperCase();
-  if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)) throw new BadRequest("symbol must look like EUR/USD");
+  if (!/^[A-Z]{3}\/\[A-Z]{3}$/.test(symbol)) throw new BadRequest("symbol must look like EUR/USD");
   if (!env.TWELVE_DATA_API_KEY) return json({ error: "server_not_configured", message: "TWELVE_DATA_API_KEY secret is not configured" }, 503);
   const price = await fetchLivePrice(symbol, env.TWELVE_DATA_API_KEY);
   return json({ symbol, price, generated_at: new Date().toISOString(), execution: "NONE" });
+}
+
+async function handleLiveCandle(request, env) {
+  if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
+  const url = new URL(request.url);
+  const symbol = (url.searchParams.get("symbol") || "EUR/USD").trim().toUpperCase();
+  const timeframe = url.searchParams.get("timeframe") || "15m";
+  if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)) throw new BadRequest("symbol must look like EUR/USD");
+  if (!Object.prototype.hasOwnProperty.call(TIMEFRAME_CONFIG, timeframe)) throw new BadRequest(`unsupported timeframe: ${timeframe}`);
+  if (!env.TWELVE_DATA_API_KEY) return json({ error: "server_not_configured", message: "TWELVE_DATA_API_KEY secret is not configured" }, 503);
+  const candle = await fetchLiveCandle(symbol, timeframe, env.TWELVE_DATA_API_KEY);
+  return json({ symbol, timeframe, candle, confirmed: false, generated_at: new Date().toISOString(), execution: "NONE" });
 }
 
 async function handleSignal(request, env) {
@@ -327,6 +359,7 @@ export default {
       const url = new URL(request.url);
       if (url.pathname === "/api/signal") return await handleSignal(request, env);
       if (url.pathname === "/api/price") return await handleLivePrice(request, env);
+      if (url.pathname === "/api/live-candle") return await handleLiveCandle(request, env);
       return env.ASSETS.fetch(request);
     } catch (error) {
       if (error instanceof BadRequest) return json({ error: "bad_request", message: error.message }, 400);
