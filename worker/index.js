@@ -359,6 +359,7 @@ async function handleSignal(request, env) {
     stop_reference: selected?.zone && result.action === selected.direction ? stopReference(selected.zone, selected.direction, candles, timeframe) : null,
     breakout_state: result.breakoutState,
     score,
+    candles,
     candles_used: candles.length,
     generated_at: new Date().toISOString(),
     execution: "NONE",
