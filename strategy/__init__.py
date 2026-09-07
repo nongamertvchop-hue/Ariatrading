@@ -4,7 +4,7 @@ The package keeps the two core setups stable while exposing consistent
 interfaces across strategy, forecast, backtest, execution-cost simulation,
 replay, realtime monitoring, paper simulation, journaling, walk-forward
 validation, robustness analysis, reproducible research control, ML
-meta-filter research, and experiment registry.
+meta-filter research, experiment registry, and regime diagnostics.
 """
 
 from .backtest import (
@@ -40,6 +40,7 @@ from .research_control import (
     fingerprint_candles,
 )
 from .research_runner import ControlledResearchResult, run_controlled_research
+from .regime import REGIMES, RegimeStats, classify_regime, stratify_samples
 from .robustness import RobustnessCase, RobustnessReport, RobustnessScenario, run_robustness_analysis
 from .walk_forward import WalkForwardFold, WalkForwardResult, walk_forward_backtest
 
@@ -66,4 +67,5 @@ __all__ = [
     "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest",
     "MLWalkForwardFold", "MLWalkForwardResult", "ml_walk_forward_backtest",
     "MLComparison", "compare_ml_results",
+    "REGIMES", "RegimeStats", "classify_regime", "stratify_samples",
 ]
