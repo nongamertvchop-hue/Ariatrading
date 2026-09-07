@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.12.1**
+**Current version: 0.13.1**
 
 ## Core idea
 
@@ -40,7 +40,8 @@ The project is layered so every stage can be used together without duplicating s
 20. **Execution recovery safety** — persistent order state, append-only audit chain, and fail-closed recovery consistency checks.
 21. **System readiness gate** — final fail-closed pre-execution contract combining strategy protection, data quality, portfolio risk, trade risk, position reconciliation, execution recovery, and optional ML evidence.
 22. **Paper broker simulator** — deterministic full/partial fill, rejection, disconnect/reconnect, timeout-after-accept ambiguity, idempotency and position-snapshot semantics for execution/recovery testing.
-23. **Integration facade** — `strategy.pipeline.run_research()` connects the core research stages into one consistent API.
+23. **End-to-end paper recovery** — durable multi-order lifecycle across restart, broker reconciliation, audit verification, and fail-closed corruption handling.
+24. **Portfolio risk accounting** — realized-loss and session-equity loss are combined conservatively without double counting.
 
 ## Key modules
 
@@ -84,7 +85,9 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/order_persistence.py` — crash-safe order-state snapshot persistence.
 - `strategy/execution_audit.py` — append-only hash-chain execution audit journal.
 - `strategy/execution_recovery.py` — fail-closed post-restart execution consistency gate.
+- `strategy/paper_execution_e2e.py` — end-to-end paper submission/recovery coordinator.
 - `strategy/system_gate.py` — final fail-closed pre-execution readiness contract.
+- `strategy/portfolio_risk.py` — stateful daily-loss, drawdown and consecutive-loss kill switch.
 - `adapters/mt5_feed.py` — read-only MT5 market-data adapter.
 - `adapters/paper_broker.py` — broker-like paper/demo simulator for deterministic execution tests.
 
@@ -124,169 +127,17 @@ LONG / SHORT / WAIT
                                   +---- Realtime historical replay
 
 Paper execution validation path:
-System Gate -> Order State -> Paper Broker Simulator
+System Gate -> Order State -> Persistence -> Audit -> Paper Broker
+                    |                         |
+                    +---- idempotency         +---- position snapshots
+                    +---- partial/rejected    +---- reconnect/timeout
                     |
-                    +---- idempotency
-                    +---- partial/rejected fill
-                    +---- timeout ambiguity
-                    +---- disconnect/reconnect
-                    +---- position reconciliation
-                    +---- audit/recovery tests
+                    v
+              Reconciliation -> Recovery verification -> ALLOW / HALT
 ```
 
 The realtime path uses the same strategy engine rather than a separate live strategy:
 
 `MT5 terminal -> MT5BarFeed -> RealtimeMonitor -> engine -> LONG/SHORT/WAIT -> Supervisor -> PaperSessionRunner`
 
-The MT5 adapter is read-only. It does not call `order_send()`.
-
-## ML and deep-learning research rules
-
-The ML layer is a **meta-filter**, not a third trading setup. The deterministic engine must first produce a valid LONG or SHORT signal. A model may reject or score that signal, but it cannot invent a new entry direction.
-
-All supervised evaluation must preserve chronology:
-
-- features at decision index use only candles available at or before that index;
-- future candles are used only for labels;
-- training labels must finish before the OOS boundary;
-- normalization statistics are fitted on training sequences only;
-- OOS samples never update model weights;
-- final OOS data must not be used for threshold/model selection.
-
-`strategy/deep_learning.py` provides two challenger architectures:
-
-- **LSTM** — recurrent sequence encoder for temporal dependencies.
-- **Transformer** — self-attention sequence encoder with explicit positional encoding.
-
-`strategy/deep_learning_walk_forward.py` evaluates both challengers independently on expanding chronological folds. The fold builder reuses the same deterministic strategy signal stream and label cutoff used by classical ML, so comparisons do not gain extra look-ahead through a different sampling process.
-
-`strategy/ml_model_comparison.py` is deliberately narrower: it compares HGB, LSTM and Transformer on one identical chronological train/test window, with a fixed 0.5 descriptive classification boundary. It does not choose a winner. Multiple-window results can be aggregated without ranking models.
-
-PyTorch is optional and isolated from the core strategy. Install `requirements-ml.txt` when running deep-learning research. The models are deliberately not connected to MT5 order execution.
-
-The `MLEvidencePolicy` can require both LSTM and Transformer evidence. This is intentionally a **comparison requirement**, not a winner-selection mechanism: the system records both results so a researcher can inspect untouched OOS behavior without silently promoting whichever model looks best in-sample.
-
-## ML evidence gate
-
-`evaluate_ml_evidence_gate()` is a readiness check, not a profitability claim. By default it expects trained OOS folds plus regime, feature-stability, execution-robustness, fold-level behavior, and feature-drift evidence. Deep learning can be made mandatory with `MLEvidencePolicy(require_deep_learning=True)`; when enabled, both LSTM and Transformer evidence can be required.
-
-A `READY` result means the requested evidence exists and passes structural checks. It does **not** mean the strategy is profitable or safe for live money.
-
-## System readiness gate
-
-`evaluate_system_readiness()` is the final orchestration boundary for a future execution adapter. It does not generate a signal or place an order. It fails closed unless the supplied signal is LONG/SHORT with `SAFE` protection, the realtime data is accepted, portfolio risk and trade sizing are approved, the local/broker position state is reconciled and flat for a **new entry**, and the post-restart execution recovery audit is clean.
-
-ML evidence remains optional by default because the deterministic strategy is the source of direction. A deployment policy can explicitly require `require_ml_evidence=True` without allowing the model to create a third setup or change LONG into SHORT.
-
-The gate returns both the final decision and a deterministic list of passed checks so downstream execution code can audit why the boundary was opened or denied.
-
-## Quantity safety
-
-`RiskLimits.min_quantity` is now an active hard constraint rather than metadata. Sizing is rejected when the computed size is below the configured minimum, and the minimum is checked again after maximum-quantity caps and broker quantity-step flooring. This prevents a later cap/rounding operation from silently producing an invalid broker quantity.
-
-## Timestamp-aligned MTF
-
-`build_timestamp_aligned_mtf_context()` accepts timestamped OHLC candles and a signal-candle close timestamp. A candle is usable only when:
-
-`candle_open_time + timeframe_duration <= entry_timestamp`
-
-This prevents a still-forming 1h/4h/1D candle from influencing a lower-timeframe historical decision. `run_backtest()` can inject this aligned context into scoring.
-
-## Integrated research API
-
-Use `strategy.pipeline.run_research()` when a single coherent result is preferred. It performs:
-
-1. sequential strategy backtest;
-2. optional execution-friction simulation;
-3. descriptive research metrics;
-4. chronological train/validation/out-of-sample split;
-5. bootstrap expectancy uncertainty interval.
-
-For rolling out-of-sample validation, use `strategy.walk_forward.walk_forward_backtest()`. This is an expanding-history evaluation tool, not a parameter optimizer or a claim of future profitability.
-
-The components remain separately callable for unit testing and research experiments.
-
-## Backtest entry timing
-
-`run_backtest()` exposes an explicit `entry_timing` parameter:
-
-- `signal_reference` — preserves the original historical assumption and uses the strategy confirmation reference on the signal candle.
-- `next_bar_open` — fills at the next candle's open and begins exit monitoring only after that fill candle, matching the paper-session lifecycle.
-
-The default remains `signal_reference` for backward compatibility. For research intended to mirror the realtime paper path, use `next_bar_open` consistently in both `run_backtest()` and `walk_forward_backtest()`.
-
-## Execution-cost consistency
-
-Execution price adjustments are centralized in `strategy.execution`:
-
-- `entry_price()` applies spread/slippage once to the reference fill.
-- `exit_price()` applies the opposite-side spread/slippage once at exit.
-- A risk plan can be built from an already-adjusted entry and passed to `simulate_realistic_exit(..., entry_is_effective=True)` to prevent double application.
-- Backtest and paper simulation use the same entry/exit price semantics.
-
-This keeps risk geometry and realized research economics aligned when execution friction is enabled.
-
-## Backtest and execution assumptions
-
-- Only closed historical information is used to construct zones and structure.
-- Confirmed swings require right-side confirmation candles.
-- A signal requires a separate reaction/test and confirmation sequence.
-- Historical backtest entry timing is explicit; the legacy default is the signal reference, while paper-session-compatible research uses next-bar open.
-- Paper-session entry from a realtime signal uses the next bar's open.
-- Stop is beyond the reaction zone by an adaptive buffer.
-- Default target is 2R.
-- One hypothetical paper position is allowed at a time.
-- If stop and target are both touched in one OHLC candle, stop is assumed first.
-- Execution simulation is optional and separate from strategy logic.
-- Commission is represented in price units rather than account currency.
-- No broker order is submitted anywhere in the repository.
-
-## Walk-forward validation
-
-`walk_forward_backtest()` repeatedly evaluates non-overlapping test windows. Each fold retains all earlier candles as history, while strategy decisions inside the test window only see candles available before each decision. Exit simulation is capped at the fold boundary, preventing a trade in one OOS window from consuming future observations in another window. The same explicit `entry_timing` option is propagated into each fold.
-
-This reduces a common validation mistake: reporting performance from a full-sample backtest as though it were untouched future data. Walk-forward evaluation is still historical evidence, not proof of profitability.
-
-## Realtime historical replay
-
-`replay_realtime_monitor()` feeds chronological historical prefixes into the actual `RealtimeMonitor`. The harness normalizes evaluation timestamps to deterministic replay boundaries, making repeated runs comparable while preserving the monitor's closed-bar, duplicate-suppression, forecast and supervisor logic.
-
-It is a consistency harness, not an additional strategy. Future candles are never included in the prefix for an earlier replay point.
-
-## Paper monitoring
-
-The paper session runner is deliberately non-ordering. It records each evaluated signal, fills approved signals at the next bar's open, manages the existing position before evaluating a new entry opportunity, and ignores duplicate/old candles. Journal events are append-only and can be exported as plain dictionaries for later analysis.
-
-## Paper broker simulator
-
-`adapters.paper_broker.PaperBrokerSimulator` provides deterministic execution semantics for integration testing without a network or real broker. A request can be fully filled, partially filled, rejected, or accepted while the response is lost (`TimeoutError`). Repeated client-order IDs return the original snapshot instead of creating a duplicate fill. Disconnect/reconnect behavior can be injected, and position snapshots can be queried after each event.
-
-The timeout case is especially important: the simulator records the accepted fill before raising `TimeoutError`, so recovery code must query/reconcile before retrying. The simulator is not a strategy and does not authorize real execution.
-
-## Validation
-
-The validation layer is deliberately descriptive. It reports historical behavior; it does not prove future profitability. Parameter selection should be performed on training data, checked on validation data, and finally evaluated on untouched out-of-sample data. Robustness checks should include multiple time periods, execution-cost assumptions, and conservative OHLC ambiguity handling.
-
-## Testing
-
-The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk and quantity constraints, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML model health, ML evidence readiness, fixed-window ML challenger comparison, deep-learning sequence causality, deep-learning walk-forward contracts, realtime state handling, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, paper-broker failure semantics, paper-position reconciliation semantics, order persistence/recovery, execution audit integrity, and the integrated research facade/system gate.
-
-The deep-learning implementation is optional in the default CI path because PyTorch is a large dependency. `requirements-ml.txt` provides the explicit ML environment for LSTM/Transformer experiments.
-
-## Version / continuation protocol
-
-Current version: **0.12.1**.
-
-At the start of a new chat:
-
-1. Read `VERSION.md` and this README.
-2. Inspect latest Git history and GitHub Actions status.
-3. Identify the current milestone and unfinished work.
-4. Inspect newly added files before making changes.
-5. Continue existing modules instead of recreating them.
-6. Any behavior change gets a test or an explicit reason why a test is impractical.
-7. Update the version only when the change matches semantic-versioning rules.
-
-## Important
-
-This repository is for programming practice and historical/realtime market-data research. It does not establish that a strategy is profitable. It is intentionally read-only with respect to MT5 trading actions. Any future execution architecture must remain isolated from the research engine and should only be considered after robust out-of-sample validation.
+The MT5 adapter remains read-only. There is no live order-sending implementation in this repository.
