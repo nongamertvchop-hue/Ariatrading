@@ -26,6 +26,7 @@ from .ml_features import FEATURE_NAMES, MLSample, build_signal_sample, extract_s
 from .ml_meta import MLResearchMetrics, MetaFilterModel, MetaFilterResult, chronological_train_test
 from .ml_stability import FeatureImportance, MLStabilityReport, permutation_feature_importance
 from .ml_walk_forward import MLWalkForwardFold, MLWalkForwardResult, ml_walk_forward_backtest
+from .order_state import OrderRecord, OrderState, OrderStateMachine, OrderTransition
 from .paper import CLOSED, OPEN, PaperAccount, PaperPosition, PaperTradingEngine
 from .paper_session import PaperSessionResult, PaperSessionRunner
 from .pipeline import ResearchReport, run_research
@@ -69,6 +70,7 @@ __all__ = [
     "PositionSnapshot", "LocalPositionState", "ReconciliationDecision",
     "reconcile_position", "new_entry_allowed", "FLAT",
     "TradeGuardDecision", "evaluate_trade_guard",
+    "OrderState", "OrderRecord", "OrderTransition", "OrderStateMachine",
     "ExecutionModel", "entry_price", "exit_price",
     "ExperimentRecord", "build_experiment_record",
     "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
