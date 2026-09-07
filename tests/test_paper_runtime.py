@@ -17,8 +17,8 @@ def dt(minute: int) -> datetime:
     return datetime(2026, 1, 1, 0, minute, tzinfo=timezone.utc)
 
 
-def evaluation(minute: int, action: str = LONG) -> LiveEvaluation:
-    candle = Candle(101.0, 103.0, 100.0, 102.0)
+def evaluation(minute: int, action: str = LONG, *, low: float = 100.0) -> LiveEvaluation:
+    candle = Candle(101.0, 103.0, low, 102.0)
     signal = EngineSignal(action, "confirmed", "1m", zone=PriceZone(99.0, 100.0, SUPPORT, 3))
     supervisor = SupervisorDecision(ALLOW, action == LONG, ("ok",) if action == LONG else ("blocked",))
     snapshot = MarketSnapshot(
@@ -64,6 +64,21 @@ def test_runtime_processes_automatic_paper_session():
     assert snapshot.mode is ExecutionMode.PAPER
     assert snapshot.last_bar_time == dt(2)
     assert snapshot.pending_signal is False
+
+
+def test_session_does_not_reenter_on_bar_used_for_exit():
+    monitor = FakeMonitor([evaluation(1), evaluation(2), evaluation(3, low=98.0)])
+    runtime = PaperAutomationRuntime(monitor)
+
+    runtime.step()
+    opened = runtime.step()
+    exited = runtime.step()
+
+    assert opened is not None and opened.opened is not None
+    assert exited is not None
+    assert exited.closed is not None
+    assert exited.opened is None
+    assert runtime.snapshot().closed_trades == 1
 
 
 def test_runtime_halts_on_unexpected_feed_failure():
