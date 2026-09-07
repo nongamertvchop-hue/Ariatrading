@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from strategy.engine import EngineSignal, LONG, SHORT, WAIT
+from strategy.engine import EngineSignal, LONG, WAIT
 from strategy.mtf import MultiTimeframeContext
 from strategy.mtf_paper_comparison import _MtfFilterMonitor, _metrics
 from strategy.paper_session import PaperSessionResult
@@ -91,8 +91,14 @@ def test_metrics_use_closed_trade_r_values():
 
     now = datetime(2026, 1, 1, tzinfo=timezone.utc)
     signal = JournalEvent(
-        event_id="signal-1", event_type="SIGNAL", event_time=now,
-        symbol="TEST", timeframe="15m", action=LONG,
+        event_time=now,
+        event_type="SIGNAL",
+        symbol="TEST",
+        timeframe="15m",
+        action=LONG,
+        reason="setup",
+        event_id="signal-1",
+        signal_time=now,
     )
     position = PaperPosition(
         trade_id=1, direction=LONG, signal_time=now,
