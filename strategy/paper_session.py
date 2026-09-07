@@ -60,6 +60,8 @@ class PaperSessionRunner:
 
         The runner is idempotent at the candle level: a duplicate or old
         evaluation is ignored before it can mutate the paper account or journal.
+        Signal journal identity is derived from the closed-bar timestamp, so a
+        future persistent runtime can also deduplicate across process restarts.
         """
         evaluation = self.monitor.evaluate_once(now=now)
         if evaluation is None:
@@ -75,6 +77,7 @@ class PaperSessionRunner:
             symbol=evaluation.symbol,
             timeframe=evaluation.timeframe,
             signal=evaluation.signal,
+            signal_time=bar_time,
         )
 
         # Manage an already-open position with the current closed candle first.
