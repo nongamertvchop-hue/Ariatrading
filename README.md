@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.13.1**
+**Current version: 0.13.2**
 
 ## Core idea
 
@@ -19,8 +19,8 @@ No unrelated entry patterns are added. Context layers can filter, score, or vali
 The project is layered so every stage can be used together without duplicating strategy rules:
 
 1. **Market structure** — confirmed swing highs/lows are labeled HH, HL, LH and LL, producing a structural bias.
-2. **Zone intelligence** — repeated confirmed swings form support/resistance zones.
-3. **Candle intelligence** — completed candles provide descriptive buying/selling pressure.
+2. **Zone intelligence** — repeated confirmed swings form support/resistance zones with independent, time-separated reactions and recent-break invalidation.
+3. **Candle intelligence** — completed candles provide descriptive buying/selling pressure and reject non-finite OHLC values.
 4. **Sequence engine** — APPROACH -> TEST -> RECLAIM/REJECT -> CONFIRM.
 5. **Fake-breakout engine** — fake breaks enter the explicit reclaim path; true breaks block the setup.
 6. **Multi-timeframe context** — higher/entry structure can filter and score an existing setup. Timestamp alignment prevents higher-timeframe look-ahead.
@@ -34,20 +34,22 @@ The project is layered so every stage can be used together without duplicating s
 14. **Deep-learning challengers** — optional causal LSTM and Transformer sequence models that score existing signals but cannot create direction.
 15. **Deep-learning walk-forward** — fold-by-fold expanding OOS evaluation for both LSTM and Transformer using the same signal/label chronology as classical ML.
 16. **ML evidence gate** — explicit readiness policy that can require regime, stability, robustness, behavior, drift, and both deep-learning challengers.
-17. **Realtime data** — closed-candle monitoring with duplicate suppression and nearest-zone selection.
-18. **Realtime replay** — historical harness that feeds the same realtime monitor path deterministically, without creating a second strategy.
-19. **Paper session** — next-bar paper entry, lifecycle management, and append-only event journaling.
-20. **Execution recovery safety** — persistent order state, append-only audit chain, and fail-closed recovery consistency checks.
-21. **System readiness gate** — final fail-closed pre-execution contract combining strategy protection, data quality, portfolio risk, trade risk, position reconciliation, execution recovery, and optional ML evidence.
-22. **Paper broker simulator** — deterministic full/partial fill, rejection, disconnect/reconnect, timeout-after-accept ambiguity, idempotency and position-snapshot semantics for execution/recovery testing.
-23. **End-to-end paper recovery** — durable multi-order lifecycle across restart, broker reconciliation, audit verification, and fail-closed corruption handling.
-24. **Portfolio risk accounting** — realized-loss and session-equity loss are combined conservatively without double counting.
+17. **Research provenance** — deterministic dataset, feature-order, model-config, and code-version fingerprints for reproducible ML/DL experiments.
+18. **Realtime data integrity** — strict timestamped OHLC validation for duplicates, ordering, timeframe alignment, timezone normalization, and malformed values.
+19. **Realtime data** — closed-candle monitoring with duplicate suppression and nearest-zone selection.
+20. **Realtime replay** — historical harness that feeds the same realtime monitor path deterministically, without creating a second strategy.
+21. **Paper session** — next-bar paper entry, lifecycle management, and append-only event journaling.
+22. **Execution recovery safety** — persistent order state, append-only audit chain, fail-closed recovery consistency checks, and durable multi-order restart recovery.
+23. **Broker contract safety** — normalized symbol identity, price precision, and volume min/max/step validation before the execution boundary.
+24. **System readiness gate** — final fail-closed pre-execution contract across strategy, data, portfolio risk, trade risk, broker contract, reconciliation, execution recovery, and optional ML evidence.
+25. **Paper broker simulator** — deterministic full/partial fill, rejection, disconnect/reconnect, timeout-after-accept ambiguity, idempotency and position-snapshot semantics for execution/recovery testing.
+26. **Integration facade** — `strategy.pipeline.run_research()` connects the core research stages into one consistent API.
 
 ## Key modules
 
-- `strategy/candles.py` — candle structure and descriptive pressure.
+- `strategy/candles.py` — candle structure, descriptive pressure, and OHLC input invariants.
 - `strategy/levels.py` — legacy detector kept for compatibility.
-- `strategy/levels_v2.py` — primary confirmed-swing zones.
+- `strategy/levels_v2.py` — primary confirmed-swing zones, independent reactions, and broken-zone filtering.
 - `strategy/market_structure.py` — HH/HL/LH/LL structural context.
 - `strategy/sequence.py` — primary two-setup multi-candle logic.
 - `strategy/fake_breakout.py` — breakout/reclaim classification.
@@ -58,6 +60,7 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/engine.py` — central LONG/SHORT/WAIT strategy interface.
 - `strategy/risk.py` — hypothetical risk plans and baseline exit simulation.
 - `strategy/risk_engine.py` — account-level sizing and hard risk limits, including broker minimum/maximum quantity.
+- `strategy/portfolio_risk.py` — stateful daily-loss, drawdown and consecutive-loss kill switch.
 - `strategy/backtest.py` — sequential backtest plus bounded research windows, explicit entry timing, and optional MTF/execution integration.
 - `strategy/execution.py` — research-only execution-friction simulation and centralized entry/exit price adjustments.
 - `strategy/validation.py` — research metrics and chronological validation tools.
@@ -73,9 +76,11 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/ml_model_comparison.py` — fixed-window HGB/LSTM/Transformer challenger comparison without automatic model selection.
 - `strategy/deep_learning.py` — optional PyTorch LSTM and Transformer sequence challengers.
 - `strategy/deep_learning_walk_forward.py` — fold-by-fold chronological LSTM/Transformer research.
+- `strategy/research_provenance.py` — deterministic provenance fingerprints and strict comparability checks for ML/DL artifacts.
 - `strategy/research_validation.py` — aggregated, fingerprinted research evidence.
 - `strategy/research_audit.py` — temporal and evidence consistency checks.
 - `strategy/research_gate.py` — baseline research evidence completeness gate.
+- `strategy/feed_integrity.py` — strict timestamped OHLC feed validation.
 - `strategy/realtime.py` — closed-candle realtime monitor.
 - `strategy/realtime_replay.py` — deterministic historical replay of the realtime monitor.
 - `strategy/paper.py` — deterministic single-position paper simulator.
@@ -86,8 +91,8 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/execution_audit.py` — append-only hash-chain execution audit journal.
 - `strategy/execution_recovery.py` — fail-closed post-restart execution consistency gate.
 - `strategy/paper_execution_e2e.py` — end-to-end paper submission/recovery coordinator.
+- `strategy/broker_contract.py` — symbol/price/volume contract validation.
 - `strategy/system_gate.py` — final fail-closed pre-execution readiness contract.
-- `strategy/portfolio_risk.py` — stateful daily-loss, drawdown and consecutive-loss kill switch.
 - `adapters/mt5_feed.py` — read-only MT5 market-data adapter.
 - `adapters/paper_broker.py` — broker-like paper/demo simulator for deterministic execution tests.
 
@@ -97,7 +102,7 @@ The project is layered so every stage can be used together without duplicating s
 OHLC / MT5 closed bars
         |
         v
-Timeframe normalization
+Feed integrity + timeframe normalization
         |
         v
 Confirmed S/R zones <---- Market Structure
@@ -107,7 +112,7 @@ Core Sequence Engine
 APPROACH -> TEST -> RECLAIM/REJECT -> CONFIRM
         |
         +---- Fake Breakout protection
-        +---- MTF context / look-ahead protection
+        +---- MTF look-ahead protection
         +---- Setup scoring
         |
         v
@@ -121,23 +126,34 @@ LONG / SHORT / WAIT
         |                         +---- LSTM / Transformer challengers
         |                         +---- DL walk-forward folds
         |                         +---- ML Evidence Gate
+        |                         +---- Research Provenance
         |
-        +---- Realtime path -> Supervisor -> Paper Session -> Journal
+        +---- Realtime path -> Supervisor -> System Gate -> Paper Session
                                   |
                                   +---- Realtime historical replay
 
 Paper execution validation path:
-System Gate -> Order State -> Persistence -> Audit -> Paper Broker
-                    |                         |
-                    +---- idempotency         +---- position snapshots
-                    +---- partial/rejected    +---- reconnect/timeout
-                    |
-                    v
-              Reconciliation -> Recovery verification -> ALLOW / HALT
+System Gate -> Broker Contract -> Order State -> Persistence -> Audit
+                                      |
+                                      v
+                               Paper Broker Simulator
+                                      |
+                         +------------+-------------+
+                         |                          |
+                   idempotency              fill/reject/timeout
+                         |                          |
+                         +------------+-------------+
+                                      v
+                         Position Reconciliation
+                                      |
+                                      v
+                              Recovery verification
+                                      |
+                                ALLOW / HALT
 ```
 
 The realtime path uses the same strategy engine rather than a separate live strategy:
 
-`MT5 terminal -> MT5BarFeed -> RealtimeMonitor -> engine -> LONG/SHORT/WAIT -> Supervisor -> PaperSessionRunner`
+`MT5 terminal -> MT5BarFeed -> feed integrity -> RealtimeMonitor -> engine -> LONG/SHORT/WAIT -> Supervisor -> SystemGate -> PaperSessionRunner`
 
 The MT5 adapter remains read-only. There is no live order-sending implementation in this repository.
