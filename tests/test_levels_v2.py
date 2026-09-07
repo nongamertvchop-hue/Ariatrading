@@ -1,8 +1,11 @@
+import math
+
 import pytest
 
 from strategy.levels_v2 import (
     RESISTANCE,
     SUPPORT,
+    PriceZone,
     build_zones,
     confirmed_swing_lows,
     find_support_zones,
@@ -99,3 +102,27 @@ def test_reaction_gap_can_block_a_zone_with_only_clustered_swings():
     )
 
     assert zones == []
+
+
+def test_build_zones_rejects_non_finite_prices():
+    with pytest.raises(ValueError, match="finite"):
+        build_zones([1.1000, math.nan], SUPPORT)
+
+
+def test_swing_detection_rejects_non_finite_ohlc():
+    candles = [
+        _c(1.0, 1.01, 0.99, 1.0),
+        _c(1.0, math.inf, 0.98, 0.99),
+        _c(0.99, 1.00, 0.97, 0.98),
+    ]
+
+    with pytest.raises(ValueError, match="finite"):
+        confirmed_swing_lows(candles, strength=1)
+
+
+def test_price_zone_rejects_invalid_geometry_and_kind():
+    with pytest.raises(ValueError, match="low"):
+        PriceZone(1.2, 1.1, SUPPORT, 2)
+
+    with pytest.raises(ValueError, match="kind"):
+        PriceZone(1.1, 1.2, "UNKNOWN", 2)
