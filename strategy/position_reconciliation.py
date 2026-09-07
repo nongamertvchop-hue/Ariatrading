@@ -8,7 +8,7 @@ The core LONG/SHORT strategy is intentionally untouched.
 """
 
 from dataclasses import dataclass
-from math import isfinite
+from math import isclose, isfinite
 
 from .broker_contract import SymbolContract, validate_order_contract
 
@@ -88,16 +88,27 @@ def _validate_contract_position(
     """Return a fail-closed reason when a broker position violates its contract."""
     if position.symbol != contract.symbol:
         return "broker position symbol differs from broker contract"
-    if position.average_entry_price is None:
-        return None
-    validation = validate_order_contract(
-        contract,
-        symbol=position.symbol,
-        price=position.average_entry_price,
-        quantity=position.quantity,
-    )
-    if not validation.allowed:
-        return "broker position violates symbol contract: " + validation.reason
+
+    quantity = position.quantity
+    if quantity < contract.volume_min:
+        return "broker position violates symbol contract: quantity is below broker minimum"
+    if quantity > contract.volume_max:
+        return "broker position violates symbol contract: quantity exceeds broker maximum"
+
+    steps = (quantity - contract.volume_min) / contract.volume_step
+    if not isclose(steps, round(steps), rel_tol=0.0, abs_tol=1e-9):
+        return "broker position violates symbol contract: quantity does not match broker volume step"
+
+    if position.average_entry_price is not None:
+        validation = validate_order_contract(
+            contract,
+            symbol=position.symbol,
+            price=position.average_entry_price,
+            quantity=quantity,
+        )
+        if not validation.allowed:
+            return "broker position violates symbol contract: " + validation.reason
+
     return None
 
 
@@ -113,7 +124,8 @@ def reconcile_position(
 
     Contract validation is optional so existing research callers remain
     backward compatible. When supplied, every broker position must satisfy the
-    normalized symbol/price/volume contract before reconciliation can pass.
+    normalized symbol/volume contract. Average-entry price precision is also
+    checked when the broker supplies that value.
     """
     if quantity_tolerance < 0 or not isfinite(quantity_tolerance):
         raise ValueError("quantity_tolerance must be finite and >= 0")
