@@ -6,11 +6,11 @@ from strategy.deep_learning import build_causal_sequences
 from strategy.ml_features import MLSample
 
 
-def _sample(index, label=None):
+def _sample(index, label=None, value=None):
     return MLSample(
         index=index,
         timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        features=(float(index), float(index % 3)),
+        features=(float(index) if value is None else float(value), float(index % 3)),
         label=index % 2 if label is None else label,
     )
 
@@ -26,6 +26,22 @@ def test_causal_sequences_use_only_history_and_current_target():
     assert sequences[0][-1][0] == 4.0
     assert sequences[-1][-1][0] == 6.0
     assert labels == (0, 1, 0)
+
+
+def test_future_target_mutation_cannot_change_earlier_sequences():
+    history = [_sample(i) for i in range(4)]
+    target = [_sample(i, label=i % 2) for i in range(4, 7)]
+    mutated_target = [target[0], target[1], _sample(6, label=1, value=999.0)]
+
+    original_sequences, original_labels = build_causal_sequences(history, target, sequence_length=3)
+    mutated_sequences, mutated_labels = build_causal_sequences(
+        history, mutated_target, sequence_length=3
+    )
+
+    assert original_sequences[:2] == mutated_sequences[:2]
+    assert original_labels[:2] == mutated_labels[:2]
+    assert original_sequences[2] != mutated_sequences[2]
+    assert original_labels[2] != mutated_labels[2]
 
 
 def test_sequence_builder_rejects_non_chronological_history():
