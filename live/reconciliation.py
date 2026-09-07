@@ -8,6 +8,7 @@ inconsistent state.
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from math import isclose
 from typing import Any
 
 from strategy.engine import LONG, SHORT
@@ -78,15 +79,49 @@ def reconcile_paper_state(
         closing = trade_closes[0]
         if closing.event_time < opening.event_time:
             _fail("CLOSE_BEFORE_OPEN", f"trade {trade_id} closes before it opens")
+        if closing.action != opening.action:
+            _fail("CLOSE_DIRECTION_MISMATCH", f"trade {trade_id} CLOSE direction does not match OPEN")
+        if closing.entry_price != opening.entry_price:
+            _fail("CLOSE_ENTRY_PRICE_MISMATCH", f"trade {trade_id} CLOSE entry_price does not match OPEN")
+        if closing.stop != opening.stop or closing.target != opening.target:
+            _fail("CLOSE_RISK_LEVEL_MISMATCH", f"trade {trade_id} CLOSE risk levels do not match OPEN")
+        if closing.outcome not in {"WIN", "LOSS"}:
+            _fail("CLOSE_OUTCOME_INVALID", f"trade {trade_id} CLOSE outcome must be WIN or LOSS")
+        if closing.exit_price is None or closing.r_multiple is None or closing.bars_held is None:
+            _fail("CLOSE_METADATA_MISSING", f"trade {trade_id} CLOSE is missing exit metadata")
 
-    if paper.account.closed_trades != len(closes):
+    account = paper.account
+    if account.closed_trades != len(closes):
         _fail(
             "CLOSED_TRADE_COUNT_MISMATCH",
-            f"paper closed_trades={paper.account.closed_trades} but journal CLOSE count={len(closes)}",
+            f"paper closed_trades={account.closed_trades} but journal CLOSE count={len(closes)}",
         )
+
+    close_wins = sum(event.outcome == "WIN" for event in (items[0] for items in closes.values()))
+    close_losses = sum(event.outcome == "LOSS" for event in (items[0] for items in closes.values()))
+    if account.wins != close_wins or account.losses != close_losses:
+        _fail(
+            "WIN_LOSS_COUNT_MISMATCH",
+            f"paper wins/losses={account.wins}/{account.losses} but journal={close_wins}/{close_losses}",
+        )
+
+    journal_realized_r = sum(float(event.r_multiple) for event in (items[0] for items in closes.values()))
+    if not isclose(account.realized_r, journal_realized_r, rel_tol=1e-12, abs_tol=1e-12):
+        _fail(
+            "REALIZED_R_MISMATCH",
+            f"paper realized_r={account.realized_r} but journal sum={journal_realized_r}",
+        )
+    if not isclose(account.balance, account.initial_balance + account.realized_r, rel_tol=1e-12, abs_tol=1e-12):
+        _fail("BALANCE_MISMATCH", "paper balance is inconsistent with initial_balance + realized_r")
 
     position = paper.position
     unmatched_opens = {trade_id: items[0] for trade_id, items in opens.items() if trade_id not in closes}
+    all_trade_ids = set(opens) | set(closes)
+    if all_trade_ids:
+        next_trade_id = paper.to_state().get("next_trade_id")
+        if not isinstance(next_trade_id, int) or next_trade_id <= max(all_trade_ids):
+            _fail("NEXT_TRADE_ID_NOT_MONOTONIC", "next_trade_id must be greater than every journal trade_id")
+
     if position is None:
         if unmatched_opens:
             trade_id = next(iter(unmatched_opens))
