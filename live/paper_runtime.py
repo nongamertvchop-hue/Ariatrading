@@ -4,10 +4,9 @@ This is the runtime boundary for the current automation phase. It continuously
 polls an existing RealtimeMonitor and drives PaperSessionRunner. It never calls
 MT5 order APIs and cannot place real broker orders.
 
-The runtime is intentionally thin: strategy, data integrity, paper lifecycle,
-and journaling stay in their existing modules. The runtime only coordinates
-when they run and exposes a stable operational state for a future supervisor
-or UI.
+Runtime checkpoints persist the paper/session state so a process restart does
+not forget the last processed candle, pending next-bar signal, account, open
+position, or journal identities.
 """
 
 from __future__ import annotations
@@ -19,8 +18,12 @@ from math import isfinite
 from time import sleep
 from typing import Callable
 
+from live.state_store import JsonRuntimeStateStore
 from strategy.paper_session import PaperSessionResult, PaperSessionRunner
 from strategy.realtime import RealtimeMonitor
+
+
+RUNTIME_STATE_VERSION = 1
 
 
 class ExecutionMode(str, Enum):
@@ -77,6 +80,7 @@ class PaperAutomationRuntime:
         session: PaperSessionRunner | None = None,
         config: PaperRuntimeConfig | None = None,
         mode: ExecutionMode = ExecutionMode.PAPER,
+        state_store: JsonRuntimeStateStore | None = None,
     ) -> None:
         try:
             normalized_mode = ExecutionMode(mode)
@@ -90,6 +94,7 @@ class PaperAutomationRuntime:
         self.session = session or PaperSessionRunner(monitor)
         self.config = config or PaperRuntimeConfig()
         self.mode = normalized_mode
+        self.state_store = state_store
         self._state = RuntimeState.STOPPED
         self._last_error: str | None = None
         self._stop_requested = False
@@ -117,6 +122,50 @@ class PaperAutomationRuntime:
             last_error=self._last_error,
         )
 
+    def checkpoint(self) -> dict:
+        """Build a versioned checkpoint without writing it."""
+        return {
+            "version": RUNTIME_STATE_VERSION,
+            "mode": self.mode.value,
+            "state": self._state.value,
+            "last_error": self._last_error,
+            "session": self.session.to_state(),
+        }
+
+    def save_checkpoint(self) -> None:
+        """Atomically persist the current runtime state.
+
+        A configured state store is required. Persistence failures are raised
+        instead of being swallowed because continuing after an unpersisted
+        state change could create duplicate paper trades after restart.
+        """
+        if self.state_store is None:
+            raise RuntimeError("no runtime state store configured")
+        self.state_store.save(self.checkpoint())
+
+    def restore_checkpoint(self) -> RuntimeSnapshot:
+        """Load and validate a checkpoint, leaving the runtime STOPPED."""
+        if self.state_store is None:
+            raise RuntimeError("no runtime state store configured")
+        state = self.state_store.load()
+        try:
+            if state.get("version") != RUNTIME_STATE_VERSION:
+                raise ValueError("unsupported or invalid runtime state version")
+            if state.get("mode") != ExecutionMode.PAPER.value:
+                raise ValueError("checkpoint execution mode is not PAPER")
+            self.session.restore_state(state.get("session"))
+            raw_error = state.get("last_error")
+            if raw_error is not None and not isinstance(raw_error, str):
+                raise ValueError("checkpoint last_error is invalid")
+            self._last_error = raw_error
+            self._state = RuntimeState.STOPPED
+            self._stop_requested = False
+        except Exception as exc:
+            self._last_error = f"checkpoint restore failed: {type(exc).__name__}: {exc}"
+            self._state = RuntimeState.HALTED
+            raise
+        return self.snapshot()
+
     def stop(self) -> None:
         """Request a clean stop; no new iteration is started afterwards."""
         self._stop_requested = True
@@ -133,6 +182,11 @@ class PaperAutomationRuntime:
 
         try:
             result = self.session.process_once(now=now)
+            # Persist after every successful state transition. This is more
+            # expensive than batching but materially reduces restart ambiguity
+            # during the current research/paper phase.
+            if self.state_store is not None:
+                self.save_checkpoint()
         except Exception as exc:
             self._last_error = f"{type(exc).__name__}: {exc}"
             if self.config.fail_closed:
@@ -166,6 +220,8 @@ class PaperAutomationRuntime:
         finally:
             if self._state is RuntimeState.RUNNING:
                 self._state = RuntimeState.STOPPED
+                if self.state_store is not None:
+                    self.save_checkpoint()
         return self.snapshot()
 
 
