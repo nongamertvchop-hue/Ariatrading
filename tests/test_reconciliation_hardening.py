@@ -81,15 +81,41 @@ def test_reconciliation_rejects_realized_r_mismatch():
 
 
 def test_reconciliation_rejects_next_trade_id_not_ahead_of_journal():
-    paper, position = closed_trade()
+    paper, first_closed = closed_trade()
     journal = PaperTradeJournal()
-    forged = replace(position, trade_id=99)
-    journal.record_open(event_time=forged.entry_time, symbol="EURUSD", timeframe="1m", position=opened_version(forged))
+
+    first_open = opened_version(first_closed)
+    journal.record_open(
+        event_time=first_open.entry_time,
+        symbol="EURUSD",
+        timeframe="1m",
+        position=replace(first_open, trade_id=99),
+    )
+    journal.record_close(
+        event_time=first_closed.exit_time,
+        symbol="EURUSD",
+        timeframe="1m",
+        position=replace(first_closed, trade_id=99),
+    )
+
+    second = paper.open_from_signal(
+        signal(),
+        signal_time=dt(3),
+        entry_time=dt(4),
+        entry_price=103.0,
+    )
+    assert second is not None
+    journal.record_open(
+        event_time=second.entry_time,
+        symbol="EURUSD",
+        timeframe="1m",
+        position=second,
+    )
 
     with pytest.raises(ReconciliationError, match="NEXT_TRADE_ID_NOT_MONOTONIC"):
         reconcile_paper_state(
             paper=paper,
             journal=journal,
             pending_signal=None,
-            last_processed_bar_time=dt(3),
+            last_processed_bar_time=dt(4),
         )
