@@ -27,8 +27,11 @@ def test_mtf_advisor_page_is_filter_not_new_strategy():
 
 def test_mtf_advisor_page_is_simulation_only_and_local_journaled():
     html = PAGE.read_text(encoding="utf-8")
-    assert "Paper Risk Planner" in html
-    assert "Paper" in html
-    assert "ไม่มีการส่งคำสั่งไป broker" in html
-    assert "localStorage" in html
-    assert "aria-signal-journal-v1" in html
+    for marker in (
+        "Paper Risk Planner",
+        "localStorage",
+        "aria-signal-journal-v1",
+        "ไม่ส่งคำสั่งไป broker",
+        "ข้อมูลตลาดเป็นข้อมูลจริงสำหรับการวิจัย/ทดลองเท่านั้น",
+    ):
+        assert marker in html, f"missing simulation-only marker: {marker}"
