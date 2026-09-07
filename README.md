@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.10.0**
+**Current version: 0.11.0**
 
 ## Core idea
 
@@ -30,14 +30,15 @@ The project is layered so every stage can be used together without duplicating s
 10. **Research validation** — chronological splits, R-based metrics, profit factor, drawdown and bootstrap expectancy uncertainty.
 11. **Walk-forward validation** — expanding-history, rolling out-of-sample windows with hard test boundaries.
 12. **ML meta-filter research** — chronological classical ML filtering of existing LONG/SHORT signals only.
-13. **ML diagnostics** — feature drift, fold-level behavior, permutation stability, and evidence consistency checks.
+13. **ML diagnostics** — feature drift, fold-level behavior, model health/calibration, permutation stability, and evidence consistency checks.
 14. **Deep-learning challengers** — optional causal LSTM and Transformer sequence models that score existing signals but cannot create direction.
 15. **ML evidence gate** — explicit readiness policy that can require regime, stability, robustness, behavior, drift, and both deep-learning challengers.
 16. **Realtime data** — closed-candle monitoring with duplicate suppression and nearest-zone selection.
 17. **Realtime replay** — historical harness that feeds the same realtime monitor path deterministically, without creating a second strategy.
 18. **Paper session** — next-bar paper entry, lifecycle management, and append-only event journaling.
 19. **Execution recovery safety** — persistent order state, append-only audit chain, and fail-closed recovery consistency checks.
-20. **Integration facade** — `strategy.pipeline.run_research()` connects the core research stages into one consistent API.
+20. **System readiness gate** — final fail-closed pre-execution contract combining strategy protection, data quality, portfolio risk, trade risk, position reconciliation, execution recovery, and optional ML evidence.
+21. **Integration facade** — `strategy.pipeline.run_research()` connects the core research stages into one consistent API.
 
 ## Key modules
 
@@ -53,6 +54,7 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/scoring.py` — explainable setup quality score.
 - `strategy/engine.py` — central LONG/SHORT/WAIT strategy interface.
 - `strategy/risk.py` — hypothetical risk plans and baseline exit simulation.
+- `strategy/risk_engine.py` — account-level sizing and hard risk limits, including broker minimum/maximum quantity.
 - `strategy/backtest.py` — sequential backtest plus bounded research windows, explicit entry timing, and optional MTF/execution integration.
 - `strategy/execution.py` — research-only execution-friction simulation and centralized entry/exit price adjustments.
 - `strategy/validation.py` — research metrics and chronological validation tools.
@@ -62,6 +64,7 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/ml_walk_forward.py` — leakage-safe expanding-history ML evaluation.
 - `strategy/ml_drift.py` — training-boundary feature distribution drift diagnostics.
 - `strategy/ml_behavior.py` — fold-by-fold ML filter impact diagnostics.
+- `strategy/ml_model_health.py` — descriptive performance, calibration, and score-distribution diagnostics.
 - `strategy/ml_stability.py` — permutation feature stability diagnostics.
 - `strategy/ml_evidence_gate.py` — explicit ML evidence completeness/readiness policy.
 - `strategy/deep_learning.py` — optional PyTorch LSTM and Transformer sequence challengers.
@@ -77,6 +80,7 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/order_persistence.py` — crash-safe order-state snapshot persistence.
 - `strategy/execution_audit.py` — append-only hash-chain execution audit journal.
 - `strategy/execution_recovery.py` — fail-closed post-restart execution consistency gate.
+- `strategy/system_gate.py` — final fail-closed pre-execution readiness contract.
 - `adapters/mt5_feed.py` — read-only MT5 market-data adapter.
 
 ## System flow
@@ -105,7 +109,7 @@ LONG / SHORT / WAIT
         |                         |
         |                         +---- Walk-forward OOS
         |                         +---- Classical ML meta-filter
-        |                         +---- Drift / behavior / stability
+        |                         +---- Drift / behavior / stability / health
         |                         +---- LSTM / Transformer challengers
         |                         +---- ML Evidence Gate
         |
@@ -114,7 +118,12 @@ LONG / SHORT / WAIT
                                   +---- Realtime historical replay
 
 Execution safety path:
-Order State -> Crash-safe Persistence -> Audit Hash Chain -> Recovery Gate
+Position Reconciliation + Portfolio Risk + Trade Risk
+        |
+        +---- Order State -> Crash-safe Persistence -> Audit Hash Chain
+        |
+        v
+System Readiness Gate -> future execution boundary
 ```
 
 The realtime path uses the same strategy engine rather than a separate live strategy:
@@ -150,6 +159,14 @@ The `MLEvidencePolicy` can require both LSTM and Transformer evidence. This is i
 `evaluate_ml_evidence_gate()` is a readiness check, not a profitability claim. By default it expects trained OOS folds plus regime, feature-stability, execution-robustness, fold-level behavior, and feature-drift evidence. Deep learning can be made mandatory with `MLEvidencePolicy(require_deep_learning=True)`; when enabled, both LSTM and Transformer evidence can be required.
 
 A `READY` result means the requested evidence exists and passes structural checks. It does **not** mean the strategy is profitable or safe for live money.
+
+## System readiness gate
+
+`evaluate_system_readiness()` is the final orchestration boundary for a future execution adapter. It does not generate a signal or place an order. It fails closed unless the supplied signal is LONG/SHORT with `SAFE` protection, the realtime data is accepted, portfolio risk and trade sizing are approved, the local/broker position state is reconciled, and the post-restart execution recovery audit is clean.
+
+ML evidence remains optional by default because the deterministic strategy is the source of direction. A deployment policy can explicitly require `require_ml_evidence=True` without allowing the model to create a third setup or change LONG into SHORT.
+
+The gate returns both the final decision and a deterministic list of passed checks so downstream execution code can audit why the boundary was opened or denied.
 
 ## Timestamp-aligned MTF
 
@@ -230,13 +247,13 @@ The validation layer is deliberately descriptive. It reports historical behavior
 
 ## Testing
 
-The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML evidence readiness, realtime state handling, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, order persistence/recovery, execution audit integrity, and the integrated research facade.
+The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk and quantity constraints, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML model health, ML evidence readiness, realtime state handling, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, order persistence/recovery, execution audit integrity, and the integrated research facade/system gate.
 
 The deep-learning implementation is optional in the default CI path because PyTorch is a large dependency. `requirements-ml.txt` provides the explicit ML environment for LSTM/Transformer experiments.
 
 ## Version / continuation protocol
 
-Current version: **0.10.0**.
+Current version: **0.11.0**.
 
 At the start of a new chat:
 
