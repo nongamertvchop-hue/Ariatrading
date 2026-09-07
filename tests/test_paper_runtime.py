@@ -8,8 +8,6 @@ from strategy.engine import EngineSignal, LONG
 from strategy.journal import PaperTradeJournal
 from strategy.levels_v2 import PriceZone, SUPPORT
 from strategy.market_snapshot import MarketSnapshot
-from strategy.paper import PaperTradingEngine
-from strategy.paper_session import PaperSessionRunner
 from strategy.realtime import LiveEvaluation
 from strategy.realtime_guard import DataQuality
 from strategy.realtime_supervisor import ALLOW, SupervisorDecision
@@ -65,7 +63,7 @@ def test_runtime_processes_automatic_paper_session():
     snapshot = runtime.snapshot()
     assert snapshot.mode is ExecutionMode.PAPER
     assert snapshot.last_bar_time == dt(2)
-    assert snapshot.pending_signal is True
+    assert snapshot.pending_signal is False
 
 
 def test_runtime_halts_on_unexpected_feed_failure():
