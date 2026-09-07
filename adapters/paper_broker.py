@@ -182,7 +182,9 @@ class PaperBrokerSimulator:
         if new_quantity == 0.0:
             self._positions.pop(order.symbol, None)
             return
-        if current.net_quantity == 0.0 or (current.net_quantity > 0) == (signed_quantity > 0):
+
+        same_direction = current.net_quantity != 0.0 and (current.net_quantity > 0) == (signed_quantity > 0)
+        if same_direction:
             total_abs = abs(current.net_quantity) + abs(signed_quantity)
             weighted_price = (
                 abs(current.net_quantity) * current.average_price
@@ -195,11 +197,17 @@ class PaperBrokerSimulator:
             )
             return
 
-        self._positions[order.symbol] = replace(
-            current,
-            net_quantity=new_quantity,
-            average_price=order.average_fill_price,
-        )
+        # Opposite-side fills reduce an existing position. The remaining
+        # quantity keeps the original entry average; a true reversal starts a
+        # fresh position at the new fill price.
+        if (current.net_quantity > 0) == (new_quantity > 0):
+            self._positions[order.symbol] = replace(current, net_quantity=new_quantity)
+        else:
+            self._positions[order.symbol] = PaperPositionSnapshot(
+                symbol=order.symbol,
+                net_quantity=new_quantity,
+                average_price=order.average_fill_price,
+            )
 
     @staticmethod
     def _validate_request(request: PaperOrderRequest) -> None:
