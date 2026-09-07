@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from strategy.backtest import run_backtest
+from strategy.ml_evaluation import compare_ml_results
 from strategy.ml_walk_forward import MLWalkForwardFold, ml_walk_forward_backtest
 
 
@@ -53,6 +54,44 @@ def test_ml_walk_forward_runs_without_future_fold_training():
         assert fold.test_labeled_samples >= 0
         assert fold.train_samples >= 0
         assert fold.train_positive <= fold.train_samples
+
+
+def test_ml_comparison_is_descriptive_and_non_optimizing():
+    result = ml_walk_forward_backtest(
+        make_candles(),
+        "15m",
+        history_bars=40,
+        test_bars=20,
+        step_bars=20,
+        horizon_bars=3,
+    )
+    comparison = compare_ml_results(
+        result.baseline_metrics,
+        result.filtered_metrics,
+        baseline_trade_count=len(result.baseline_trades),
+        filtered_trade_count=len(result.filtered_trades),
+    )
+    assert comparison.trades_removed >= 0
+    assert 0.0 <= comparison.trade_reduction_ratio <= 1.0
+    assert comparison.filtered_trade_count <= comparison.baseline_trade_count
+
+
+def test_ml_comparison_rejects_impossible_counts():
+    result = ml_walk_forward_backtest(
+        make_candles(),
+        "15m",
+        history_bars=40,
+        test_bars=20,
+        step_bars=20,
+        horizon_bars=3,
+    )
+    with pytest.raises(ValueError, match="cannot exceed"):
+        compare_ml_results(
+            result.baseline_metrics,
+            result.filtered_metrics,
+            baseline_trade_count=1,
+            filtered_trade_count=2,
+        )
 
 
 def test_ml_walk_forward_validation():
