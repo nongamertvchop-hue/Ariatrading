@@ -32,7 +32,7 @@ const LL = "LL";
 const TIMEFRAME_CONFIG = Object.freeze({
   "1m": { interval: "1min", lookback: 30, rangeMultiplier: 0.80, minZoneDistance: 0.00005, maxZoneDistance: 0.00100, confirmationMultiplier: 0.20 },
   "5m": { interval: "5min", lookback: 30, rangeMultiplier: 0.80, minZoneDistance: 0.00008, maxZoneDistance: 0.00150, confirmationMultiplier: 0.20 },
-  "15m": { interval: "15min", lookback: 30, rangeMultiplier: 0.85, minZoneDistance: 0.00010, maxZoneDistance: 0.00250, confirmationMultiplier: 0.20 },
+  "15m": { interval: "15min", lookback: 30, rangeMultiplier: 0.35, minZoneDistance: 0.00010, maxZoneDistance: 0.00250, confirmationMultiplier: 0.20 },
   "30m": { interval: "30min", lookback: 30, rangeMultiplier: 0.85, minZoneDistance: 0.00012, maxZoneDistance: 0.00350, confirmationMultiplier: 0.20 },
   "1h": { interval: "1h", lookback: 30, rangeMultiplier: 0.90, minZoneDistance: 0.00015, maxZoneDistance: 0.00500, confirmationMultiplier: 0.20 },
   "4h": { interval: "4h", lookback: 30, rangeMultiplier: 0.95, minZoneDistance: 0.00020, maxZoneDistance: 0.01000, confirmationMultiplier: 0.20 },
