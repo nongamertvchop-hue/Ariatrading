@@ -3,8 +3,8 @@
 The package keeps the two core setups stable while exposing consistent
 interfaces across strategy, forecast, backtest, execution-cost simulation,
 replay, realtime monitoring, paper simulation, journaling, walk-forward
-validation, robustness analysis, reproducible research control, and ML
-meta-filter research.
+validation, robustness analysis, reproducible research control, ML
+meta-filter research, and experiment registry.
 """
 
 from .backtest import (
@@ -16,6 +16,7 @@ from .backtest import (
 )
 from .engine import EngineSignal, LONG, SHORT, WAIT, evaluate_long, evaluate_short
 from .execution import ExecutionModel, entry_price, exit_price
+from .experiment_registry import ExperimentRecord, build_experiment_record
 from .forecast import ForecastResult, HorizonForecast, ScenarioForecast, forecast
 from .journal import JournalEvent, PaperTradeJournal
 from .market_snapshot import MarketSnapshot
@@ -45,6 +46,7 @@ from .walk_forward import WalkForwardFold, WalkForwardResult, walk_forward_backt
 __all__ = [
     "EngineSignal", "LONG", "SHORT", "WAIT", "evaluate_long", "evaluate_short",
     "ExecutionModel", "entry_price", "exit_price",
+    "ExperimentRecord", "build_experiment_record",
     "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
     "JournalEvent", "PaperTradeJournal",
     "MarketSnapshot", "ReplayPoint", "ReplayResult", "replay_forecasts",
