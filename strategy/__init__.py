@@ -3,7 +3,7 @@
 The package keeps the two core setups stable while exposing consistent
 interfaces across strategy, forecast, backtest, execution-cost simulation,
 replay, realtime monitoring, paper simulation, journaling, walk-forward
-validation, and research metrics.
+validation, robustness analysis, and research metrics.
 """
 
 from .backtest import (
@@ -25,6 +25,7 @@ from .realtime_guard import DataQuality, RealtimeGuard, expected_closed_bar_open
 from .realtime_replay import RealtimeReplayResult, replay_realtime_monitor
 from .realtime_supervisor import ALLOW, SupervisorDecision, supervise
 from .replay import ReplayPoint, ReplayResult, replay_forecasts
+from .robustness import RobustnessCase, RobustnessReport, RobustnessScenario, run_robustness_analysis
 from .walk_forward import WalkForwardFold, WalkForwardResult, walk_forward_backtest
 
 __all__ = [
@@ -40,5 +41,6 @@ __all__ = [
     "ENTRY_TIMING_SIGNAL_REFERENCE", "ENTRY_TIMING_NEXT_BAR_OPEN",
     "CLOSED", "OPEN", "PaperAccount", "PaperPosition", "PaperTradingEngine",
     "PaperSessionResult", "PaperSessionRunner",
+    "RobustnessScenario", "RobustnessCase", "RobustnessReport", "run_robustness_analysis",
     "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest",
 ]
