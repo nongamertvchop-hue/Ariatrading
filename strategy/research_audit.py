@@ -28,7 +28,12 @@ def audit_validation_evidence(
     evidence: ValidationEvidence,
     ml_result: MLWalkForwardResult,
 ) -> ResearchAuditReport:
-    """Check evidence consistency and basic anti-leakage invariants."""
+    """Check evidence consistency and basic anti-leakage invariants.
+
+    Fold boundaries are checked against the walk-forward configuration so a
+    malformed or manually altered result cannot silently present overlapping
+    or reversed OOS windows as valid evidence.
+    """
     findings: list[str] = []
     errors: list[str] = []
 
@@ -42,18 +47,41 @@ def audit_validation_evidence(
         errors.append("ML trained-fold count disagrees with evidence")
 
     folds = tuple(ml_result.folds)
+    previous_test_start = None
     previous_test_end = None
-    for fold in folds:
+    for expected_index, fold in enumerate(folds, start=1):
+        if fold.fold_index != expected_index:
+            errors.append(
+                f"fold ordering/index mismatch at expected fold {expected_index}"
+            )
+        if fold.test_start < ml_result.history_bars:
+            errors.append(f"fold {fold.fold_index} starts before history window")
+        if fold.test_end <= fold.test_start:
+            errors.append(f"fold {fold.fold_index} has invalid test boundaries")
+        if previous_test_start is not None and fold.test_start <= previous_test_start:
+            errors.append("OOS fold starts are not strictly increasing")
+        if previous_test_end is not None:
+            if fold.test_start < previous_test_end:
+                errors.append("OOS test windows overlap")
+            if fold.test_start - previous_test_start != ml_result.step_bars:
+                errors.append("OOS fold spacing disagrees with step_bars")
         if fold.train_samples < 0 or fold.test_labeled_samples < 0:
             errors.append(f"fold {fold.fold_index} has negative sample count")
         if fold.train_positive < 0 or fold.train_positive > fold.train_samples:
             errors.append(f"fold {fold.fold_index} has invalid positive-label count")
-        if previous_test_end is not None and fold.fold_index > 1:
-            # Fold ordering is validated by the result producer; here we only
-            # reject an explicitly reversed OOS sequence.
-            if getattr(fold, "fold_index", 0) <= 0:
-                errors.append("OOS fold indices must be positive")
-        previous_test_end = fold.fold_index
+        baseline_signal_count = len(fold.baseline.signals)
+        if fold.test_labeled_samples > baseline_signal_count:
+            errors.append(
+                f"fold {fold.fold_index} has more labeled test samples than signals"
+            )
+        if fold.model_trained and not (
+            fold.train_samples >= 2 and 0 < fold.train_positive < fold.train_samples
+        ):
+            errors.append(
+                f"fold {fold.fold_index} is marked trained without two-class training data"
+            )
+        previous_test_start = fold.test_start
+        previous_test_end = fold.test_end
 
     threshold = ml.get("threshold")
     if not isinstance(threshold, (int, float)) or not isfinite(float(threshold)):
@@ -62,7 +90,7 @@ def audit_validation_evidence(
         errors.append("ML threshold must be between 0 and 1")
 
     horizon = ml.get("horizon_bars")
-    if not isinstance(horizon, int) or horizon <= 0:
+    if not isinstance(horizon, int) or isinstance(horizon, bool) or horizon <= 0:
         errors.append("ML label horizon must be a positive integer")
 
     if evidence.stability is None:
