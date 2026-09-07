@@ -1,0 +1,4 @@
+# Optional research dependencies. Core strategy does not require PyTorch.
+scikit-learn>=1.5,<2
+# CPU wheels are preferred for mobile/cloud research environments.
+torch>=2.4,<3
