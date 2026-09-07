@@ -2,14 +2,15 @@
 
 The package keeps the two core setups stable while exposing consistent
 interfaces across strategy, forecast, backtest, execution-cost simulation,
-replay, realtime monitoring, paper simulation, journaling, walk-forward
-validation, robustness analysis, reproducible research control, ML
-meta-filter research, experiment registry, regime diagnostics, ML feature
-drift diagnostics, ML OOS behavior diagnostics, ML model health diagnostics,
-deep-learning challenger models, deep-learning walk-forward research,
-aggregated research evidence, research-gate completeness checks, execution
-recovery, paper execution conformance, broker symbol-contract validation,
-research provenance, feed integrity, and the final system readiness gate.
+replay, realtime monitoring, paper simulation, deterministic signal identity,
+journaling, walk-forward validation, robustness analysis, reproducible research
+control, ML meta-filter research, experiment registry, regime diagnostics, ML
+feature drift diagnostics, ML OOS behavior diagnostics, ML model health
+diagnostics, deep-learning challenger models, deep-learning walk-forward
+research, aggregated research evidence, research-gate completeness checks,
+execution recovery, paper execution conformance, broker symbol-contract
+validation, research provenance, feed integrity, and the final system readiness
+gate.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
@@ -23,7 +24,7 @@ from .execution_recovery import ExecutionRecoveryDecision, ExecutionRecoveryRepo
 from .experiment_registry import ExperimentRecord, build_experiment_record
 from .feed_integrity import FeedIntegrityReport, validate_feed_batch
 from .forecast import ForecastResult, HorizonForecast, ScenarioForecast, forecast
-from .journal import JournalEvent, PaperTradeJournal
+from .journal import JournalEvent, PaperTradeJournal, signal_event_id
 from .market_snapshot import MarketSnapshot
 from .ml_behavior import MLBehaviorFold, MLBehaviorReport, analyze_ml_behavior
 from .ml_drift import FeatureDrift, MLDriftReport, analyze_feature_drift
@@ -78,7 +79,7 @@ __all__ = [
     "ExecutionModel", "entry_price", "exit_price",
     "ExperimentRecord", "build_experiment_record",
     "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
-    "JournalEvent", "PaperTradeJournal", "MarketSnapshot", "ReplayPoint", "ReplayResult", "replay_forecasts",
+    "JournalEvent", "PaperTradeJournal", "signal_event_id", "MarketSnapshot", "ReplayPoint", "ReplayResult", "replay_forecasts",
     "DataQuality", "RealtimeGuard", "expected_closed_bar_open", "RealtimeReplayResult", "replay_realtime_monitor",
     "ALLOW", "SupervisorDecision", "supervise", "ResearchReport", "run_research",
     "BacktestResult", "run_backtest", "run_all_timeframes", "ENTRY_TIMING_SIGNAL_REFERENCE", "ENTRY_TIMING_NEXT_BAR_OPEN",
