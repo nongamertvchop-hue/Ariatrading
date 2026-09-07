@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.12.0**
+Current version: **0.12.1**
 
 ## Versioning rule
 
@@ -15,7 +15,7 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.12.0
+## Current milestone — 0.12.1
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
@@ -37,6 +37,7 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - New-entry readiness now explicitly requires the reconciled broker state to be flat; a safely reconciled existing position cannot accidentally pass a new-entry gate.
 - `RiskLimits.min_quantity` is enforced as a hard broker-quantity constraint both before and after a maximum-quantity cap/step floor.
 - ML evidence drift diagnostics now fail closed on every non-finite statistic.
+- A deterministic paper-broker simulator now models full/partial fill, rejection, connection loss, timeout-after-accept ambiguity, idempotent client-order replay, and position snapshots for reconciliation tests. It is fully isolated from MT5 and cannot place real orders.
 - MT5 integration remains read-only; no order execution is implemented.
 
 ## Next milestones
@@ -46,6 +47,7 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - Compare classical ML, LSTM and Transformer only on identical untouched OOS windows; never select a winner using the final OOS window.
 - Route all future live candidates through the system readiness gate before any broker adapter is permitted to act.
 - Add stronger adversarial feed tests, broker-symbol contract checks, and execution-friction sensitivity reports.
+- Extend the paper-broker simulator into an end-to-end execution/recovery conformance harness.
 - Cross-check realtime monitoring against deterministic historical replay continuously.
 
 ### 1.0.0 — Only after validation
