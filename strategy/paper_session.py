@@ -80,10 +80,14 @@ class PaperSessionRunner:
             signal_time=bar_time,
         )
 
-        # Manage an already-open position with the current closed candle first.
+        # Snapshot whether a position existed before this candle. If it did,
+        # this candle is reserved for exit management; opening a pending signal
+        # after inspecting its OHLC would otherwise create same-bar look-ahead.
+        had_position_at_bar_start = self.paper.position is not None
+
         closed = None
         close_event = None
-        if self.paper.position is not None:
+        if had_position_at_bar_start:
             bar = {
                 "time": bar_time,
                 "open": evaluation.snapshot.candle.open,
@@ -102,13 +106,13 @@ class PaperSessionRunner:
 
         # A signal from the immediately preceding evaluation can fill only now.
         # The fill uses the current bar's OPEN, because the signal was known only
-        # from the previous completed bar. Using the current close would consume
-        # information that was unavailable at the decision boundary.
+        # from the previous completed bar. Never fill it on a bar that already
+        # contained an exit decision for a position held at the bar's start.
         opened = None
         open_event = None
         pending = self._pending_signal
         self._pending_signal = None
-        if pending is not None and self.paper.position is None:
+        if pending is not None and not had_position_at_bar_start and self.paper.position is None:
             signal = pending.signal
             if signal.action in {LONG, SHORT}:
                 opened = self.paper.open_from_signal(
