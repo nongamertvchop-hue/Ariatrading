@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.10.0**
+Current version: **0.11.0**
 
 ## Versioning rule
 
@@ -15,7 +15,7 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.10.0
+## Current milestone — 0.11.0
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
@@ -29,20 +29,23 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - A deterministic realtime replay harness feeds historical prefixes into the actual `RealtimeMonitor` path without introducing a second strategy implementation.
 - Paper monitoring uses a next-bar-open fill model, single-position lifecycle management, duplicate-bar protection, and append-only SIGNAL/OPEN/CLOSE journaling.
 - Package exports expose the main strategy, backtest timing, execution helpers, paper, replay, and walk-forward research APIs.
-- ML research now includes feature drift diagnostics, fold-level OOS behavior diagnostics, and an explicit evidence-readiness policy that can require regime, stability, robustness, behavior, and drift evidence.
-- Optional PyTorch research now provides causal LSTM and Transformer sequence models as challenger/meta-filters. They cannot create trade direction and are not connected to broker execution.
-- Deep-learning normalization is fitted on training sequences only, test sequences remain untouched during optimization, and Transformer sequences include explicit temporal positional encoding.
+- ML research includes feature drift diagnostics, fold-level OOS behavior diagnostics, model-health/calibration diagnostics, and an explicit evidence-readiness policy that can require regime, stability, robustness, behavior, drift, and deep-learning challenger evidence.
+- Optional PyTorch research provides causal LSTM and Transformer sequence models as challenger/meta-filters. They cannot create trade direction and are not connected to broker execution.
+- Deep-learning normalization is fitted on training sequences only, test sequences remain untouched during optimization, and Transformer positional encoding is robust to odd hidden dimensions.
+- The new system readiness gate combines strategy protection, realtime data quality, portfolio risk, trade risk, position reconciliation, execution recovery, and optional ML evidence into one fail-closed pre-execution contract.
+- `RiskLimits.min_quantity` is now enforced as a hard broker-quantity constraint both before and after a maximum-quantity cap/step floor.
 - MT5 integration remains read-only; no order execution is implemented.
 
 ## Next milestones
 
-### 0.10.x — ML and research hardening
+### 0.11.x — production-boundary hardening
 - Add fold-by-fold deep-learning walk-forward orchestration for LSTM and Transformer challengers.
 - Add persistent deep-learning experiment fingerprints and model configuration provenance.
-- Compare classical ML, LSTM and Transformer only on untouched OOS evidence; never select a winner using the final OOS window.
-- Add adversarial data-quality tests and execution-friction sensitivity reports.
-- Cross-check realtime monitoring against deterministic historical replay.
+- Compare classical ML, LSTM and Transformer only on identical untouched OOS windows; never select a winner using the final OOS window.
+- Route all future live candidates through the system readiness gate before any broker adapter is permitted to act.
+- Add stronger adversarial feed tests and execution-friction sensitivity reports.
+- Cross-check realtime monitoring against deterministic historical replay continuously.
 
 ### 1.0.0 — Only after validation
 - Freeze a documented strategy specification only after out-of-sample and robustness checks.
-- Keep any future broker execution component isolated from the research engine.
+- Keep any future broker execution component isolated from the research engine and fail closed on uncertainty.
