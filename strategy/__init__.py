@@ -47,10 +47,12 @@ from .research_runner import ControlledResearchResult, run_controlled_research
 from .research_validation import ValidationEvidence, build_validation_evidence
 from .regime import REGIMES, RegimeStats, classify_regime, stratify_samples
 from .robustness import RobustnessCase, RobustnessReport, RobustnessScenario, run_robustness_analysis
+from .two_setups import TwoSetupResult, evaluate_two_setups
 from .walk_forward import WalkForwardFold, WalkForwardResult, walk_forward_backtest
 
 __all__ = [
     "EngineSignal", "LONG", "SHORT", "WAIT", "evaluate_long", "evaluate_short",
+    "TwoSetupResult", "evaluate_two_setups",
     "ExecutionModel", "entry_price", "exit_price",
     "ExperimentRecord", "build_experiment_record",
     "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
