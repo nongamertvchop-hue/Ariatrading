@@ -9,7 +9,7 @@ drift diagnostics, ML OOS behavior diagnostics, ML model health diagnostics,
 deep-learning challenger models, deep-learning walk-forward research,
 aggregated research evidence, research-gate completeness checks, execution
 recovery, paper execution conformance, end-to-end paper recovery, broker
-symbol-contract validation, and the final system readiness gate.
+symbol-contract validation, research provenance, feed integrity, and the final system readiness gate.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
@@ -21,6 +21,7 @@ from .execution import ExecutionModel, entry_price, exit_price
 from .execution_audit import AuditEvent, AuditJournal, AuditJournalError
 from .execution_recovery import ExecutionRecoveryDecision, ExecutionRecoveryReport, verify_execution_recovery
 from .experiment_registry import ExperimentRecord, build_experiment_record
+from .feed_integrity import FeedIntegrityReport, validate_feed_batch
 from .forecast import ForecastResult, HorizonForecast, ScenarioForecast, forecast
 from .journal import JournalEvent, PaperTradeJournal
 from .market_snapshot import MarketSnapshot
@@ -50,6 +51,7 @@ from .replay import ReplayPoint, ReplayResult, replay_forecasts
 from .research_audit import ResearchAuditReport, audit_validation_evidence
 from .research_control import DatasetFingerprint, ResearchConfig, ResearchRun, build_research_run, config_fingerprint, fingerprint_candles
 from .research_gate import INCOMPLETE, READY, ResearchGateDecision, evaluate_research_gate
+from .research_provenance import PROVENANCE_SCHEMA_VERSION, ResearchProvenance, build_research_provenance, fingerprint_payload, provenance_compatible
 from .research_runner import ControlledResearchResult, run_controlled_research
 from .research_validation import ValidationEvidence, build_validation_evidence
 from .regime import REGIMES, RegimeStats, classify_regime, stratify_samples
@@ -70,9 +72,10 @@ __all__ = [
     "SystemGateDecision", "evaluate_system_readiness",
     "OrderState", "OrderRecord", "OrderTransition", "OrderStateMachine", "OrderPersistenceError", "save_order_state", "load_order_state",
     "AuditEvent", "AuditJournal", "AuditJournalError", "ExecutionRecoveryDecision", "ExecutionRecoveryReport", "verify_execution_recovery",
-    "RecoveryResult", "submit_with_recovery",
-    "PaperExecutionCoordinator", "PaperRecoveryDecision", "PaperRecoveryResult",
+    "RecoveryResult", "submit_with_recovery", "PaperExecutionCoordinator", "PaperRecoveryDecision", "PaperRecoveryResult",
     "SymbolContract", "ContractValidation", "validate_order_contract",
+    "FeedIntegrityReport", "validate_feed_batch",
+    "PROVENANCE_SCHEMA_VERSION", "ResearchProvenance", "build_research_provenance", "fingerprint_payload", "provenance_compatible",
     "ExecutionModel", "entry_price", "exit_price",
     "ExperimentRecord", "build_experiment_record",
     "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
