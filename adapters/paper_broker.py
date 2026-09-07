@@ -105,7 +105,7 @@ class PaperBrokerSimulator:
         self._reject_next = True
 
     def configure_rejections(self, count: int = 3) -> None:
-        """Reject the next ``count`` distinct submissions globally."""
+        """Reject the next ``count`` submissions globally."""
         if count < 1:
             raise ValueError("count must be >= 1")
         self._reject_remaining = count
@@ -125,15 +125,7 @@ class PaperBrokerSimulator:
         *,
         scenario: ChaosScenario = ChaosScenario.NORMAL,
     ) -> PaperOrderSnapshot:
-        """Submit one request with deterministic broker-like semantics.
-
-        ``REJECT_THREE_TIMES`` rejects exactly three submissions for the same
-        client order and then permits the fourth. The caller decides whether
-        and when to retry; the simulator itself does not implement a retry loop.
-
-        A timeout-after-accept records the order as FILLED and then raises
-        ``TimeoutError`` so recovery must reconcile before any retry.
-        """
+        """Submit one request with deterministic broker-like semantics."""
         self._validate_request(request)
         if not self._connected:
             raise ConnectionError("paper broker is disconnected")
@@ -155,7 +147,7 @@ class PaperBrokerSimulator:
 
         if reject:
             self._reject_next = False
-            rejected = PaperOrderSnapshot(
+            return PaperOrderSnapshot(
                 client_order_id=request.client_order_id,
                 symbol=request.symbol,
                 direction=request.direction,
@@ -165,20 +157,18 @@ class PaperBrokerSimulator:
                 status=REJECTED,
                 updated_at=request.submitted_at,
             )
-            return rejected
 
         filled_quantity = request.quantity * self._fill_fraction
         if filled_quantity <= 0.0:
             raise RuntimeError("simulator produced zero fill")
         status = FILLED if filled_quantity == request.quantity else PARTIALLY_FILLED
-        fill_price = request.price + self._fill_price_offset
         snapshot = PaperOrderSnapshot(
             client_order_id=request.client_order_id,
             symbol=request.symbol,
             direction=request.direction,
             requested_quantity=request.quantity,
             filled_quantity=filled_quantity,
-            average_fill_price=fill_price,
+            average_fill_price=request.price + self._fill_price_offset,
             status=status,
             updated_at=request.submitted_at,
         )
@@ -203,15 +193,17 @@ class PaperBrokerSimulator:
         positions = tuple(self._positions.values())
         if scenario is not ChaosScenario.ROUNDED_VOLUME:
             return positions
-        return tuple(
-            replace(position, net_quantity=position.net_quantity + self._volume_noise)
-            for position in positions
-        )
+        return tuple(replace(position, net_quantity=position.net_quantity + self._volume_noise) for position in positions)
 
     @staticmethod
-    def distort_candles(candles: Iterable[dict], scenario: ChaosScenario) -> list[dict]:
-        """Inject deterministic out-of-order or temporary missing bars."""
-        data = [dict(candle) for candle in candles]
+    def distort_candles(candles: Iterable[object], scenario: ChaosScenario) -> list[object]:
+        """Inject deterministic out-of-order or temporary missing bars.
+
+        The method preserves the input objects rather than coercing them to
+        dictionaries, so it works with both mapping-based and dataclass/protocol
+        feed representations.
+        """
+        data = list(candles)
         if scenario is ChaosScenario.OUT_OF_ORDER_CANDLES and len(data) >= 3:
             data[1], data[2] = data[2], data[1]
         elif scenario is ChaosScenario.TEMPORARY_MISSING_CANDLES and len(data) >= 3:
@@ -224,11 +216,7 @@ class PaperBrokerSimulator:
         signed_quantity = order.filled_quantity if order.direction == LONG else -order.filled_quantity
         current = self._positions.get(order.symbol)
         if current is None:
-            self._positions[order.symbol] = PaperPositionSnapshot(
-                symbol=order.symbol,
-                net_quantity=signed_quantity,
-                average_price=order.average_fill_price,
-            )
+            self._positions[order.symbol] = PaperPositionSnapshot(order.symbol, signed_quantity, order.average_fill_price)
             return
 
         new_quantity = current.net_quantity + signed_quantity
@@ -243,24 +231,13 @@ class PaperBrokerSimulator:
                 abs(current.net_quantity) * current.average_price
                 + abs(signed_quantity) * order.average_fill_price
             ) / total_abs
-            self._positions[order.symbol] = replace(
-                current,
-                net_quantity=new_quantity,
-                average_price=weighted_price,
-            )
+            self._positions[order.symbol] = replace(current, net_quantity=new_quantity, average_price=weighted_price)
             return
 
-        # Opposite-side fills reduce an existing position. The remaining
-        # quantity keeps the original entry average; a true reversal starts a
-        # fresh position at the new fill price.
         if (current.net_quantity > 0) == (new_quantity > 0):
             self._positions[order.symbol] = replace(current, net_quantity=new_quantity)
         else:
-            self._positions[order.symbol] = PaperPositionSnapshot(
-                symbol=order.symbol,
-                net_quantity=new_quantity,
-                average_price=order.average_fill_price,
-            )
+            self._positions[order.symbol] = PaperPositionSnapshot(order.symbol, new_quantity, order.average_fill_price)
 
     @staticmethod
     def _validate_request(request: PaperOrderRequest) -> None:
