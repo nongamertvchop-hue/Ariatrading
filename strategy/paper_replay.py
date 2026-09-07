@@ -12,7 +12,7 @@ from typing import Any, Sequence
 
 from .paper_session import PaperSessionResult, PaperSessionRunner
 from .realtime import LiveBar, LiveEvaluation, RealtimeMonitor
-from .timeframe import get_timeframe_config
+from .timeframe import bar_duration, get_timeframe_config
 
 
 @dataclass(frozen=True)
@@ -59,8 +59,8 @@ def replay_paper_session(
 
     Only candles at or before the current replay index are visible to the
     realtime monitor. The deterministic ``now`` value is derived from the
-    current closed candle, avoiding future-time leakage while satisfying the
-    realtime freshness guard.
+    current candle's close boundary, avoiding future-time leakage while
+    satisfying the realtime freshness guard.
     """
     get_timeframe_config(timeframe)
     if not symbol:
@@ -93,7 +93,8 @@ def replay_paper_session(
         if len(window) < 5:
             continue
         feed.bars = [_to_live_bar(candle) for candle in window]
-        result = session.process_once()
+        now = window[-1]["time"] + bar_duration(timeframe) + timedelta(seconds=1)
+        result = session.process_once(now=now)
         if result is None:
             raise RuntimeError("paper replay unexpectedly skipped a chronological candle")
         results.append(result)
