@@ -2,7 +2,7 @@
 
 Educational price-action research and paper-automation project for EURUSD-style OHLC data.
 
-**Current version: 0.15.1**
+**Current version: 0.16.0**
 
 ## Core idea
 
@@ -56,11 +56,39 @@ PaperSessionRunner
 PAPER runtime
 ```
 
+Historical validation now uses the same runtime path rather than a second strategy:
+
+```text
+Historical closed candles
+        |
+        v
+strategy.paper_replay
+        |
+        +--> RealtimeMonitor
+        |       |
+        |       +--> closed-candle integrity / freshness checks
+        |       +--> existing strategy engine
+        |
+        +--> PaperSessionRunner
+                |
+                +--> signal on bar N
+                +--> paper entry only at a later bar OPEN
+                +--> paper position lifecycle + journal
+```
+
 A restart must not blindly trust one restored object. The reconciliation layer checks the relationships between the paper position, journal OPEN/CLOSE events, account counters, pending signal and last processed candle before allowing the session to continue.
 
 The runtime uses atomic JSON checkpoint replacement for the current single-process research/paper phase. This is not yet a multi-process or distributed execution store; scaling that boundary will require transactional persistence and concurrency/fencing controls.
 
 `ExecutionMode.DEMO` remains explicitly rejected. There is still no MT5 order-sending adapter, and MT5 integration remains read-only.
+
+## Historical paper replay contract
+
+`strategy.paper_replay.replay_paper_session()` is intended for long-run paper validation and replay parity checks. For each replay step it exposes only a historical prefix ending at the current closed candle. The resulting evaluation timestamp is deterministic for reproducible research artifacts.
+
+The replay deliberately preserves the live-session timing contract: a directional signal discovered on candle N is stored as pending state and can only be opened on a later candle, using that later candle's OPEN as the simulated fill reference. Future candles are never supplied to the monitor before their replay step.
+
+This is a validation harness, not a profitability claim. It does not send MT5 orders and does not promote the system toward live execution by itself.
 
 ## Development safety rules
 
@@ -71,4 +99,5 @@ The runtime uses atomic JSON checkpoint replacement for the current single-proce
 - Checkpoint persistence errors are not swallowed.
 - Restore errors halt the runtime rather than attempting automatic ledger repair.
 - Strategy logic and execution simulation remain separate.
+- Historical replay must use the same realtime monitor and paper-session path; do not create a parallel strategy implementation.
 - No live broker orders are sent by this repository.
