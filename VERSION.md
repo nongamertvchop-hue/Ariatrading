@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.15.1**
+Current version: **0.16.0**
 
 ## Versioning rule
 
@@ -15,7 +15,7 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.15.1
+## Current milestone — 0.16.0
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
@@ -40,18 +40,18 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - `live/paper_runtime.py` provides the automatic closed-candle paper runtime. It continuously drives the existing realtime monitor and paper-session lifecycle, exposes operational snapshots, supports bounded runs for tests, and fails closed on unexpected runtime errors.
 - The runtime explicitly rejects DEMO mode until a real MT5 execution adapter exists, preventing accidental promotion from paper simulation to broker execution.
 - Runtime checkpoints use atomic JSON persistence and restore the session, paper account, open position, pending signal, last processed candle, and journal state.
-- Cross-component reconciliation now validates paper position, journal OPEN/CLOSE lifecycle, account counters, pending signal, and checkpoint timeline invariants before restart can resume.
-- Automation runtime behavior, persistence, reconciliation, and signal-event deduplication are covered by dedicated tests.
+- Cross-component reconciliation validates paper position, journal OPEN/CLOSE lifecycle, account counters, pending signal, and checkpoint timeline invariants before restart can resume.
+- `strategy/paper_replay.py` now feeds historical closed candles through the same RealtimeMonitor -> PaperSessionRunner path, with deterministic evaluation time and next-bar paper entry semantics.
+- Historical paper replay has dedicated deterministic, no-lookahead, entry-boundary, and input-contract tests.
 
 ## Next milestones
 
-### 0.15.x — automation validation and demo boundary
-- Add historical signal replay to the automatic runtime using the same realtime replay semantics as Python.
+### 0.16.x — paper validation evidence
 - Add outcome labeling for paper signals only after the next completed bars are known, without changing the live signal itself.
 - Compare MTF filtered vs unfiltered paper signals on identical chronological windows.
 - Add signal-quality reports by timeframe, regime, breakout state, and setup score bucket.
-- Add a broker-neutral execution interface and a separate MT5 demo adapter only after the paper/runtime contracts remain green.
 - Continue auditing execution-friction sensitivity and realtime/replay parity.
+- Add a broker-neutral execution interface and a separate MT5 demo adapter only after the paper/runtime contracts remain green.
 
 ### 1.0.0 — Only after validation
 - Freeze a documented strategy specification only after out-of-sample and robustness checks.
