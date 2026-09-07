@@ -2,235 +2,116 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="copyright" content="Copyright (c) 2026 tryth5556 / nongamertvchop. All rights reserved.">
-  <title>Webaria</title>
+  <title>Webaria Chart</title>
   <style>
-    html, body {
-      width: 100%;
-      min-height: 100%;
-      margin: 0;
-    }
-
-    body {
-      box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
-      min-height: 100vh;
-      background: #fff;
-      color: #000;
-      font-family: Arial, Helvetica, sans-serif;
-    }
-
-    main {
-      flex: 1;
-      width: 100%;
-      max-width: 760px;
-      box-sizing: border-box;
-      margin: 0 auto;
-      padding: 32px 20px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 24px;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: clamp(2rem, 8vw, 4.5rem);
-      font-weight: 400;
-      text-align: center;
-    }
-
-    .panel {
-      border: 1px solid #ddd;
-      border-radius: 16px;
-      padding: 24px;
-      background: #fafafa;
-    }
-
-    .controls {
-      display: grid;
-      grid-template-columns: 1fr 1fr auto;
-      gap: 10px;
-    }
-
-    input, select, button {
-      min-height: 44px;
-      box-sizing: border-box;
-      border: 1px solid #ccc;
-      border-radius: 10px;
-      padding: 0 12px;
-      font: inherit;
-      background: #fff;
-      color: #000;
-    }
-
-    button {
-      cursor: pointer;
-      font-weight: 600;
-    }
-
-    button:disabled {
-      cursor: wait;
-      opacity: 0.6;
-    }
-
-    .signal {
-      margin-top: 20px;
-      font-size: clamp(2rem, 12vw, 5rem);
-      font-weight: 700;
-      text-align: center;
-      letter-spacing: 0.04em;
-    }
-
-    .data {
-      margin-top: 18px;
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-    }
-
-    .item {
-      padding: 12px;
-      border-radius: 10px;
-      background: #fff;
-      border: 1px solid #e5e5e5;
-    }
-
-    .label {
-      display: block;
-      margin-bottom: 5px;
-      color: #666;
-      font-size: 0.8rem;
-    }
-
-    .value {
-      overflow-wrap: anywhere;
-      font-weight: 600;
-    }
-
-    .status {
-      margin-top: 14px;
-      min-height: 1.4em;
-      color: #666;
-      font-size: 0.9rem;
-    }
-
-    footer {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 16px 20px;
-      text-align: center;
-      font-size: 0.8rem;
-      line-height: 1.5;
-      color: #555;
-    }
-
-    @media (max-width: 640px) {
-      .controls {
-        grid-template-columns: 1fr;
-      }
-
-      .data {
-        grid-template-columns: 1fr;
-      }
-    }
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #0b0e11; color: #d9dde3; font-family: Arial, Helvetica, sans-serif; }
+    body { display: flex; flex-direction: column; }
+    header { height: 52px; flex: 0 0 52px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid #252a31; background: #11151a; }
+    .brand { font-size: 16px; font-weight: 700; margin-right: 8px; }
+    select, button { border: 1px solid #303640; background: #181d23; color: #d9dde3; border-radius: 5px; padding: 7px 9px; font-size: 13px; }
+    button { cursor: pointer; }
+    .status { margin-left: auto; font-size: 12px; color: #89929e; }
+    main { position: relative; flex: 1; min-height: 0; }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    .hud { position: absolute; top: 12px; left: 12px; pointer-events: none; background: rgba(11,14,17,.86); border: 1px solid #252a31; border-radius: 6px; padding: 9px 11px; font-size: 12px; line-height: 1.6; max-width: calc(100% - 24px); }
+    .hud strong { font-size: 14px; }
+    .error { color: #e3a7a7; }
+    .hint { position: absolute; right: 12px; bottom: 10px; color: #69727e; font-size: 11px; pointer-events: none; }
+    @media (max-width: 560px) { .brand { display: none; } header { padding: 0 7px; } select, button { font-size: 12px; padding: 6px 7px; } }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Webaria</h1>
-
-    <section class="panel" aria-live="polite">
-      <div class="controls">
-        <input id="symbol" value="EUR/USD" autocomplete="off" aria-label="Forex symbol">
-        <select id="timeframe" aria-label="Timeframe">
-          <option value="1m">1m</option>
-          <option value="5m">5m</option>
-          <option value="15m" selected>15m</option>
-          <option value="30m">30m</option>
-          <option value="1h">1h</option>
-          <option value="4h">4h</option>
-          <option value="1D">1D</option>
-        </select>
-        <button id="refresh" type="button">Refresh</button>
-      </div>
-
-      <div id="signal" class="signal">WAIT</div>
-
-      <div class="data">
-        <div class="item"><span class="label">Price</span><span id="price" class="value">—</span></div>
-        <div class="item"><span class="label">State</span><span id="state" class="value">—</span></div>
-        <div class="item"><span class="label">Reason</span><span id="reason" class="value">—</span></div>
-        <div class="item"><span class="label">Breakout</span><span id="breakout" class="value">—</span></div>
-        <div class="item"><span class="label">Entry reference</span><span id="entry" class="value">—</span></div>
-        <div class="item"><span class="label">Stop reference</span><span id="stop" class="value">—</span></div>
-      </div>
-
-      <div id="status" class="status">Waiting for signal data…</div>
-    </section>
+  <header>
+    <div class="brand">Webaria</div>
+    <select id="symbol" aria-label="Symbol"><option>EUR/USD</option><option>GBP/USD</option><option>USD/JPY</option><option>AUD/USD</option><option>USD/CAD</option></select>
+    <select id="timeframe" aria-label="Timeframe"><option value="1m">1m</option><option value="5m">5m</option><option value="15m" selected>15m</option><option value="30m">30m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1D">1D</option></select>
+    <button id="refresh" type="button">Refresh</button>
+    <div id="status" class="status">Connecting…</div>
+  </header>
+  <main id="chartWrap">
+    <canvas id="chart"></canvas>
+    <div id="hud" class="hud">Loading market data…</div>
+    <div class="hint">Drag to pan · wheel/pinch to zoom</div>
   </main>
-
-  <footer>
-    © 2026 tryth5556 / nongamertvchop. All rights reserved.
-  </footer>
-
   <script>
-    const POLL_MS = 30_000;
-    const symbolInput = document.getElementById("symbol");
-    const timeframeInput = document.getElementById("timeframe");
-    const refreshButton = document.getElementById("refresh");
-    const status = document.getElementById("status");
+    const canvas = document.getElementById('chart');
+    const ctx = canvas.getContext('2d');
+    const wrap = document.getElementById('chartWrap');
+    const symbolEl = document.getElementById('symbol');
+    const timeframeEl = document.getElementById('timeframe');
+    const statusEl = document.getElementById('status');
+    const hudEl = document.getElementById('hud');
+    const state = { candles: [], zoom: 1, offset: 0, dragging: false, lastX: 0, loading: false };
+    let pollTimer;
 
-    function setText(id, value) {
-      document.getElementById(id).textContent = value == null || value === "" ? "—" : String(value);
+    function resize() {
+      const ratio = window.devicePixelRatio || 1;
+      const rect = wrap.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+      canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+      canvas.style.width = rect.width + 'px'; canvas.style.height = rect.height + 'px';
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0); draw();
     }
-
-    async function loadSignal() {
-      refreshButton.disabled = true;
-      status.textContent = "Loading…";
-
+    function visibleCount() { return Math.max(20, Math.min(state.candles.length, Math.floor(90 / state.zoom))); }
+    function visibleSlice() {
+      const count = visibleCount();
+      const end = Math.max(count, state.candles.length - Math.max(0, Math.floor(state.offset)));
+      return { data: state.candles.slice(Math.max(0, end - count), end) };
+    }
+    function niceStep(range) {
+      const raw = range / 7, power = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-12)))), n = raw / power;
+      return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * power;
+    }
+    function draw() {
+      const rect = wrap.getBoundingClientRect(), w = rect.width, h = rect.height;
+      ctx.clearRect(0, 0, w, h); ctx.fillStyle = '#0b0e11'; ctx.fillRect(0, 0, w, h);
+      if (!state.candles.length) return;
+      const { data } = visibleSlice(), left = 12, right = 74, top = 12, bottom = 28;
+      const cw = Math.max(1, (w - left - right) / data.length);
+      const lo0 = Math.min(...data.map(c => c.low)), hi0 = Math.max(...data.map(c => c.high));
+      const pad = Math.max((hi0 - lo0) * .08, hi0 * .0002), lo = lo0 - pad, hi = hi0 + pad;
+      const plotH = h - top - bottom, y = p => top + (hi - p) / (hi - lo) * plotH;
+      ctx.strokeStyle = '#1c2229'; ctx.lineWidth = 1; ctx.font = '11px Arial'; ctx.fillStyle = '#69727e'; ctx.textAlign = 'left';
+      const step = niceStep(hi - lo), first = Math.ceil(lo / step) * step;
+      for (let p = first; p <= hi; p += step) { const yy = y(p); ctx.beginPath(); ctx.moveTo(left, yy); ctx.lineTo(w - right, yy); ctx.stroke(); ctx.fillText(p.toFixed(5), w - right + 7, yy + 4); }
+      data.forEach((c, i) => {
+        const x = left + (i + .5) * cw, openY = y(c.open), closeY = y(c.close), up = c.close >= c.open;
+        ctx.strokeStyle = up ? '#52c48d' : '#e06b75'; ctx.fillStyle = ctx.strokeStyle;
+        ctx.beginPath(); ctx.moveTo(x, y(c.high)); ctx.lineTo(x, y(c.low)); ctx.stroke();
+        ctx.fillRect(x - Math.max(1, cw * .32), Math.min(openY, closeY), Math.max(1, cw * .64), Math.max(1, Math.abs(openY - closeY)));
+      });
+      const last = data[data.length - 1], ly = y(last.close);
+      ctx.setLineDash([4, 4]); ctx.strokeStyle = '#59616c'; ctx.beginPath(); ctx.moveTo(left, ly); ctx.lineTo(w - right, ly); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#181d23'; ctx.fillRect(w - right, ly - 10, right - 7, 20); ctx.fillStyle = '#d9dde3'; ctx.fillText(Number(last.close).toFixed(5), w - right + 7, ly + 4);
+      ctx.textAlign = 'center'; ctx.fillStyle = '#69727e';
+      const labels = Math.max(2, Math.floor((w - left - right) / 100));
+      for (let i = 0; i < labels; i++) { const idx = Math.min(data.length - 1, Math.floor(i * (data.length - 1) / Math.max(1, labels - 1))); const d = new Date(data[idx].datetime); if (!Number.isNaN(d.getTime())) ctx.fillText(d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), left + (idx + .5) * cw, h - 9); }
+    }
+    async function load() {
+      if (state.loading) return; state.loading = true; statusEl.textContent = 'Updating…';
       try {
-        const params = new URLSearchParams({
-          symbol: symbolInput.value.trim().toUpperCase(),
-          timeframe: timeframeInput.value,
-        });
-        const response = await fetch(`/api/signal?${params.toString()}`, {
-          method: "GET",
-          cache: "no-store",
-          headers: { "accept": "application/json" },
-        });
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
-        }
-
-        setText("signal", payload.signal);
-        setText("price", payload.price);
-        setText("state", payload.state);
-        setText("reason", payload.reason);
-        setText("breakout", payload.breakout_state);
-        setText("entry", payload.entry_reference);
-        setText("stop", payload.stop_reference);
-        status.textContent = `Updated ${new Date(payload.generated_at).toLocaleString()}`;
-      } catch (error) {
-        setText("signal", "WAIT");
-        setText("price", null);
-        setText("state", "ERROR");
-        setText("reason", error.message);
-        setText("breakout", null);
-        setText("entry", null);
-        setText("stop", null);
-        status.textContent = "Signal endpoint unavailable.";
-      } finally {
-        refreshButton.disabled = false;
-      }
+        const params = new URLSearchParams({ symbol: symbolEl.value, timeframe: timeframeEl.value });
+        const response = await fetch(`/api/signal?${params}`, { cache: 'no-store' });
+        const payload = await response.json(); if (!response.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+        if (Array.isArray(payload.candles)) state.candles = payload.candles;
+        else if (payload.price != null && state.candles.length) state.candles[state.candles.length - 1].close = Number(payload.price);
+        hudEl.className = 'hud'; hudEl.innerHTML = `<strong>${payload.symbol || symbolEl.value}</strong><br>${payload.timeframe || timeframeEl.value} · ${payload.signal || 'WAIT'} · ${payload.price != null ? Number(payload.price).toFixed(5) : '—'}<br>${payload.state || ''}`;
+        statusEl.textContent = payload.generated_at ? `Updated ${new Date(payload.generated_at).toLocaleTimeString()}` : 'Connected'; draw();
+      } catch (error) { hudEl.className = 'hud error'; hudEl.textContent = `Market data unavailable: ${error.message}`; statusEl.textContent = 'Offline / error'; }
+      finally { state.loading = false; }
     }
-
-    refreshButton.addEventListener("click", loadSignal);
-    loadSignal();
-    window.setInterval(loadSignal, POLL_MS);
+    function restartPolling() { clearInterval(pollTimer); pollTimer = setInterval(load, 15000); }
+    symbolEl.addEventListener('change', () => { state.offset = 0; load(); }); timeframeEl.addEventListener('change', () => { state.offset = 0; load(); });
+    document.getElementById('refresh').addEventListener('click', load); window.addEventListener('resize', resize);
+    canvas.addEventListener('pointerdown', e => { state.dragging = true; state.lastX = e.clientX; canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener('pointermove', e => { if (!state.dragging) return; const dx = e.clientX - state.lastX; state.lastX = e.clientX; const count = visibleCount(); state.offset = Math.max(0, Math.min(Math.max(0, state.candles.length - count), state.offset + dx / Math.max(1, wrap.clientWidth / count))); draw(); });
+    canvas.addEventListener('pointerup', e => { state.dragging = false; canvas.releasePointerCapture(e.pointerId); }); canvas.addEventListener('pointercancel', () => { state.dragging = false; });
+    canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(.5, Math.min(6, state.zoom * (e.deltaY < 0 ? 1.15 : .87))); draw(); }, { passive: false });
+    resize(); load(); restartPolling();
   </script>
 </body>
 </html>
