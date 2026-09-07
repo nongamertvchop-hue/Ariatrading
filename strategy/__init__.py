@@ -5,7 +5,7 @@ interfaces across strategy, forecast, backtest, execution-cost simulation,
 replay, realtime monitoring, paper simulation, journaling, walk-forward
 validation, robustness analysis, reproducible research control, ML
 meta-filter research, experiment registry, regime diagnostics, aggregated
-research evidence, and research-gate completeness checks.
+research evidence, research-gate completeness checks, and audit diagnostics.
 """
 
 from .backtest import (
@@ -33,6 +33,7 @@ from .realtime_guard import DataQuality, RealtimeGuard, expected_closed_bar_open
 from .realtime_replay import RealtimeReplayResult, replay_realtime_monitor
 from .realtime_supervisor import ALLOW, SupervisorDecision, supervise
 from .replay import ReplayPoint, ReplayResult, replay_forecasts
+from .research_audit import ResearchAuditReport, audit_validation_evidence
 from .research_control import (
     DatasetFingerprint,
     ResearchConfig,
@@ -68,6 +69,7 @@ __all__ = [
     "ControlledResearchResult", "run_controlled_research",
     "ValidationEvidence", "build_validation_evidence",
     "INCOMPLETE", "READY", "ResearchGateDecision", "evaluate_research_gate",
+    "ResearchAuditReport", "audit_validation_evidence",
     "FEATURE_NAMES", "MLSample", "build_signal_sample", "extract_signal_features",
     "MLResearchMetrics", "MetaFilterModel", "MetaFilterResult", "chronological_train_test",
     "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest",
