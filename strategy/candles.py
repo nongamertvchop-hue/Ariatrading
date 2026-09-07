@@ -4,6 +4,7 @@ No technical indicators are used here. The module only evaluates OHLC data.
 """
 
 from dataclasses import dataclass
+from math import isfinite
 
 
 @dataclass(frozen=True)
@@ -14,6 +15,14 @@ class Candle:
     close: float
 
     def __post_init__(self):
+        values = {
+            "open": self.open,
+            "high": self.high,
+            "low": self.low,
+            "close": self.close,
+        }
+        if any(not isfinite(value) for value in values.values()):
+            raise ValueError("OHLC values must be finite")
         if self.high < max(self.open, self.close):
             raise ValueError("high must be >= open and close")
         if self.low > min(self.open, self.close):
