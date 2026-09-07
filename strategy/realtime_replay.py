@@ -6,12 +6,12 @@ between the realtime data/strategy path and historical replay without creating
 a second strategy implementation.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import Sequence
 
 from .realtime import LiveBar, LiveEvaluation, RealtimeMonitor
-from .timeframe import bar_duration, get_timeframe_config
+from .timeframe import get_timeframe_config
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,8 @@ def replay_realtime_monitor(
 
     The monitor receives only the prefix ending at each replay index. ``now`` is
     derived from that same latest candle, so the harness does not peek at future
-    timestamps merely to satisfy freshness validation.
+    timestamps merely to satisfy freshness validation. The wall-clock evaluation
+    timestamp is normalized to that deterministic replay boundary in the result.
     """
     get_timeframe_config(timeframe)
     if not symbol:
@@ -71,7 +72,6 @@ def replay_realtime_monitor(
     )
 
     evaluations: list[LiveEvaluation] = []
-    duration = bar_duration(timeframe)
     for index in range(first, len(normalized)):
         window = normalized[max(0, index - lookback + 1): index + 1]
         if len(window) < 5:
@@ -81,7 +81,7 @@ def replay_realtime_monitor(
         evaluation = monitor.evaluate_once(now=latest_time + timedelta(seconds=1))
         if evaluation is None:
             raise RuntimeError("realtime replay unexpectedly skipped a chronological candle")
-        evaluations.append(evaluation)
+        evaluations.append(replace(evaluation, evaluated_at=latest_time + timedelta(seconds=1)))
 
     return RealtimeReplayResult(symbol, timeframe, tuple(evaluations))
 
