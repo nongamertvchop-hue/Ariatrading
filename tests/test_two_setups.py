@@ -1,9 +1,36 @@
-from strategy.two_setups import evaluate_two_setups
+from strategy.candles import Candle
 from strategy.engine import LONG, SHORT, WAIT
+from strategy.levels_v2 import PriceZone, RESISTANCE, SUPPORT
+from strategy.two_setups import _active_zones, evaluate_two_setups
 
 
 def _c(open_, high, low, close):
     return {"open": open_, "high": high, "low": low, "close": close}
+
+
+def test_recently_broken_support_is_not_active():
+    zone = PriceZone(1.0990, 1.1000, SUPPORT, 3)
+    candles = [
+        _c(1.1010, 1.1015, 1.0995, 1.1008),
+        _c(1.1008, 1.1009, 1.0980, 1.0975),
+    ]
+
+    active = _active_zones([zone], candles, "15m")
+
+    assert active == []
+
+
+def test_zone_can_be_relevant_again_after_later_interaction():
+    zone = PriceZone(1.0990, 1.1000, SUPPORT, 3)
+    candles = [
+        _c(1.1010, 1.1015, 1.0995, 1.1008),
+        _c(1.1008, 1.1009, 1.0980, 1.0975),
+        _c(1.0975, 1.1002, 1.0970, 1.0998),
+    ]
+
+    active = _active_zones([zone], candles, "15m")
+
+    assert active == [zone]
 
 
 def test_long_setup_is_detected_from_confirmed_repeated_support():
