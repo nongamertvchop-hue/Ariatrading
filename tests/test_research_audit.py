@@ -35,7 +35,9 @@ def _evidence(stability=True, robustness=True):
 
 
 def _fold(*, fold_index=1, test_start=10, test_end=20, train_samples=10,
-          train_positive=5, test_labeled_samples=4, model_trained=True):
+          train_positive=5, test_labeled_samples=4, model_trained=True,
+          train_last_signal_index=6, train_last_label_end_index=9,
+          test_first_signal_index=12, test_last_signal_index=18):
     return SimpleNamespace(
         fold_index=fold_index,
         test_start=test_start,
@@ -44,7 +46,11 @@ def _fold(*, fold_index=1, test_start=10, test_end=20, train_samples=10,
         train_positive=train_positive,
         test_labeled_samples=test_labeled_samples,
         model_trained=model_trained,
-        baseline=SimpleNamespace(signals=(object(),) * 4),
+        train_last_signal_index=train_last_signal_index,
+        train_last_label_end_index=train_last_label_end_index,
+        test_first_signal_index=test_first_signal_index,
+        test_last_signal_index=test_last_signal_index,
+        baseline=SimpleNamespace(signals=(SimpleNamespace(action="LONG"),) * 4),
     )
 
 
@@ -56,6 +62,7 @@ def _ml(*, folds=None, history_bars=10, test_bars=10, step_bars=10):
         history_bars=history_bars,
         test_bars=test_bars,
         step_bars=step_bars,
+        horizon_bars=3,
         fold_count=len(folds),
         trained_fold_count=sum(fold.model_trained for fold in folds),
         folds=tuple(folds),
@@ -111,3 +118,24 @@ def test_audit_rejects_trained_fold_without_two_classes():
     report = audit_validation_evidence(_evidence(), _ml(folds=(fold,)))
     assert not report.passed
     assert any("two-class training data" in item for item in report.findings)
+
+
+def test_audit_rejects_training_label_crossing_oos_boundary():
+    fold = _fold(train_last_signal_index=8, train_last_label_end_index=10)
+    report = audit_validation_evidence(_evidence(), _ml(folds=(fold,)))
+    assert not report.passed
+    assert any("training label ending at or after OOS start" in item for item in report.findings)
+
+
+def test_audit_rejects_inconsistent_training_horizon():
+    fold = _fold(train_last_signal_index=6, train_last_label_end_index=8)
+    report = audit_validation_evidence(_evidence(), _ml(folds=(fold,)))
+    assert not report.passed
+    assert any("inconsistent training label horizon" in item for item in report.findings)
+
+
+def test_audit_rejects_test_signal_outside_oos_window():
+    fold = _fold(test_first_signal_index=9, test_last_signal_index=18)
+    report = audit_validation_evidence(_evidence(), _ml(folds=(fold,)))
+    assert not report.passed
+    assert any("first test signal outside OOS window" in item for item in report.findings)
