@@ -58,7 +58,7 @@ def _check_drift(report: MLDriftReport) -> tuple[bool, str]:
         if item.feature_index < 0 or item.feature_index >= report.feature_count:
             return False, "feature drift report contains an invalid feature index"
         for value in (item.train_mean, item.test_mean, item.train_std, item.test_std, item.mean_shift_std, item.psi):
-            if not isfinite(float(value)) and value != float("inf"):
+            if not isfinite(float(value)):
                 return False, "feature drift report contains a non-finite diagnostic"
     return True, "feature-drift evidence is structurally valid"
 
