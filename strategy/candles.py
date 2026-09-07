@@ -73,3 +73,22 @@ def candle_pressure(candle: Candle) -> str:
         return "SELLING"
 
     return "NEUTRAL"
+
+
+def rejection_pressure(candle: Candle, direction: str) -> bool:
+    """Return whether OHLC shows directional rejection at a tested level.
+
+    No volatility indicator or learned threshold is used. The existing
+    directional pressure is combined with a dominant wick on the tested side.
+    """
+    if direction == "LONG":
+        return (
+            candle_pressure(candle) == "BUYING"
+            and candle.lower_wick >= candle.upper_wick
+        )
+    if direction == "SHORT":
+        return (
+            candle_pressure(candle) == "SELLING"
+            and candle.upper_wick >= candle.lower_wick
+        )
+    raise ValueError("direction must be LONG or SHORT")
