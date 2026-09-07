@@ -1,6 +1,5 @@
 from types import SimpleNamespace
 
-from strategy.ml_stability import FeatureImportance, MLStabilityReport
 from strategy.research_audit import audit_validation_evidence
 from strategy.research_validation import ValidationEvidence
 
@@ -35,14 +34,32 @@ def _evidence(stability=True, robustness=True):
     )
 
 
-def _ml():
-    fold = SimpleNamespace(
-        fold_index=1,
-        train_samples=10,
-        train_positive=5,
-        test_labeled_samples=4,
+def _fold(*, fold_index=1, test_start=10, test_end=20, train_samples=10,
+          train_positive=5, test_labeled_samples=4, model_trained=True):
+    return SimpleNamespace(
+        fold_index=fold_index,
+        test_start=test_start,
+        test_end=test_end,
+        train_samples=train_samples,
+        train_positive=train_positive,
+        test_labeled_samples=test_labeled_samples,
+        model_trained=model_trained,
+        baseline=SimpleNamespace(signals=(object(),) * 4),
     )
-    return SimpleNamespace(timeframe="1h", fold_count=1, trained_fold_count=1, folds=(fold,))
+
+
+def _ml(*, folds=None, history_bars=10, test_bars=10, step_bars=10):
+    if folds is None:
+        folds = (_fold(),)
+    return SimpleNamespace(
+        timeframe="1h",
+        history_bars=history_bars,
+        test_bars=test_bars,
+        step_bars=step_bars,
+        fold_count=len(folds),
+        trained_fold_count=sum(fold.model_trained for fold in folds),
+        folds=tuple(folds),
+    )
 
 
 def test_audit_passes_consistent_evidence():
@@ -52,7 +69,9 @@ def test_audit_passes_consistent_evidence():
 
 
 def test_audit_flags_missing_optional_evidence_without_failing_consistency():
-    report = audit_validation_evidence(_evidence(stability=False, robustness=False), _ml())
+    report = audit_validation_evidence(
+        _evidence(stability=False, robustness=False), _ml()
+    )
     assert report.passed
     assert any("stability evidence is absent" in item for item in report.findings)
     assert any("robustness evidence is absent" in item for item in report.findings)
@@ -60,9 +79,35 @@ def test_audit_flags_missing_optional_evidence_without_failing_consistency():
 
 def test_audit_rejects_invalid_ml_threshold():
     ml = _ml()
-    ml.threshold = 0.5
     evidence = _evidence()
     evidence.ml["threshold"] = 1.0
     report = audit_validation_evidence(evidence, ml)
     assert not report.passed
     assert any("threshold must be between 0 and 1" in item for item in report.findings)
+
+
+def test_audit_rejects_overlapping_oos_windows():
+    folds = (_fold(), _fold(fold_index=2, test_start=19, test_end=29))
+    evidence = _evidence()
+    evidence.ml["fold_count"] = 2
+    evidence.ml["trained_fold_count"] = 2
+    report = audit_validation_evidence(evidence, _ml(folds=folds))
+    assert not report.passed
+    assert any("OOS test windows overlap" in item for item in report.findings)
+
+
+def test_audit_rejects_incorrect_fold_spacing():
+    folds = (_fold(), _fold(fold_index=2, test_start=25, test_end=35))
+    evidence = _evidence()
+    evidence.ml["fold_count"] = 2
+    evidence.ml["trained_fold_count"] = 2
+    report = audit_validation_evidence(evidence, _ml(folds=folds))
+    assert not report.passed
+    assert any("fold spacing disagrees" in item for item in report.findings)
+
+
+def test_audit_rejects_trained_fold_without_two_classes():
+    fold = _fold(train_samples=10, train_positive=0, model_trained=True)
+    report = audit_validation_evidence(_evidence(), _ml(folds=(fold,)))
+    assert not report.passed
+    assert any("two-class training data" in item for item in report.findings)
