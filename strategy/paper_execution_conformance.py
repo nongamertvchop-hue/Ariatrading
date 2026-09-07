@@ -37,12 +37,12 @@ def submit_with_recovery(
     *,
     idempotency_key: str,
 ) -> RecoveryResult:
-    """Drive one paper order through a fail-closed ambiguous-response path.
+    """Drive one paper order through a fail-closed submission boundary.
 
     A timeout after broker acceptance is represented locally as UNKNOWN. The
-    function reconnects/reconciles the broker snapshot before allowing the
-    idempotent request to be observed again. It never blindly submits a second
-    logical order.
+    broker snapshot is reconciled before the result is finalized. A repeated
+    call with the same idempotency key only observes the existing broker order;
+    it never creates another logical submission.
     """
     created = orders.create(
         client_order_id=request.client_order_id,
@@ -55,41 +55,43 @@ def submit_with_recovery(
 
     try:
         snapshot = broker.submit(request)
+    except ConnectionError:
+        if created.accepted:
+            orders.transition(request.client_order_id, OrderState.UNKNOWN)
+        raise
     except TimeoutError:
         orders.transition(request.client_order_id, OrderState.UNKNOWN)
-        if not broker.connected:
-            broker.reconnect()
         snapshot = broker.get_order(request.client_order_id)
         if snapshot is None:
             return RecoveryResult(OrderState.UNKNOWN, 0.0, "MISSING", False)
-        recovered = _apply_snapshot(orders, snapshot)
-        return RecoveryResult(recovered.state, recovered.filled_quantity, recovered.broker_status, False)
+        return _reconcile_snapshot(orders, snapshot)
 
-    recovered = _apply_snapshot(orders, snapshot)
-    return RecoveryResult(recovered.state, recovered.filled_quantity, recovered.broker_status, False)
+    return _reconcile_snapshot(orders, snapshot)
 
 
-def _apply_snapshot(
+def _reconcile_snapshot(
     orders: OrderStateMachine,
     snapshot: PaperOrderSnapshot,
 ) -> RecoveryResult:
+    current = orders.get(snapshot.client_order_id)
+
     if snapshot.status == FILLED:
-        transition = orders.transition(
-            snapshot.client_order_id,
-            OrderState.FILLED,
-            filled_quantity=snapshot.filled_quantity,
-        )
+        target = OrderState.FILLED
     elif snapshot.status == PARTIALLY_FILLED:
-        transition = orders.transition(
-            snapshot.client_order_id,
-            OrderState.PARTIALLY_FILLED,
-            filled_quantity=snapshot.filled_quantity,
-        )
+        target = OrderState.PARTIALLY_FILLED
     elif snapshot.status == REJECTED:
-        transition = orders.transition(snapshot.client_order_id, OrderState.REJECTED)
+        target = OrderState.REJECTED
     else:
         raise ValueError(f"unsupported broker snapshot status: {snapshot.status}")
 
+    if current.state == target and current.filled_quantity == snapshot.filled_quantity:
+        return RecoveryResult(target, current.filled_quantity, snapshot.status, False)
+
+    transition = orders.transition(
+        snapshot.client_order_id,
+        target,
+        filled_quantity=snapshot.filled_quantity,
+    )
     if not transition.accepted:
         raise RuntimeError(f"order-state reconciliation failed: {transition.reason}")
     return RecoveryResult(
