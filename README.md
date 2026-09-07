@@ -2,7 +2,7 @@
 
 Educational price-action research and paper-automation project for EURUSD-style OHLC data.
 
-**Current version: 0.17.0**
+**Current version: 0.18.0**
 
 ## Core idea
 
@@ -97,6 +97,32 @@ The replay deliberately preserves the live-session timing contract: a directiona
 - `UNRESOLVED` — the replay ended before the signal could receive a next-bar entry or before an opened position closed.
 
 This separation is intentional: outcome labels may use future information for **research measurement**, but that future information must never be visible when generating the original signal.
+
+## MTF filtered vs unfiltered paper comparison
+
+`strategy.mtf_paper_comparison.compare_mtf_paper_sessions()` runs two chronological paper arms over the same entry-timeframe candle window:
+
+```text
+same closed entry candles
+          |
+     +----+----+
+     |         |
+ baseline   MTF filter
+     |         |
+     +----+----+
+          |
+   same PaperSessionRunner
+          |
+       outcomes
+          |
+       metrics
+```
+
+The baseline uses the existing realtime signal unchanged. The MTF arm only changes a directional signal to `WAIT` when the timestamp-aligned multi-timeframe context does not support that direction. It cannot create a new setup.
+
+Higher-timeframe candles are eligible only when their full candle interval has closed by the entry candle's close timestamp. This is a research guard against the common mistake of using the still-forming 1H/4H/1D candle to explain an earlier 15M decision.
+
+The comparison reports signal count, opened/closed trades, WIN/LOSS, unresolved/skipped signals, realized R, win rate, mean/median R and signal-to-trade conversion. These are descriptive evidence, not proof that MTF will improve future performance.
 
 ## Safety rules
 
