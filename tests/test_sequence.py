@@ -70,3 +70,23 @@ def test_ambiguous_test_returns_wait():
     ]
     result = evaluate_sequence(candles, zone, "15m", LONG)
     assert result.action == WAIT
+
+
+def test_support_clean_rejection_without_wick_dominance_is_wait():
+    zone = PriceZone(1.0990, 1.1000, SUPPORT, 3)
+    candles = [
+        {"open": 1.0992, "high": 1.1015, "low": 1.0992, "close": 1.1010},
+        {"open": 1.1010, "high": 1.1025, "low": 1.1005, "close": 1.1022},
+    ]
+    result = evaluate_sequence(candles, zone, "15m", LONG)
+    assert result.action == WAIT
+
+
+def test_resistance_clean_rejection_without_wick_dominance_is_wait():
+    zone = PriceZone(1.1090, 1.1100, RESISTANCE, 3)
+    candles = [
+        {"open": 1.1108, "high": 1.1108, "low": 1.1080, "close": 1.1098},
+        {"open": 1.1098, "high": 1.1085, "low": 1.1050, "close": 1.1055},
+    ]
+    result = evaluate_sequence(candles, zone, "15m", SHORT)
+    assert result.action == WAIT
