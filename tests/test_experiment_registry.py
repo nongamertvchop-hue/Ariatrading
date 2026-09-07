@@ -4,8 +4,9 @@ from types import SimpleNamespace
 import pytest
 
 from strategy.experiment_registry import ExperimentRecord, build_experiment_record
-from strategy.ml_walk_forward import MLWalkForwardResult
+from strategy.ml_stability import FeatureImportance, MLStabilityReport
 from strategy.research_control import DatasetFingerprint, ResearchConfig, ResearchRun
+from strategy.regime import RegimeStats
 from strategy.validation import evaluate_trades
 
 
@@ -95,3 +96,31 @@ def test_experiment_requires_timezone_aware_creation_time():
             _ml_result(),
             created_at=datetime(2026, 1, 1),
         )
+
+
+def test_validation_diagnostics_are_embedded_in_fingerprint_and_json():
+    regime = (RegimeStats(regime="BULLISH", samples=4, positive=3),)
+    stability = MLStabilityReport(
+        sample_count=4,
+        feature_count=2,
+        baseline_accuracy=0.75,
+        importance=(FeatureImportance(0, 0.25, 0.0, 3), FeatureImportance(1, 0.0, 0.0, 3)),
+    )
+    first = build_experiment_record(
+        _controlled(),
+        _ml_result(),
+        regime_stats=regime,
+        stability_report=stability,
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    second = build_experiment_record(
+        _controlled(),
+        _ml_result(),
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+
+    validation = first.to_dict()["validation"]
+    assert validation["regime"]["stats"][0]["positive_rate"] == 0.75
+    assert validation["stability"]["sample_count"] == 4
+    assert first.experiment_sha256 != second.experiment_sha256
+    assert '"validation"' in first.to_json()
