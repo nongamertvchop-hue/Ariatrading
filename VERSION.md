@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.15.0**
+Current version: **0.15.1**
 
 ## Versioning rule
 
@@ -15,7 +15,7 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.15.0
+## Current milestone — 0.15.1
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
@@ -35,10 +35,13 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - A dedicated MTF Signal Advisor evaluates 1D -> 4H -> 1H -> 15M using the existing `/api/signal` outputs. Higher timeframes filter an existing 15M setup and cannot create a third strategy.
 - MTF and Webaria paper-engine page contracts are covered by automated tests.
 - Worker market-data traffic passes through a lightweight gateway that reduces duplicate upstream requests with short-lived fresh caching and serves recent successful snapshots as stale fallback during temporary provider/quota/network errors.
-- **New: MT5 demo-only execution adapter** validates the connected account as `ACCOUNT_TRADE_MODE_DEMO` on every execution path, validates symbol/volume/SL/TP constraints, runs `order_check()` before `order_send()`, uses ARIA magic IDs, and refuses duplicate managed positions.
-- **New: Demo Auto Trader orchestration** consumes the existing `RealtimeMonitor` and requires an explicit existing `SystemGateDecision` plus an explicit risk-plan resolver before any demo order can be submitted.
-- **New: continuous demo runtime** provides a closed-candle polling loop designed to run beside a MetaTrader 5 terminal; execution errors fail closed instead of retrying blindly.
-- MT5 real/live execution is still not supported. The new execution boundary hard-rejects real accounts by design.
+- MT5 demo-only execution adapter validates the connected account as `ACCOUNT_TRADE_MODE_DEMO` on every execution path, validates symbol/volume/SL/TP constraints, runs `order_check()` before `order_send()`, uses ARIA magic IDs, and refuses duplicate managed positions.
+- Demo Auto Trader consumes the existing `RealtimeMonitor` and requires an explicit `SystemGateDecision` plus an explicit risk-plan resolver before any demo order can be submitted.
+- Continuous demo runtime provides a closed-candle polling loop designed to run beside a MetaTrader 5 terminal; execution errors fail closed instead of retrying blindly.
+- Realtime demo control plane persists a single DEMO-only ON/OFF state in a Cloudflare Durable Object and exposes authenticated browser control plus runtime heartbeat status.
+- Webaria provides a realtime `AUTO ON/OFF` button and `DEMO · ONLINE/OFFLINE` runtime indicator. The browser only changes control state; it never sends MT5 orders.
+- The DemoAutoTrader re-checks the remote ON/OFF state immediately before the irreversible broker call and treats control-plane failures as OFF.
+- MT5 real/live execution remains unsupported; real accounts are rejected by the execution adapter.
 
 ## Next milestones
 
