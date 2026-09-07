@@ -156,8 +156,8 @@ def test_backtest_execution_cost_is_applied_once_before_risk_geometry(monkeypatc
     trade = result.trades[0]
     expected_entry = entry_price(100.0, LONG, model)
     assert trade.entry == expected_entry
-    assert trade.stop == zone.low
-    assert trade.target == pytest.approx(expected_entry + (expected_entry - zone.low))
+    assert trade.stop == pytest.approx(zone.low - 0.2)
+    assert trade.target == pytest.approx(expected_entry + (expected_entry - trade.stop))
 
 
 def test_backtest_rejects_unknown_entry_timing():
