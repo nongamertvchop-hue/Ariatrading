@@ -113,19 +113,29 @@ def _training_samples(
     return tuple(samples)
 
 
-def _test_samples(candles: list[dict], result: BacktestResult) -> tuple[MLSample, ...]:
+def _test_samples(
+    candles: list[dict],
+    result: BacktestResult,
+    *,
+    test_end: int,
+    horizon_bars: int,
+    favorable_move: float,
+) -> tuple[MLSample, ...]:
     samples: list[MLSample] = []
     for index, signal in zip(result.signal_indices, result.signals):
         if signal.action not in {LONG, SHORT}:
             continue
-        if index >= len(candles):
+        # The test label must be fully observable inside this fold. A label
+        # reaching beyond test_end would contaminate the fold boundary.
+        if index + horizon_bars >= test_end:
             continue
         samples.append(
-            MLSample(
-                index=index,
-                timestamp=candles[index].get("time"),
-                features=extract_signal_features(candles, index, signal),
-                label=0,
+            build_signal_sample(
+                candles,
+                index,
+                signal,
+                horizon_bars=horizon_bars,
+                favorable_move=favorable_move,
             )
         )
     return tuple(samples)
@@ -183,6 +193,7 @@ def deep_learning_walk_forward_backtest(
     execution_model=None,
     entry_timing: str = ENTRY_TIMING_SIGNAL_REFERENCE,
     sequence_length: int = 8,
+    horizon_bars: int = 3,
     favorable_move: float = 0.0,
     hidden_size: int = 32,
     layers: int = 1,
@@ -200,6 +211,8 @@ def deep_learning_walk_forward_backtest(
         raise ValueError("step_bars must be >= test_bars for non-overlapping folds")
     if sequence_length < 2:
         raise ValueError("sequence_length must be >= 2")
+    if horizon_bars < 1:
+        raise ValueError("horizon_bars must be >= 1")
     if favorable_move < 0:
         raise ValueError("favorable_move must be >= 0")
     if hidden_size < 1 or layers < 1 or heads < 1 or epochs < 1 or learning_rate <= 0:
@@ -244,7 +257,13 @@ def deep_learning_walk_forward_backtest(
             favorable_move=favorable_move,
             train_end=test_start,
         )
-        test_samples = _test_samples(candles, baseline)
+        test_samples = _test_samples(
+            candles,
+            baseline,
+            test_end=test_end,
+            horizon_bars=horizon_bars,
+            favorable_move=favorable_move,
+        )
 
         common_kwargs = {
             "train_samples": train_samples,
