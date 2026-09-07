@@ -67,7 +67,9 @@ def test_execution_adjusted_risk_plan_can_be_simulated_without_double_entry_cost
     assert explicit.entry == pytest.approx(legacy.entry)
     assert explicit.stop == pytest.approx(effective_plan.stop)
     assert explicit.target == pytest.approx(effective_plan.target)
-    assert explicit.r_multiple == pytest.approx((explicit.exit_price - explicit.entry - model.commission) / explicit.risk_distance) if explicit.exit_price else False
+    assert explicit.exit_price is not None
+    manual_r = (explicit.exit_price - explicit.entry - model.commission) / (explicit.entry - explicit.stop)
+    assert explicit.r_multiple == pytest.approx(manual_r)
     assert explicit.r_multiple != pytest.approx(legacy.r_multiple)
 
 
