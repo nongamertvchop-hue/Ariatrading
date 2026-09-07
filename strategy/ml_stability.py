@@ -102,7 +102,14 @@ def permutation_feature_importance(
             for row_index, row in enumerate(mutable):
                 features = list(row)
                 features[feature_index] = permutation[row_index]
-                permuted_samples.append(MLSample(tuple(features), labels[row_index]))
+                permuted_samples.append(
+                    MLSample(
+                        index=samples[row_index].index,
+                        timestamp=samples[row_index].timestamp,
+                        features=tuple(features),
+                        label=labels[row_index],
+                    )
+                )
             permuted_accuracy = _accuracy(model, permuted_samples)
             drops.append(baseline - permuted_accuracy)
         mean = sum(drops) / len(drops)
