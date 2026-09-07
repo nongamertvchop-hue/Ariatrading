@@ -11,7 +11,8 @@ research, aggregated research evidence, research-gate completeness checks,
 execution recovery, paper execution conformance, broker symbol-contract
 validation, research provenance, feed integrity, the final system readiness
 gate, deterministic historical paper replay, leakage-safe paper outcomes,
-paired baseline-vs-MTF paper comparison, and signal-quality diagnostics.
+paired baseline-vs-MTF paper comparison, paired statistical analysis, and
+signal-quality diagnostics.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
@@ -40,6 +41,7 @@ from .ml_walk_forward import MLWalkForwardFold, MLWalkForwardResult, ml_walk_for
 from .mtf_paper_comparison import MtfPaperComparison, PaperComparisonMetrics, compare_mtf_paper_sessions
 from .order_persistence import OrderPersistenceError, load_order_state, save_order_state
 from .order_state import OrderRecord, OrderState, OrderStateMachine, OrderTransition
+from .paired_analysis import DEFAULT_BOOTSTRAP_SAMPLES, DEFAULT_MIN_PAIRS_FOR_CI, PairedRDelta, PairedStatisticalAnalysis, analyze_paired_paper_outcomes
 from .paper import CLOSED, OPEN, PaperAccount, PaperPosition, PaperTradingEngine
 from .paper_execution_conformance import RecoveryResult, submit_with_recovery
 from .paper_outcomes import LOSS as PAPER_LOSS, SKIPPED, UNRESOLVED, WIN as PAPER_WIN, PaperSignalOutcome, label_paper_signals
@@ -69,43 +71,26 @@ from .walk_forward import WalkForwardFold, WalkForwardResult, walk_forward_backt
 
 __all__ = [
     "EngineSignal", "LONG", "SHORT", "WAIT", "evaluate_long", "evaluate_short",
-    "TwoSetupResult", "evaluate_two_setups",
-    "RiskLimits", "RiskDecision", "position_size", "evaluate_risk",
+    "TwoSetupResult", "evaluate_two_setups", "RiskLimits", "RiskDecision", "position_size", "evaluate_risk",
     "PortfolioRiskLimits", "PortfolioRiskState", "PortfolioRiskDecision", "PortfolioRiskController", "PORTFOLIO_ALLOW", "HALT",
     "PositionSnapshot", "LocalPositionState", "ReconciliationDecision", "reconcile_position", "new_entry_allowed", "FLAT",
-    "TradeGuardDecision", "evaluate_trade_guard",
-    "SystemGateDecision", "evaluate_system_readiness",
+    "TradeGuardDecision", "evaluate_trade_guard", "SystemGateDecision", "evaluate_system_readiness",
     "OrderState", "OrderRecord", "OrderTransition", "OrderStateMachine", "OrderPersistenceError", "save_order_state", "load_order_state",
-    "AuditEvent", "AuditJournal", "AuditJournalError", "ExecutionRecoveryDecision", "ExecutionRecoveryReport", "verify_execution_recovery",
-    "RecoveryResult", "submit_with_recovery",
-    "SymbolContract", "ContractValidation", "validate_order_contract",
-    "FeedIntegrityReport", "validate_feed_batch",
+    "AuditEvent", "AuditJournal", "AuditJournalError", "ExecutionRecoveryDecision", "ExecutionRecoveryReport", "verify_execution_recovery", "RecoveryResult", "submit_with_recovery",
+    "SymbolContract", "ContractValidation", "validate_order_contract", "FeedIntegrityReport", "validate_feed_batch",
     "PROVENANCE_SCHEMA_VERSION", "ResearchProvenance", "build_research_provenance", "fingerprint_payload", "save_research_provenance", "load_research_provenance", "provenance_compatible",
-    "ExecutionModel", "entry_price", "exit_price",
-    "ExperimentRecord", "build_experiment_record",
-    "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
+    "ExecutionModel", "entry_price", "exit_price", "ExperimentRecord", "build_experiment_record", "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
     "JournalEvent", "PaperTradeJournal", "signal_event_id", "MarketSnapshot", "ReplayPoint", "ReplayResult", "replay_forecasts",
-    "DataQuality", "RealtimeGuard", "expected_closed_bar_open", "RealtimeReplayResult", "replay_realtime_monitor",
-    "PaperReplayResult", "replay_paper_session",
+    "DataQuality", "RealtimeGuard", "expected_closed_bar_open", "RealtimeReplayResult", "replay_realtime_monitor", "PaperReplayResult", "replay_paper_session",
     "PaperSignalOutcome", "label_paper_signals", "PAPER_WIN", "PAPER_LOSS", "SKIPPED", "UNRESOLVED",
-    "PaperComparisonMetrics", "MtfPaperComparison", "compare_mtf_paper_sessions",
+    "PaperComparisonMetrics", "MtfPaperComparison", "compare_mtf_paper_sessions", "DEFAULT_BOOTSTRAP_SAMPLES", "DEFAULT_MIN_PAIRS_FOR_CI", "PairedRDelta", "PairedStatisticalAnalysis", "analyze_paired_paper_outcomes",
     "DEFAULT_SCORE_BUCKETS", "SignalQualityRow", "SignalQualityReport", "build_signal_quality_report",
-    "ALLOW", "SupervisorDecision", "supervise", "ResearchReport", "run_research",
-    "BacktestResult", "run_backtest", "run_all_timeframes", "ENTRY_TIMING_SIGNAL_REFERENCE", "ENTRY_TIMING_NEXT_BAR_OPEN",
-    "CLOSED", "OPEN", "PaperAccount", "PaperPosition", "PaperTradingEngine", "PaperSessionResult", "PaperSessionRunner",
-    "RobustnessScenario", "RobustnessCase", "RobustnessReport", "run_robustness_analysis",
-    "DatasetFingerprint", "ResearchConfig", "ResearchRun", "build_research_run", "config_fingerprint", "fingerprint_candles",
-    "ControlledResearchResult", "run_controlled_research", "ValidationEvidence", "build_validation_evidence", "INCOMPLETE", "READY", "ResearchGateDecision", "evaluate_research_gate",
-    "ResearchAuditReport", "audit_validation_evidence",
-    "FEATURE_NAMES", "MLSample", "build_signal_sample", "extract_signal_features",
-    "MLResearchMetrics", "MetaFilterModel", "MetaFilterResult", "chronological_train_test",
-    "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest", "MLWalkForwardFold", "MLWalkForwardResult", "ml_walk_forward_backtest",
-    "MLComparison", "compare_ml_results", "FeatureImportance", "MLStabilityReport", "permutation_feature_importance",
-    "REGIMES", "RegimeStats", "classify_regime", "stratify_samples", "FeatureDrift", "MLDriftReport", "analyze_feature_drift",
-    "MLBehaviorFold", "MLBehaviorReport", "analyze_ml_behavior",
-    "MLEvidencePolicy", "MLEvidenceDecision", "evaluate_ml_evidence_gate",
-    "CalibrationBin", "MLModelHealth", "MLModelHealthReport", "analyze_model_health",
-    "ModelType", "DeepLearningMetrics", "build_causal_sequences", "train_deep_sequence_model",
-    "DeepLearningWalkForwardFold", "DeepLearningWalkForwardResult", "deep_learning_walk_forward_backtest",
-    "ModelClassificationMetrics", "MLModelComparison", "MLChallengerAggregate", "compare_ml_models", "aggregate_challenger_results",
+    "ALLOW", "SupervisorDecision", "supervise", "ResearchReport", "run_research", "BacktestResult", "run_backtest", "run_all_timeframes", "ENTRY_TIMING_SIGNAL_REFERENCE", "ENTRY_TIMING_NEXT_BAR_OPEN",
+    "CLOSED", "OPEN", "PaperAccount", "PaperPosition", "PaperTradingEngine", "PaperSessionResult", "PaperSessionRunner", "RobustnessScenario", "RobustnessCase", "RobustnessReport", "run_robustness_analysis",
+    "DatasetFingerprint", "ResearchConfig", "ResearchRun", "build_research_run", "config_fingerprint", "fingerprint_candles", "ControlledResearchResult", "run_controlled_research", "ValidationEvidence", "build_validation_evidence", "INCOMPLETE", "READY", "ResearchGateDecision", "evaluate_research_gate",
+    "ResearchAuditReport", "audit_validation_evidence", "FEATURE_NAMES", "MLSample", "build_signal_sample", "extract_signal_features", "MLResearchMetrics", "MetaFilterModel", "MetaFilterResult", "chronological_train_test",
+    "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest", "MLWalkForwardFold", "MLWalkForwardResult", "ml_walk_forward_backtest", "MLComparison", "compare_ml_results", "FeatureImportance", "MLStabilityReport", "permutation_feature_importance",
+    "REGIMES", "RegimeStats", "classify_regime", "stratify_samples", "FeatureDrift", "MLDriftReport", "analyze_feature_drift", "MLBehaviorFold", "MLBehaviorReport", "analyze_ml_behavior",
+    "MLEvidencePolicy", "MLEvidenceDecision", "evaluate_ml_evidence_gate", "CalibrationBin", "MLModelHealth", "MLModelHealthReport", "analyze_model_health", "ModelType", "DeepLearningMetrics", "build_causal_sequences", "train_deep_sequence_model",
+    "DeepLearningWalkForwardFold", "DeepLearningWalkForwardResult", "deep_learning_walk_forward_backtest", "ModelClassificationMetrics", "MLModelComparison", "MLChallengerAggregate", "compare_ml_models", "aggregate_challenger_results",
 ]
