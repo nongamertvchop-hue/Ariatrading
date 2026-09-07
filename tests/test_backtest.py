@@ -99,10 +99,10 @@ def test_backtest_entry_timing_next_bar_open_matches_paper_lifecycle(monkeypatch
         candle["close"] = 100.0
     # First decision occurs at the normal 15m warmup boundary. Its next-bar
     # fill is deliberately different from the signal reference, then the
-    # following bar reaches TP.
+    # following bar reaches the adaptive-buffer-adjusted TP.
     decision_index = 32
     candles[decision_index + 1]["open"] = 101.0
-    candles[decision_index + 2]["high"] = 105.0
+    candles[decision_index + 2]["high"] = 106.0
 
     result = run_backtest(
         candles,
