@@ -6,12 +6,14 @@ replay, realtime monitoring, paper simulation, journaling, walk-forward
 validation, robustness analysis, reproducible research control, ML
 meta-filter research, experiment registry, regime diagnostics, ML feature
 drift diagnostics, ML OOS behavior diagnostics, ML model health diagnostics,
-deep-learning challenger models, aggregated research evidence, research-gate completeness checks,
-execution recovery, and the final system readiness gate.
+deep-learning challenger models, deep-learning walk-forward research,
+aggregated research evidence, research-gate completeness checks, execution
+recovery, and the final system readiness gate.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
 from .deep_learning import DeepLearningMetrics, ModelType, build_causal_sequences, train_deep_sequence_model
+from .deep_learning_walk_forward import DeepLearningWalkForwardFold, DeepLearningWalkForwardResult, deep_learning_walk_forward_backtest
 from .engine import EngineSignal, LONG, SHORT, WAIT, evaluate_long, evaluate_short
 from .execution import ExecutionModel, entry_price, exit_price
 from .execution_audit import AuditEvent, AuditJournal, AuditJournalError
@@ -85,4 +87,5 @@ __all__ = [
     "MLEvidencePolicy", "MLEvidenceDecision", "evaluate_ml_evidence_gate",
     "CalibrationBin", "MLModelHealth", "MLModelHealthReport", "analyze_model_health",
     "ModelType", "DeepLearningMetrics", "build_causal_sequences", "train_deep_sequence_model",
+    "DeepLearningWalkForwardFold", "DeepLearningWalkForwardResult", "deep_learning_walk_forward_backtest",
 ]
