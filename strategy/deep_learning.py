@@ -142,7 +142,9 @@ def _make_model(model_type: ModelType, feature_count: int, sequence_length: int,
                 div = torch.exp(torch.arange(0, hidden_size, 2, dtype=torch.float32) * (-log(10000.0) / hidden_size))
                 encoding = torch.zeros(sequence_length, hidden_size)
                 encoding[:, 0::2] = torch.sin(position * div)
-                encoding[:, 1::2] = torch.cos(position * div)
+                odd_width = encoding[:, 1::2].shape[1]
+                if odd_width:
+                    encoding[:, 1::2] = torch.cos(position * div[:odd_width])
                 self.register_buffer("encoding", encoding.unsqueeze(0), persistent=False)
 
             def forward(self, x):
