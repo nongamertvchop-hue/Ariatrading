@@ -1,13 +1,4 @@
-"""Structured journal for paper-trading research events.
-
-The journal records observations and completed paper trades without performing
-any broker interaction. Records are immutable and can be exported as plain
-Python dictionaries for later analysis or persistence.
-
-Signal events carry a deterministic ``event_id`` so polling, replay, and future
-persistent runtimes can deduplicate the same closed-candle observation without
-using wall-clock evaluation time as identity.
-"""
+"""Structured journal for paper-trading research events."""
 
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
@@ -39,10 +30,13 @@ class JournalEvent:
     r_multiple: float | None = None
     bars_held: int | None = None
     event_id: str | None = None
+    signal_time: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.event_time.tzinfo is None or self.event_time.utcoffset() is None:
             raise ValueError("event_time must be timezone-aware")
+        if self.signal_time is not None and (self.signal_time.tzinfo is None or self.signal_time.utcoffset() is None):
+            raise ValueError("signal_time must be timezone-aware")
         if not self.symbol:
             raise ValueError("symbol must not be empty")
         if not self.timeframe:
@@ -62,6 +56,8 @@ class JournalEvent:
     def as_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["event_time"] = self.event_time.isoformat()
+        if self.signal_time is not None:
+            data["signal_time"] = self.signal_time.isoformat()
         return data
 
 
@@ -112,9 +108,8 @@ class PaperTradeJournal:
         for raw in raw_events:
             if not isinstance(raw, dict):
                 raise ValueError("journal event must be an object")
-            event_time = self._timestamp(raw.get("event_time"))
             event = JournalEvent(
-                event_time=event_time,
+                event_time=self._timestamp(raw.get("event_time"), "event_time"),
                 event_type=self._string(raw.get("event_type"), "event_type"),
                 symbol=self._string(raw.get("symbol"), "symbol"),
                 timeframe=self._string(raw.get("timeframe"), "timeframe"),
@@ -129,25 +124,23 @@ class PaperTradeJournal:
                 r_multiple=self._optional_finite(raw.get("r_multiple"), "r_multiple"),
                 bars_held=self._optional_non_negative_int(raw.get("bars_held"), "bars_held"),
                 event_id=raw.get("event_id"),
+                signal_time=self._optional_timestamp(raw.get("signal_time"), "signal_time"),
             )
             if event.event_id is not None:
                 if event.event_id in identities:
                     raise ValueError("duplicate journal event_id in checkpoint")
                 identities.add(event.event_id)
-            if event.event_type == "SIGNAL":
+            if event.event_type == "SIGNAL" and event.event_id is not None:
+                if event.signal_time is None:
+                    raise ValueError("SIGNAL checkpoint event must include signal_time")
                 expected = signal_event_id(
                     symbol=event.symbol,
                     timeframe=event.timeframe,
-                    bar_time=event.event_time,
+                    bar_time=event.signal_time,
                     action=event.action,
                 )
-                # Older journals may have event_time equal to bar time. Current
-                # session checkpoints carry deterministic IDs, so only verify
-                # the format when the event can be tied directly to its time.
-                if event.event_id is not None and event.event_id != expected:
-                    # A signal's event_time may be wall-clock evaluation time;
-                    # retain the event rather than falsely rejecting valid data.
-                    pass
+                if event.event_id != expected:
+                    raise ValueError("SIGNAL event_id does not match signal identity")
             restored.append(event)
 
         self._events = restored
@@ -162,10 +155,11 @@ class PaperTradeJournal:
         signal: EngineSignal,
         signal_time: datetime | None = None,
     ) -> JournalEvent:
+        decision_time = signal_time or event_time
         identity = signal_event_id(
             symbol=symbol,
             timeframe=timeframe,
-            bar_time=signal_time or event_time,
+            bar_time=decision_time,
             action=signal.action,
         )
         if identity in self._event_ids:
@@ -183,6 +177,7 @@ class PaperTradeJournal:
             reason=signal.reason,
             trade_id=None,
             event_id=identity,
+            signal_time=decision_time,
         )
         self._events.append(event)
         self._event_ids.add(identity)
@@ -247,16 +242,20 @@ class PaperTradeJournal:
         return tuple(event for event in self._events if event.trade_id == trade_id)
 
     @staticmethod
-    def _timestamp(value: Any) -> datetime:
+    def _timestamp(value: Any, field_name: str) -> datetime:
         if not isinstance(value, str):
-            raise ValueError("journal event_time must be an ISO timestamp")
+            raise ValueError(f"{field_name} must be an ISO timestamp")
         try:
             parsed = datetime.fromisoformat(value)
         except ValueError as exc:
-            raise ValueError("journal event_time must be valid") from exc
+            raise ValueError(f"{field_name} must be a valid ISO timestamp") from exc
         if parsed.tzinfo is None or parsed.utcoffset() is None:
-            raise ValueError("journal event_time must be timezone-aware")
+            raise ValueError(f"{field_name} must be timezone-aware")
         return parsed.astimezone(timezone.utc)
+
+    @classmethod
+    def _optional_timestamp(cls, value: Any, field_name: str) -> datetime | None:
+        return None if value is None else cls._timestamp(value, field_name)
 
     @staticmethod
     def _string(value: Any, field_name: str) -> str:
