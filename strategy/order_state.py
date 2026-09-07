@@ -160,6 +160,42 @@ class OrderStateMachine:
         self._orders_by_client_id[client_order_id] = record
         return OrderTransition(True, record, "state transition accepted")
 
+    def restore(self, record: OrderRecord) -> OrderRecord:
+        """Restore a previously persisted record after validating its invariants.
+
+        Recovery must not replay the lifecycle from CREATED because a snapshot
+        intentionally contains only the latest state, not the historical events.
+        """
+        if not isinstance(record, OrderRecord):
+            raise TypeError("record must be an OrderRecord")
+        if not record.client_order_id:
+            raise ValueError("client_order_id must not be empty")
+        if not record.idempotency_key:
+            raise ValueError("idempotency_key must not be empty")
+        if record.direction not in {"LONG", "SHORT"}:
+            raise ValueError("direction must be LONG or SHORT")
+        if record.quantity <= 0:
+            raise ValueError("quantity must be > 0")
+        if not isinstance(record.state, OrderState):
+            raise ValueError("state must be an OrderState")
+        if record.filled_quantity < 0 or record.filled_quantity > record.quantity:
+            raise ValueError("filled_quantity must be between 0 and order quantity")
+        if record.state in {OrderState.CREATED, OrderState.SUBMITTING} and record.filled_quantity != 0:
+            raise ValueError("CREATED/SUBMITTING orders cannot have filled quantity")
+        if record.state in {OrderState.FILLED, OrderState.CLOSED} and record.filled_quantity != record.quantity:
+            raise ValueError("FILLED/CLOSED orders must have full filled quantity")
+
+        existing_client = self._orders_by_client_id.get(record.client_order_id)
+        if existing_client is not None and existing_client != record:
+            raise ValueError("client_order_id already exists with different order data")
+        existing_idempotency = self._client_id_by_idempotency.get(record.idempotency_key)
+        if existing_idempotency is not None and existing_idempotency != record.client_order_id:
+            raise ValueError("idempotency key already belongs to a different order")
+
+        self._orders_by_client_id[record.client_order_id] = record
+        self._client_id_by_idempotency[record.idempotency_key] = record.client_order_id
+        return record
+
     def get(self, client_order_id: str) -> OrderRecord:
         try:
             return self._orders_by_client_id[client_order_id]
