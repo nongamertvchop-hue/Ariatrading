@@ -45,8 +45,9 @@
     const timeframeEl = document.getElementById('timeframe');
     const statusEl = document.getElementById('status');
     const hudEl = document.getElementById('hud');
-    const state = { candles: [], zoom: 1, offset: 0, dragging: false, lastX: 0, loading: false };
-    let pollTimer;
+    const state = { candles: [], livePrice: null, zoom: 1, offset: 0, dragging: false, lastX: 0, loading: false };
+    let historyTimer;
+    let priceTimer;
 
     function resize() {
       const ratio = window.devicePixelRatio || 1;
@@ -72,7 +73,9 @@
       if (!state.candles.length) return;
       const { data } = visibleSlice(), left = 12, right = 74, top = 12, bottom = 28;
       const cw = Math.max(1, (w - left - right) / data.length);
-      const lo0 = Math.min(...data.map(c => c.low)), hi0 = Math.max(...data.map(c => c.high));
+      const prices = data.flatMap(c => [c.low, c.high]);
+      if (Number.isFinite(state.livePrice)) prices.push(state.livePrice);
+      const lo0 = Math.min(...prices), hi0 = Math.max(...prices);
       const pad = Math.max((hi0 - lo0) * .08, hi0 * .0002), lo = lo0 - pad, hi = hi0 + pad;
       const plotH = h - top - bottom, y = p => top + (hi - p) / (hi - lo) * plotH;
       ctx.strokeStyle = '#1c2229'; ctx.lineWidth = 1; ctx.font = '11px Arial'; ctx.fillStyle = '#69727e'; ctx.textAlign = 'left';
@@ -86,32 +89,51 @@
       });
       const last = data[data.length - 1], ly = y(last.close);
       ctx.setLineDash([4, 4]); ctx.strokeStyle = '#59616c'; ctx.beginPath(); ctx.moveTo(left, ly); ctx.lineTo(w - right, ly); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = '#181d23'; ctx.fillRect(w - right, ly - 10, right - 7, 20); ctx.fillStyle = '#d9dde3'; ctx.fillText(Number(last.close).toFixed(5), w - right + 7, ly + 4);
+      if (Number.isFinite(state.livePrice)) {
+        const liveY = y(state.livePrice);
+        ctx.setLineDash([6, 3]); ctx.strokeStyle = '#d9dde3'; ctx.beginPath(); ctx.moveTo(left, liveY); ctx.lineTo(w - right, liveY); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = '#d9dde3'; ctx.fillRect(w - right, liveY - 10, right - 7, 20); ctx.fillStyle = '#0b0e11'; ctx.fillText(state.livePrice.toFixed(5), w - right + 7, liveY + 4);
+      } else {
+        ctx.fillStyle = '#181d23'; ctx.fillRect(w - right, ly - 10, right - 7, 20); ctx.fillStyle = '#d9dde3'; ctx.fillText(Number(last.close).toFixed(5), w - right + 7, ly + 4);
+      }
       ctx.textAlign = 'center'; ctx.fillStyle = '#69727e';
       const labels = Math.max(2, Math.floor((w - left - right) / 100));
       for (let i = 0; i < labels; i++) { const idx = Math.min(data.length - 1, Math.floor(i * (data.length - 1) / Math.max(1, labels - 1))); const d = new Date(data[idx].datetime); if (!Number.isNaN(d.getTime())) ctx.fillText(d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), left + (idx + .5) * cw, h - 9); }
     }
-    async function load() {
-      if (state.loading) return; state.loading = true; statusEl.textContent = 'Updating…';
+    async function loadHistory() {
+      if (state.loading) return; state.loading = true; statusEl.textContent = 'Updating candles…';
       try {
         const params = new URLSearchParams({ symbol: symbolEl.value, timeframe: timeframeEl.value });
         const response = await fetch(`/api/signal?${params}`, { cache: 'no-store' });
         const payload = await response.json(); if (!response.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
         if (Array.isArray(payload.candles)) state.candles = payload.candles;
-        else if (payload.price != null && state.candles.length) state.candles[state.candles.length - 1].close = Number(payload.price);
-        hudEl.className = 'hud'; hudEl.innerHTML = `<strong>${payload.symbol || symbolEl.value}</strong><br>${payload.timeframe || timeframeEl.value} · ${payload.signal || 'WAIT'} · ${payload.price != null ? Number(payload.price).toFixed(5) : '—'}<br>${payload.state || ''}`;
-        statusEl.textContent = payload.generated_at ? `Updated ${new Date(payload.generated_at).toLocaleTimeString()}` : 'Connected'; draw();
+        hudEl.className = 'hud'; hudEl.innerHTML = `<strong>${payload.symbol || symbolEl.value}</strong><br>${payload.timeframe || timeframeEl.value} · ${payload.signal || 'WAIT'} · live ${Number.isFinite(state.livePrice) ? state.livePrice.toFixed(5) : '—'}<br>${payload.state || ''}`;
+        statusEl.textContent = 'Candles updated'; draw();
       } catch (error) { hudEl.className = 'hud error'; hudEl.textContent = `Market data unavailable: ${error.message}`; statusEl.textContent = 'Offline / error'; }
       finally { state.loading = false; }
     }
-    function restartPolling() { clearInterval(pollTimer); pollTimer = setInterval(load, 15000); }
-    symbolEl.addEventListener('change', () => { state.offset = 0; load(); }); timeframeEl.addEventListener('change', () => { state.offset = 0; load(); });
-    document.getElementById('refresh').addEventListener('click', load); window.addEventListener('resize', resize);
+    async function loadLivePrice() {
+      try {
+        const params = new URLSearchParams({ symbol: symbolEl.value });
+        const response = await fetch(`/api/price?${params}`, { cache: 'no-store' });
+        const payload = await response.json(); if (!response.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+        state.livePrice = Number(payload.price);
+        statusEl.textContent = `Live ${new Date(payload.generated_at).toLocaleTimeString()}`;
+        draw();
+      } catch (error) {
+        if (!state.candles.length) { hudEl.className = 'hud error'; hudEl.textContent = `Live price unavailable: ${error.message}`; }
+        statusEl.textContent = 'Live price error';
+      }
+    }
+    function restartPolling() { clearInterval(historyTimer); clearInterval(priceTimer); historyTimer = setInterval(loadHistory, 60000); priceTimer = setInterval(loadLivePrice, 5000); }
+    symbolEl.addEventListener('change', () => { state.offset = 0; state.livePrice = null; loadHistory(); loadLivePrice(); });
+    timeframeEl.addEventListener('change', () => { state.offset = 0; loadHistory(); });
+    document.getElementById('refresh').addEventListener('click', () => { loadHistory(); loadLivePrice(); }); window.addEventListener('resize', resize);
     canvas.addEventListener('pointerdown', e => { state.dragging = true; state.lastX = e.clientX; canvas.setPointerCapture(e.pointerId); });
     canvas.addEventListener('pointermove', e => { if (!state.dragging) return; const dx = e.clientX - state.lastX; state.lastX = e.clientX; const count = visibleCount(); state.offset = Math.max(0, Math.min(Math.max(0, state.candles.length - count), state.offset + dx / Math.max(1, wrap.clientWidth / count))); draw(); });
     canvas.addEventListener('pointerup', e => { state.dragging = false; canvas.releasePointerCapture(e.pointerId); }); canvas.addEventListener('pointercancel', () => { state.dragging = false; });
     canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(.5, Math.min(6, state.zoom * (e.deltaY < 0 ? 1.15 : .87))); draw(); }, { passive: false });
-    resize(); load(); restartPolling();
+    resize(); loadHistory(); loadLivePrice(); restartPolling();
   </script>
 </body>
 </html>
