@@ -9,8 +9,8 @@ feature drift diagnostics, ML OOS behavior diagnostics, ML model health
 diagnostics, deep-learning challenger models, deep-learning walk-forward
 research, aggregated research evidence, research-gate completeness checks,
 execution recovery, paper execution conformance, broker symbol-contract
-validation, research provenance, feed integrity, and the final system readiness
-gate.
+validation, research provenance, feed integrity, the final system readiness
+gate, and deterministic historical paper replay.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
@@ -40,6 +40,7 @@ from .order_persistence import OrderPersistenceError, load_order_state, save_ord
 from .order_state import OrderRecord, OrderState, OrderStateMachine, OrderTransition
 from .paper import CLOSED, OPEN, PaperAccount, PaperPosition, PaperTradingEngine
 from .paper_execution_conformance import RecoveryResult, submit_with_recovery
+from .paper_replay import PaperReplayResult, replay_paper_session
 from .paper_session import PaperSessionResult, PaperSessionRunner
 from .pipeline import ResearchReport, run_research
 from .portfolio_risk import ALLOW as PORTFOLIO_ALLOW, HALT, PortfolioRiskController, PortfolioRiskDecision, PortfolioRiskLimits, PortfolioRiskState
@@ -81,6 +82,7 @@ __all__ = [
     "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
     "JournalEvent", "PaperTradeJournal", "signal_event_id", "MarketSnapshot", "ReplayPoint", "ReplayResult", "replay_forecasts",
     "DataQuality", "RealtimeGuard", "expected_closed_bar_open", "RealtimeReplayResult", "replay_realtime_monitor",
+    "PaperReplayResult", "replay_paper_session",
     "ALLOW", "SupervisorDecision", "supervise", "ResearchReport", "run_research",
     "BacktestResult", "run_backtest", "run_all_timeframes", "ENTRY_TIMING_SIGNAL_REFERENCE", "ENTRY_TIMING_NEXT_BAR_OPEN",
     "CLOSED", "OPEN", "PaperAccount", "PaperPosition", "PaperTradingEngine", "PaperSessionResult", "PaperSessionRunner",
