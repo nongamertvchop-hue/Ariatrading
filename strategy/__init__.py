@@ -21,6 +21,7 @@ from .journal import JournalEvent, PaperTradeJournal
 from .market_snapshot import MarketSnapshot
 from .ml_features import FEATURE_NAMES, MLSample, build_signal_sample, extract_signal_features
 from .ml_meta import MLResearchMetrics, MetaFilterModel, MetaFilterResult, chronological_train_test
+from .ml_walk_forward import MLWalkForwardFold, MLWalkForwardResult, ml_walk_forward_backtest
 from .paper import CLOSED, OPEN, PaperAccount, PaperPosition, PaperTradingEngine
 from .paper_session import PaperSessionResult, PaperSessionRunner
 from .pipeline import ResearchReport, run_research
@@ -60,4 +61,5 @@ __all__ = [
     "FEATURE_NAMES", "MLSample", "build_signal_sample", "extract_signal_features",
     "MLResearchMetrics", "MetaFilterModel", "MetaFilterResult", "chronological_train_test",
     "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest",
+    "MLWalkForwardFold", "MLWalkForwardResult", "ml_walk_forward_backtest",
 ]
