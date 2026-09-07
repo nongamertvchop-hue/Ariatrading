@@ -22,6 +22,19 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function withDerivedState(state) {
+  let runtimeOnline = false;
+  if (state.runtimeHeartbeatAt) {
+    const heartbeat = Date.parse(state.runtimeHeartbeatAt);
+    runtimeOnline = Number.isFinite(heartbeat) && Date.now() - heartbeat <= 15_000;
+  }
+  return {
+    ...state,
+    mode: "DEMO_ONLY",
+    runtimeOnline,
+  };
+}
+
 export class AutoTradingControl extends DurableObject {
   async _state() {
     return {
@@ -35,10 +48,7 @@ export class AutoTradingControl extends DurableObject {
     const current = await this._state();
 
     if (request.method === "GET" && url.pathname === "/state") {
-      return json({
-        ...current,
-        mode: "DEMO_ONLY",
-      });
+      return json(withDerivedState(current));
     }
 
     if (request.method === "POST" && url.pathname === "/state") {
@@ -59,26 +69,19 @@ export class AutoTradingControl extends DurableObject {
         updatedBy: typeof payload.source === "string" && payload.source ? payload.source.slice(0, 80) : "webaria",
       };
       await this.ctx.storage.put("state", next);
-      return json({
-        ...next,
-        mode: "DEMO_ONLY",
-      });
+      return json(withDerivedState(next));
     }
 
     if (request.method === "POST" && url.pathname === "/heartbeat") {
-      const runtimeId = typeof request.headers.get("x-aria-runtime-id") === "string"
-        ? request.headers.get("x-aria-runtime-id").slice(0, 120)
-        : null;
+      const rawRuntimeId = request.headers.get("x-aria-runtime-id");
+      const runtimeId = rawRuntimeId ? rawRuntimeId.slice(0, 120) : null;
       const next = {
         ...current,
         runtimeHeartbeatAt: nowIso(),
         runtimeId,
       };
       await this.ctx.storage.put("state", next);
-      return json({
-        ...next,
-        mode: "DEMO_ONLY",
-      });
+      return json(withDerivedState(next));
     }
 
     return json({ error: "not found" }, 404);
