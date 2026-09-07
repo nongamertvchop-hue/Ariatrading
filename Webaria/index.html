@@ -8,15 +8,15 @@
   <style>
     html, body {
       width: 100%;
-      height: 100%;
+      min-height: 100%;
       margin: 0;
     }
 
     body {
+      box-sizing: border-box;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      min-height: 100vh;
       background: #fff;
       color: #000;
       font-family: Arial, Helvetica, sans-serif;
@@ -25,15 +25,96 @@
     main {
       flex: 1;
       width: 100%;
+      max-width: 760px;
+      box-sizing: border-box;
+      margin: 0 auto;
+      padding: 32px 20px;
       display: flex;
-      align-items: center;
+      flex-direction: column;
       justify-content: center;
+      gap: 24px;
     }
 
     h1 {
       margin: 0;
-      font-size: clamp(2rem, 8vw, 5rem);
+      font-size: clamp(2rem, 8vw, 4.5rem);
       font-weight: 400;
+      text-align: center;
+    }
+
+    .panel {
+      border: 1px solid #ddd;
+      border-radius: 16px;
+      padding: 24px;
+      background: #fafafa;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 10px;
+    }
+
+    input, select, button {
+      min-height: 44px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      padding: 0 12px;
+      font: inherit;
+      background: #fff;
+      color: #000;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.6;
+    }
+
+    .signal {
+      margin-top: 20px;
+      font-size: clamp(2rem, 12vw, 5rem);
+      font-weight: 700;
+      text-align: center;
+      letter-spacing: 0.04em;
+    }
+
+    .data {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .item {
+      padding: 12px;
+      border-radius: 10px;
+      background: #fff;
+      border: 1px solid #e5e5e5;
+    }
+
+    .label {
+      display: block;
+      margin-bottom: 5px;
+      color: #666;
+      font-size: 0.8rem;
+    }
+
+    .value {
+      overflow-wrap: anywhere;
+      font-weight: 600;
+    }
+
+    .status {
+      margin-top: 14px;
+      min-height: 1.4em;
+      color: #666;
+      font-size: 0.9rem;
     }
 
     footer {
@@ -45,15 +126,111 @@
       line-height: 1.5;
       color: #555;
     }
+
+    @media (max-width: 640px) {
+      .controls {
+        grid-template-columns: 1fr;
+      }
+
+      .data {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body>
   <main>
     <h1>Webaria</h1>
+
+    <section class="panel" aria-live="polite">
+      <div class="controls">
+        <input id="symbol" value="EUR/USD" autocomplete="off" aria-label="Forex symbol">
+        <select id="timeframe" aria-label="Timeframe">
+          <option value="1m">1m</option>
+          <option value="5m">5m</option>
+          <option value="15m" selected>15m</option>
+          <option value="30m">30m</option>
+          <option value="1h">1h</option>
+          <option value="4h">4h</option>
+          <option value="1D">1D</option>
+        </select>
+        <button id="refresh" type="button">Refresh</button>
+      </div>
+
+      <div id="signal" class="signal">WAIT</div>
+
+      <div class="data">
+        <div class="item"><span class="label">Price</span><span id="price" class="value">—</span></div>
+        <div class="item"><span class="label">State</span><span id="state" class="value">—</span></div>
+        <div class="item"><span class="label">Reason</span><span id="reason" class="value">—</span></div>
+        <div class="item"><span class="label">Breakout</span><span id="breakout" class="value">—</span></div>
+        <div class="item"><span class="label">Entry reference</span><span id="entry" class="value">—</span></div>
+        <div class="item"><span class="label">Stop reference</span><span id="stop" class="value">—</span></div>
+      </div>
+
+      <div id="status" class="status">Waiting for signal data…</div>
+    </section>
   </main>
 
   <footer>
     © 2026 tryth5556 / nongamertvchop. All rights reserved.
   </footer>
+
+  <script>
+    const POLL_MS = 30_000;
+    const symbolInput = document.getElementById("symbol");
+    const timeframeInput = document.getElementById("timeframe");
+    const refreshButton = document.getElementById("refresh");
+    const status = document.getElementById("status");
+
+    function setText(id, value) {
+      document.getElementById(id).textContent = value == null || value === "" ? "—" : String(value);
+    }
+
+    async function loadSignal() {
+      refreshButton.disabled = true;
+      status.textContent = "Loading…";
+
+      try {
+        const params = new URLSearchParams({
+          symbol: symbolInput.value.trim().toUpperCase(),
+          timeframe: timeframeInput.value,
+        });
+        const response = await fetch(`/api/signal?${params.toString()}`, {
+          method: "GET",
+          cache: "no-store",
+          headers: { "accept": "application/json" },
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+        }
+
+        setText("signal", payload.signal);
+        setText("price", payload.price);
+        setText("state", payload.state);
+        setText("reason", payload.reason);
+        setText("breakout", payload.breakout_state);
+        setText("entry", payload.entry_reference);
+        setText("stop", payload.stop_reference);
+        status.textContent = `Updated ${new Date(payload.generated_at).toLocaleString()}`;
+      } catch (error) {
+        setText("signal", "WAIT");
+        setText("price", null);
+        setText("state", "ERROR");
+        setText("reason", error.message);
+        setText("breakout", null);
+        setText("entry", null);
+        setText("stop", null);
+        status.textContent = "Signal endpoint unavailable.";
+      } finally {
+        refreshButton.disabled = false;
+      }
+    }
+
+    refreshButton.addEventListener("click", loadSignal);
+    loadSignal();
+    window.setInterval(loadSignal, POLL_MS);
+  </script>
 </body>
 </html>
