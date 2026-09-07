@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.13.4**
+Current version: **0.14.0**
 
 ## Versioning rule
 
@@ -15,7 +15,7 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.13.4
+## Current milestone — 0.14.0
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
@@ -35,14 +35,20 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - Position reconciliation now optionally tracks average entry price and enforces normalized broker symbol/volume contract consistency, while remaining backward compatible with older snapshots.
 - Average-entry and broker-contract mismatches fail closed before a reconciled position can be considered safe.
 - MT5 integration remains read-only; no order execution is implemented.
+- Webaria now includes a realtime Signal Advisor backed by the Worker market-data API and a browser-safe Paper Risk Engine.
+- A dedicated MTF Signal Advisor now evaluates 1D -> 4H -> 1H -> 15M using the existing `/api/signal` outputs. Higher timeframes filter an existing 15M setup and cannot create a third strategy.
+- The MTF Advisor records signal snapshots locally in the browser for research/journal review; the journal is not a broker execution log and is not shared between devices.
+- MTF and Webaria paper-engine page contracts are covered by automated tests.
 
 ## Next milestones
 
-### 0.13.x — production-boundary hardening
-- Complete identical-window classical ML/LSTM/Transformer comparison and strict final-OOS separation.
-- Add execution-friction sensitivity reports and deterministic realtime/replay parity checks.
-- Audit all research artifact persistence for atomicity, schema evolution, and corruption handling.
-- Integrate reconciled average-entry/contract state into the end-to-end paper recovery assertions where applicable.
+### 0.14.x — signal validation and paper research
+- Add signal-event IDs and deterministic deduplication so repeated polling cannot create duplicate research snapshots.
+- Add historical signal replay to the Webaria Advisor using the same realtime replay semantics as Python.
+- Add outcome labeling for paper signals only after the next completed bars are known, without changing the live signal itself.
+- Compare MTF filtered vs unfiltered paper signals on identical chronological windows.
+- Add signal-quality reports by timeframe, regime, breakout state, and setup score bucket.
+- Continue auditing execution-friction sensitivity and realtime/replay parity.
 
 ### 1.0.0 — Only after validation
 - Freeze a documented strategy specification only after out-of-sample and robustness checks.
