@@ -9,11 +9,14 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
-from typing import Any
+from typing import Any, Sequence
 
 from .ml_evaluation import MLComparison, compare_ml_results
+from .ml_stability import MLStabilityReport
 from .ml_walk_forward import MLWalkForwardResult
+from .regime import RegimeStats
 from .research_runner import ControlledResearchResult
+from .robustness import RobustnessReport
 
 
 @dataclass(frozen=True)
@@ -26,6 +29,7 @@ class ExperimentRecord:
     model_name: str
     model_params: dict[str, Any]
     ml: dict[str, Any]
+    validation: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-safe copy of the record."""
@@ -91,15 +95,50 @@ def _ml_payload(result: MLWalkForwardResult, comparison: MLComparison) -> dict[s
     }
 
 
+def _validation_payload(
+    regime_stats: Sequence[RegimeStats] | None,
+    stability_report: MLStabilityReport | None,
+    robustness_report: RobustnessReport | None,
+) -> dict[str, Any]:
+    """Serialize independent validation diagnostics without selecting winners."""
+    payload: dict[str, Any] = {}
+    if regime_stats is not None:
+        payload["regime"] = {
+            "stats": [asdict(item) | {"positive_rate": item.positive_rate} for item in regime_stats],
+        }
+    if stability_report is not None:
+        payload["stability"] = asdict(stability_report)
+    if robustness_report is not None:
+        payload["robustness"] = {
+            "timeframe": robustness_report.timeframe,
+            "cases": [
+                {
+                    "name": case.name,
+                    "execution_model": asdict(case.execution_model),
+                    "metrics": asdict(case.metrics),
+                }
+                for case in robustness_report.cases
+            ],
+        }
+    return payload
+
+
 def build_experiment_record(
     controlled: ControlledResearchResult,
     ml_result: MLWalkForwardResult,
     *,
     model_name: str = "HistGradientBoostingClassifier",
     model_params: dict[str, Any] | None = None,
+    regime_stats: Sequence[RegimeStats] | None = None,
+    stability_report: MLStabilityReport | None = None,
+    robustness_report: RobustnessReport | None = None,
     created_at: datetime | None = None,
 ) -> ExperimentRecord:
-    """Build a deterministic experiment record from completed OOS results."""
+    """Build a deterministic experiment record from completed OOS results.
+
+    Validation diagnostics are optional and are recorded verbatim. They are
+    never ranked, optimized, or used to alter the strategy or ML threshold.
+    """
     if not model_name or not model_name.strip():
         raise ValueError("model_name must be non-empty")
     if created_at is None:
@@ -128,12 +167,14 @@ def build_experiment_record(
         "dataset": asdict(control_payload.dataset),
     }
     ml = _ml_payload(ml_result, comparison)
+    validation = _validation_payload(regime_stats, stability_report, robustness_report)
     params = dict(model_params or {})
     fingerprint_payload = {
         "control": control,
         "model_name": model_name,
         "model_params": params,
         "ml": ml,
+        "validation": validation,
     }
     canonical = json.dumps(_stable_payload(fingerprint_payload), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     experiment_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -145,6 +186,7 @@ def build_experiment_record(
         model_name=model_name,
         model_params=params,
         ml=ml,
+        validation=validation,
     )
 
 
