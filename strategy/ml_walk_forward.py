@@ -30,6 +30,10 @@ class MLWalkForwardFold:
     train_positive: int
     test_labeled_samples: int
     model_trained: bool
+    train_last_signal_index: int | None
+    train_last_label_end_index: int | None
+    test_first_signal_index: int | None
+    test_last_signal_index: int | None
 
 
 @dataclass(frozen=True)
@@ -104,9 +108,8 @@ def ml_walk_forward_backtest(
     """Compare baseline and ML-filtered results over expanding OOS folds.
 
     The model for fold N is fitted only from directional signals whose labels
-    complete strictly before that fold's test window. The test fold is never
-    used for fitting, threshold selection, or feature construction of training
-    samples.
+    complete strictly before that fold's test window. The fold also records
+    temporal provenance so downstream audits can verify that boundary claim.
     """
     if history_bars < 1:
         raise ValueError("history_bars must be >= 1")
@@ -196,6 +199,17 @@ def ml_walk_forward_backtest(
             if signal.action in {LONG, SHORT} and index + horizon_bars < test_end
         )
 
+        train_last_signal_index = max((sample.index for sample in train_samples), default=None)
+        train_last_label_end_index = max(
+            (sample.index + horizon_bars for sample in train_samples),
+            default=None,
+        )
+        directional_test_indices = [
+            index
+            for index, signal in zip(baseline.signal_indices, baseline.signals)
+            if signal.action in {LONG, SHORT}
+        ]
+
         fold = MLWalkForwardFold(
             fold_index=fold_index,
             test_start=test_start,
@@ -206,6 +220,10 @@ def ml_walk_forward_backtest(
             train_positive=sum(sample.label for sample in train_samples),
             test_labeled_samples=test_labeled_samples,
             model_trained=model_trained,
+            train_last_signal_index=train_last_signal_index,
+            train_last_label_end_index=train_last_label_end_index,
+            test_first_signal_index=min(directional_test_indices, default=None),
+            test_last_signal_index=max(directional_test_indices, default=None),
         )
         folds.append(fold)
         baseline_trades.extend(baseline.trades)
