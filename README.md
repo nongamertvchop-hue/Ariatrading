@@ -52,6 +52,8 @@ The project is layered so every stage can be used together without duplicating s
 32. **MT5 demo execution boundary** — a separate adapter can submit protected orders only when the connected account is explicitly a MetaTrader 5 Demo account; real accounts are rejected.
 33. **Demo Auto Trader** — realtime orchestration that consumes the existing monitor and requires an explicit `SystemGateDecision` and risk-plan resolver before a demo order is sent.
 34. **Continuous demo runtime** — closed-candle polling loop for a Windows/MT5 host; runtime/execution ambiguity stops the process instead of retrying blindly.
+35. **Realtime demo control plane** — a persistent Cloudflare Durable Object stores the demo auto-trading ON/OFF state; Webaria can toggle it from the browser and the MT5 runtime re-checks it before execution.
+36. **Realtime demo control UI** — Webaria shows `AUTO ON/OFF` plus demo runtime `ONLINE/OFFLINE` status with short polling; the browser only controls state and never sends MT5 orders.
 
 ## Key modules
 
@@ -105,8 +107,11 @@ The project is layered so every stage can be used together without duplicating s
 - `adapters/mt5_feed.py` — read-only MT5 market-data adapter.
 - `adapters/paper_broker.py` — broker-like paper/demo simulator for deterministic execution tests.
 - `live/demo_mt5.py` — **DEMO-ONLY** MT5 order adapter with account, symbol, volume, SL/TP, duplicate-position, order-check, and execution-result validation.
-- `live/demo_auto_trader.py` — strategy-to-demo execution orchestration through the existing System Gate contract.
-- `live/demo_runtime.py` — continuous closed-candle demo runtime.
+- `live/demo_auto_trader.py` — strategy-to-demo execution orchestration through the existing System Gate contract and realtime control switch.
+- `live/demo_runtime.py` — continuous closed-candle demo runtime with remote fail-closed ON/OFF control.
+- `live/demo_control.py` — HTTPS client for the shared demo control plane.
+- `worker/auto_trading_control.js` — Cloudflare Durable Object for persistent demo auto-trading state.
+- `Webaria/auto-trading-control.js` — realtime Webaria ON/OFF control and runtime status UI.
 - `Webaria/paper-engine.js` — browser-safe paper risk primitives; no broker calls.
 - `Webaria/signal-advisor.html` — single-timeframe realtime Signal Advisor.
 - `Webaria/mtf-advisor.html` — multi-timeframe Signal Advisor and local signal journal.
@@ -142,12 +147,13 @@ LONG / SHORT / WAIT
         |                         +---- DL walk-forward folds + provenance
         |                         +---- ML Evidence Gate
         |
-        +---- Realtime path -> Supervisor -> System Gate
+        +---- Realtime path -> Supervisor -> SystemGate
                                   |
                                   +---- Paper Session -> Paper Broker
                                   |
                                   +---- DEMO Auto Trader
                                   |       |
+                                  |       +---- Remote ON/OFF control
                                   |       +---- MT5 Demo Account Guard
                                   |       +---- Symbol/Volume Contract
                                   |       +---- order_check()
@@ -160,13 +166,18 @@ LONG / SHORT / WAIT
                                   |       +---- 1D -> 4H -> 1H -> 15M filter
                                   |       +---- Entry / Stop / Score inspection
                                   |       +---- Browser-local signal journal
+                                  |       +---- AUTO ON/OFF + runtime status
                                   |
                                   +---- Webaria Paper Risk Engine
 ```
 
-The realtime path uses the same strategy engine rather than a separate execution strategy:
+The realtime demo execution path uses the same strategy engine rather than a separate strategy:
 
 `MT5 terminal -> MT5BarFeed -> feed integrity -> RealtimeMonitor -> engine -> LONG/SHORT/WAIT -> Supervisor -> SystemGate -> DemoAutoTrader -> MT5DemoExecutionAdapter`
+
+The demo control path is deliberately separate:
+
+`Webaria AUTO ON/OFF -> Cloudflare Worker /api/auto-trading -> Durable Object -> DemoRuntime control client -> execution_enabled() -> DemoAutoTrader`
 
 The Webaria Advisor path uses the Worker API for market-data analysis:
 
@@ -182,11 +193,11 @@ The MTF Advisor is deliberately conservative: it cannot invent LONG/SHORT direct
 
 Webaria Paper Trading is simulation-only. Browser-local state and signal journals are useful for testing the interface and research workflow but are not durable multi-device execution records.
 
-The MT5 demo runtime is intended for a dedicated demo account. It never accepts credentials from source code, and its execution adapter hard-rejects any account whose MT5 `trade_mode` is not `ACCOUNT_TRADE_MODE_DEMO`. MT5's documented `order_check()` is required before `order_send()`, and every successful submission is validated by return code. citeturn522763search0turn522763search1turn522763search5
+The MT5 demo runtime requires an explicit control endpoint and secret token. Its control client treats an unreachable or invalid control plane as OFF, and the `DemoAutoTrader` checks that control immediately before the broker call. The browser control endpoint only changes the persistent switch and never submits an MT5 order itself. Cloudflare Durable Objects provide the persistent, strongly consistent coordination primitive used for that state. citeturn384590search2turn384590search4
 
 ## Testing
 
-The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk and quantity constraints, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML model health, ML evidence readiness, fixed-window ML challenger comparison, deep-learning sequence causality, deep-learning walk-forward contracts and provenance persistence, realtime state handling, feed-integrity boundary behavior, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, paper-broker failure semantics, paper-position reconciliation semantics including average-entry and broker-contract mismatches, order persistence/recovery, execution audit integrity, broker contract validation, the integrated research facade/system gate, Webaria paper-risk behavior, and the single-timeframe Signal Advisor contract. Demo execution tests additionally verify the real-account guard, hard volume cap, order-check-before-send contract, SL/TP validation and managed-order behavior.
+The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk and quantity constraints, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML model health, ML evidence readiness, fixed-window ML challenger comparison, deep-learning sequence causality, deep-learning walk-forward contracts and provenance persistence, realtime state handling, feed-integrity boundary behavior, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, paper-broker failure semantics, paper-position reconciliation semantics including average-entry and broker-contract mismatches, order persistence/recovery, execution audit integrity, broker contract validation, the integrated research facade/system gate, Webaria paper-risk behavior, the single-timeframe Signal Advisor contract, and the demo execution/control contracts.
 
 The deep-learning implementation is optional in the default CI path because PyTorch is a large dependency. `requirements-ml.txt` provides the explicit ML environment for LSTM/Transformer experiments. `requirements-realtime.txt` already contains the MetaTrader5 Python package used by the MT5 feed and demo execution boundary.
 
