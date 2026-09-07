@@ -19,6 +19,7 @@ from .execution import ExecutionModel, entry_price, exit_price
 from .forecast import ForecastResult, HorizonForecast, ScenarioForecast, forecast
 from .journal import JournalEvent, PaperTradeJournal
 from .market_snapshot import MarketSnapshot
+from .ml_evaluation import MLComparison, compare_ml_results
 from .ml_features import FEATURE_NAMES, MLSample, build_signal_sample, extract_signal_features
 from .ml_meta import MLResearchMetrics, MetaFilterModel, MetaFilterResult, chronological_train_test
 from .ml_walk_forward import MLWalkForwardFold, MLWalkForwardResult, ml_walk_forward_backtest
@@ -62,4 +63,5 @@ __all__ = [
     "MLResearchMetrics", "MetaFilterModel", "MetaFilterResult", "chronological_train_test",
     "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest",
     "MLWalkForwardFold", "MLWalkForwardResult", "ml_walk_forward_backtest",
+    "MLComparison", "compare_ml_results",
 ]
