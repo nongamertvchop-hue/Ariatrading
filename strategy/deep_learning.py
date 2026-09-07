@@ -84,20 +84,18 @@ def build_causal_sequences(
     *,
     sequence_length: int = 8,
 ) -> tuple[tuple[tuple[float, ...], ...], tuple[int, ...]]:
-    """Build sequences ending at each target sample using past/current features.
-
-    ``history_samples`` must precede ``target_samples``. For an OOS target, the
-    sequence may use the tail of training features as context, but never future
-    target features. Labels are attached only to the final target in each
-    sequence.
-    """
+    """Build sequences ending at each target sample using past/current features."""
     if sequence_length < 2:
         raise ValueError("sequence_length must be >= 2")
-    history = _validate_samples(history_samples, "history_samples")
+    history = tuple(history_samples)
     target = _validate_samples(target_samples, "target_samples")
-    if history[-1].index >= target[0].index:
-        raise ValueError("history samples must strictly precede target samples")
-    width = len(history[0].features)
+    if history:
+        history = _validate_samples(history, "history_samples")
+        if history[-1].index >= target[0].index:
+            raise ValueError("history samples must strictly precede target samples")
+        width = len(history[0].features)
+    else:
+        width = len(target[0].features)
     if len(target[0].features) != width:
         raise ValueError("history and target feature widths must match")
 
@@ -115,19 +113,16 @@ def build_causal_sequences(
     return tuple(sequences), tuple(labels)
 
 
-def _standardize(
-    train_sequences: tuple[tuple[tuple[float, ...], ...], ...],
-    other_sequences: tuple[tuple[tuple[float, ...], ...], ...],
-):
+def _standardize(train_sequences, other_sequences):
     torch, _ = _torch()
     train_tensor = torch.tensor(train_sequences, dtype=torch.float32)
     other_tensor = torch.tensor(other_sequences, dtype=torch.float32)
     mean = train_tensor.mean(dim=(0, 1), keepdim=True)
     std = train_tensor.std(dim=(0, 1), keepdim=True, unbiased=False).clamp_min(1e-8)
-    return (train_tensor - mean) / std, (other_tensor - mean) / std
+    return (train_tensor - mean) / std, (other_tensor - mean) / std, mean, std
 
 
-def _make_model(model_type: ModelType, feature_count: int, hidden_size: int, layers: int, heads: int):
+def _make_model(model_type: ModelType, feature_count: int, sequence_length: int, hidden_size: int, layers: int, heads: int):
     torch, nn = _torch()
 
     if model_type == "lstm":
@@ -153,10 +148,24 @@ def _make_model(model_type: ModelType, feature_count: int, hidden_size: int, lay
         if hidden_size % heads != 0:
             raise ValueError("hidden_size must be divisible by heads for Transformer")
 
+        class PositionalEncoding(nn.Module):
+            def __init__(self):
+                super().__init__()
+                position = torch.arange(sequence_length, dtype=torch.float32).unsqueeze(1)
+                div = torch.exp(torch.arange(0, hidden_size, 2, dtype=torch.float32) * (-__import__("math").log(10000.0) / hidden_size))
+                encoding = torch.zeros(sequence_length, hidden_size)
+                encoding[:, 0::2] = torch.sin(position * div)
+                encoding[:, 1::2] = torch.cos(position * div)
+                self.register_buffer("encoding", encoding.unsqueeze(0), persistent=False)
+
+            def forward(self, x):
+                return x + self.encoding[:, : x.size(1), :]
+
         class TransformerClassifier(nn.Module):
             def __init__(self):
                 super().__init__()
                 self.input_projection = nn.Linear(feature_count, hidden_size)
+                self.position = PositionalEncoding()
                 layer = nn.TransformerEncoderLayer(
                     d_model=hidden_size,
                     nhead=heads,
@@ -169,7 +178,8 @@ def _make_model(model_type: ModelType, feature_count: int, hidden_size: int, lay
                 self.head = nn.Linear(hidden_size, 1)
 
             def forward(self, x):
-                encoded = self.encoder(self.input_projection(x))
+                encoded = self.position(self.input_projection(x))
+                encoded = self.encoder(encoded)
                 return self.head(encoded[:, -1, :]).squeeze(-1)
 
         return TransformerClassifier()
@@ -190,12 +200,7 @@ def train_deep_sequence_model(
     learning_rate: float = 1e-3,
     seed: int = 42,
 ) -> tuple[object, DeepLearningMetrics]:
-    """Train one chronological deep model and evaluate on later samples.
-
-    No validation/test sample is used for normalization or gradient updates.
-    The returned model exposes a ``score(features_sequence)`` method returning
-    a class-1 score. It is research-only and cannot create trade direction.
-    """
+    """Train chronologically and evaluate on later samples without leakage."""
     if model_type not in {"lstm", "transformer"}:
         raise ValueError("model_type must be 'lstm' or 'transformer'")
     if sequence_length < 2 or hidden_size < 1 or layers < 1 or heads < 1 or epochs < 1:
@@ -210,11 +215,8 @@ def train_deep_sequence_model(
     if len({sample.label for sample in train}) != 2:
         raise ValueError("training samples must contain both label classes")
 
-    train_sequences, train_labels = build_causal_sequences(train[:0], train, sequence_length=sequence_length)
-    # For training, target samples are the training observations themselves;
-    # the empty-history path is intentionally replaced by a sliding prefix.
-    train_sequences = []
-    train_labels = []
+    train_sequences: list[tuple[tuple[float, ...], ...]] = []
+    train_labels: list[int] = []
     for position in range(sequence_length - 1, len(train)):
         window = train[position - sequence_length + 1 : position + 1]
         train_sequences.append(tuple(sample.features for sample in window))
@@ -233,10 +235,10 @@ def train_deep_sequence_model(
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-    train_tensor, test_tensor = _standardize(tuple(train_sequences), test_sequences)
+    train_tensor, test_tensor, mean, std = _standardize(tuple(train_sequences), test_sequences)
     train_y = torch.tensor(train_labels, dtype=torch.float32)
     test_y = torch.tensor(test_labels, dtype=torch.float32)
-    model = _make_model(model_type, len(train[0].features), hidden_size, layers, heads)
+    model = _make_model(model_type, len(train[0].features), sequence_length, hidden_size, layers, heads)
 
     positives = float(train_y.sum().item())
     negatives = float(len(train_y) - positives)
@@ -277,21 +279,24 @@ def train_deep_sequence_model(
     )
 
     class ScoredModel:
-        def __init__(self, fitted_model, mean, std):
+        def __init__(self, fitted_model, normalization_mean, normalization_std):
             self._model = fitted_model
-            self._mean = mean
-            self._std = std
+            self._mean = normalization_mean
+            self._std = normalization_std
 
         def score(self, features_sequence):
             values = tuple(tuple(float(v) for v in row) for row in features_sequence)
             if len(values) != sequence_length or any(len(row) != len(train[0].features) for row in values):
                 raise ValueError("features_sequence has incorrect shape")
+            if any(not isfinite(value) for row in values for value in row):
+                raise ValueError("features_sequence must be finite")
             tensor = torch.tensor([values], dtype=torch.float32)
             tensor = (tensor - self._mean) / self._std
+            self._model.eval()
             with torch.no_grad():
                 return float(torch.sigmoid(self._model(tensor)).item())
 
-    return ScoredModel(model, train_tensor.new_tensor(_standardize(tuple(train_sequences), tuple(train_sequences))[0].new_zeros((1, 1, len(train[0].features)))), train_tensor.new_ones((1, 1, len(train[0].features)))), metrics
+    return ScoredModel(model, mean, std), metrics
 
 
 __all__ = [
