@@ -8,11 +8,12 @@ meta-filter research, experiment registry, regime diagnostics, ML feature
 drift diagnostics, ML OOS behavior diagnostics, ML model health diagnostics,
 deep-learning challenger models, deep-learning walk-forward research,
 aggregated research evidence, research-gate completeness checks, execution
-recovery, paper execution conformance, end-to-end paper recovery, and the
-final system readiness gate.
+recovery, paper execution conformance, end-to-end paper recovery, broker
+symbol-contract validation, and the final system readiness gate.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
+from .broker_contract import ContractValidation, SymbolContract, validate_order_contract
 from .deep_learning import DeepLearningMetrics, ModelType, build_causal_sequences, train_deep_sequence_model
 from .deep_learning_walk_forward import DeepLearningWalkForwardFold, DeepLearningWalkForwardResult, deep_learning_walk_forward_backtest
 from .engine import EngineSignal, LONG, SHORT, WAIT, evaluate_long, evaluate_short
@@ -71,6 +72,7 @@ __all__ = [
     "AuditEvent", "AuditJournal", "AuditJournalError", "ExecutionRecoveryDecision", "ExecutionRecoveryReport", "verify_execution_recovery",
     "RecoveryResult", "submit_with_recovery",
     "PaperExecutionCoordinator", "PaperRecoveryDecision", "PaperRecoveryResult",
+    "SymbolContract", "ContractValidation", "validate_order_contract",
     "ExecutionModel", "entry_price", "exit_price",
     "ExperimentRecord", "build_experiment_record",
     "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
