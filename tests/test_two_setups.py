@@ -20,7 +20,7 @@ def test_long_setup_is_detected_from_confirmed_repeated_support():
         _c(1.1012, 1.1020, 1.1010, 1.1018),
         _c(1.1018, 1.1020, 1.1008, 1.1010),
         _c(1.0998, 1.10065, 1.0996, 1.1006),
-        _c(1.1006, 1.1012, 1.1004, 1.1010),
+        _c(1.1006, 1.1017, 1.1004, 1.1015),
     ]
 
     result = evaluate_two_setups(candles, "15m")
