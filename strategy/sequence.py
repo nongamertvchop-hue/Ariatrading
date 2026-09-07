@@ -14,7 +14,7 @@ Educational/demo only. No orders are placed here.
 
 from dataclasses import dataclass
 
-from .candles import Candle, candle_pressure
+from .candles import Candle, candle_pressure, rejection_pressure
 from .fake_breakout import (
     FAKE_BREAKOUT,
     NO_BREAKOUT,
@@ -94,7 +94,11 @@ def evaluate_sequence(
                     return SequenceResult(WAIT, BROKEN, "support closed decisively below the zone", test_index, current_index, breakout_state=breakout.state)
                 continue
             reclaim = breakout.state == FAKE_BREAKOUT
-            rejection = breakout.state == NO_BREAKOUT and test.close > zone.high and candle_pressure(test) == "BUYING"
+            rejection = (
+                breakout.state == NO_BREAKOUT
+                and test.close > zone.high
+                and rejection_pressure(test, LONG)
+            )
             if not (reclaim or rejection):
                 continue
             if candle_pressure(current) != "BUYING":
@@ -110,7 +114,11 @@ def evaluate_sequence(
                 return SequenceResult(WAIT, BROKEN, "resistance closed decisively above the zone", test_index, current_index, breakout_state=breakout.state)
             continue
         reclaim = breakout.state == FAKE_BREAKOUT
-        rejection = breakout.state == NO_BREAKOUT and test.close < zone.low and candle_pressure(test) == "SELLING"
+        rejection = (
+            breakout.state == NO_BREAKOUT
+            and test.close < zone.low
+            and rejection_pressure(test, SHORT)
+        )
         if not (reclaim or rejection):
             continue
         if candle_pressure(current) != "SELLING":
