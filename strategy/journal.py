@@ -3,12 +3,17 @@
 The journal records observations and completed paper trades without performing
 any broker interaction. Records are immutable and can be exported as plain
 Python dictionaries for later analysis or persistence.
+
+Signal events carry a deterministic ``event_id`` so polling, replay, and future
+persistent runtimes can deduplicate the same closed-candle observation without
+using wall-clock evaluation time as identity.
 """
 
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
+from hashlib import sha256
 from math import isfinite
-from typing import Any, Iterable
+from typing import Any
 
 from .engine import EngineSignal, LONG, SHORT, WAIT
 from .paper import PaperPosition
@@ -30,6 +35,7 @@ class JournalEvent:
     outcome: str | None = None
     r_multiple: float | None = None
     bars_held: int | None = None
+    event_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.event_time.tzinfo is None or self.event_time.utcoffset() is None:
@@ -47,6 +53,8 @@ class JournalEvent:
                 raise ValueError(f"{name} must be finite")
         if self.bars_held is not None and self.bars_held < 0:
             raise ValueError("bars_held must be >= 0")
+        if self.event_id is not None and not self.event_id:
+            raise ValueError("event_id must not be empty")
 
     def as_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -54,15 +62,37 @@ class JournalEvent:
         return data
 
 
+def signal_event_id(*, symbol: str, timeframe: str, bar_time: datetime, action: str) -> str:
+    """Build a stable identity from the decision boundary, not wall-clock time."""
+    if not symbol:
+        raise ValueError("symbol must not be empty")
+    if not timeframe:
+        raise ValueError("timeframe must not be empty")
+    if action not in {LONG, SHORT, WAIT}:
+        raise ValueError("action must be LONG, SHORT, or WAIT")
+    if bar_time.tzinfo is None or bar_time.utcoffset() is None:
+        raise ValueError("bar_time must be timezone-aware")
+    normalized = bar_time.astimezone(timezone.utc).isoformat()
+    payload = f"{symbol}\x1f{timeframe}\x1f{normalized}\x1f{action}".encode("utf-8")
+    return sha256(payload).hexdigest()
+
+
 class PaperTradeJournal:
     """Append-only in-memory journal suitable for paper-session research."""
 
     def __init__(self) -> None:
         self._events: list[JournalEvent] = []
+        self._event_ids: set[str] = set()
 
     @property
     def events(self) -> tuple[JournalEvent, ...]:
         return tuple(self._events)
+
+    def has_event(self, event_id: str) -> bool:
+        """Return whether an event identity has already been recorded."""
+        if not event_id:
+            raise ValueError("event_id must not be empty")
+        return event_id in self._event_ids
 
     def record_signal(
         self,
@@ -71,7 +101,20 @@ class PaperTradeJournal:
         symbol: str,
         timeframe: str,
         signal: EngineSignal,
+        signal_time: datetime | None = None,
     ) -> JournalEvent:
+        identity = signal_event_id(
+            symbol=symbol,
+            timeframe=timeframe,
+            bar_time=signal_time or event_time,
+            action=signal.action,
+        )
+        if identity in self._event_ids:
+            for event in self._events:
+                if event.event_id == identity:
+                    return event
+            raise RuntimeError("journal event id index is inconsistent")
+
         event = JournalEvent(
             event_time=event_time,
             event_type="SIGNAL",
@@ -80,8 +123,10 @@ class PaperTradeJournal:
             action=signal.action,
             reason=signal.reason,
             trade_id=None,
+            event_id=identity,
         )
         self._events.append(event)
+        self._event_ids.add(identity)
         return event
 
     def record_open(
