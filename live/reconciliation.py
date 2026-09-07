@@ -116,12 +116,6 @@ def reconcile_paper_state(
 
     position = paper.position
     unmatched_opens = {trade_id: items[0] for trade_id, items in opens.items() if trade_id not in closes}
-    all_trade_ids = set(opens) | set(closes)
-    if all_trade_ids:
-        next_trade_id = paper.to_state().get("next_trade_id")
-        if not isinstance(next_trade_id, int) or next_trade_id <= max(all_trade_ids):
-            _fail("NEXT_TRADE_ID_NOT_MONOTONIC", "next_trade_id must be greater than every journal trade_id")
-
     if position is None:
         if unmatched_opens:
             trade_id = next(iter(unmatched_opens))
@@ -139,6 +133,12 @@ def reconcile_paper_state(
                 _fail("POSITION_PRICE_MISMATCH", f"journal OPEN {field} does not match paper position")
         if opening.event_time != position.entry_time:
             _fail("POSITION_ENTRY_TIME_MISMATCH", "journal OPEN time does not match paper position entry_time")
+
+    all_trade_ids = set(opens) | set(closes)
+    if all_trade_ids:
+        next_trade_id = paper.to_state().get("next_trade_id")
+        if not isinstance(next_trade_id, int) or next_trade_id <= max(all_trade_ids):
+            _fail("NEXT_TRADE_ID_NOT_MONOTONIC", "next_trade_id must be greater than every journal trade_id")
 
 
 def _aware_utc(value: datetime, field_name: str) -> datetime:
