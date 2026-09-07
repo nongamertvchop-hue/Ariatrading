@@ -1,5 +1,5 @@
 from strategy.two_setups import evaluate_two_setups
-from strategy.engine import LONG, WAIT
+from strategy.engine import LONG, SHORT, WAIT
 
 
 def _c(open_, high, low, close):
@@ -29,7 +29,34 @@ def test_long_setup_is_detected_from_confirmed_repeated_support():
     assert result.signal.confirmation_index == len(candles) - 1
     assert result.signal.test_index < result.signal.confirmation_index
     assert result.signal.test_index >= 0
+    assert result.signal.stop_reference is not None
+    assert result.signal.stop_reference < result.signal.zone.low
     assert result.support_zones
+
+
+def test_short_setup_exposes_protective_stop_above_resistance():
+    candles = [
+        _c(1.1080, 1.1085, 1.1075, 1.1082),
+        _c(1.1082, 1.1095, 1.1080, 1.1092),
+        _c(1.1092, 1.1110, 1.1090, 1.1094),
+        _c(1.1094, 1.1100, 1.1078, 1.1082),
+        _c(1.1082, 1.1096, 1.1075, 1.1088),
+        _c(1.1088, 1.1108, 1.1085, 1.1096),
+        _c(1.1096, 1.1100, 1.1079, 1.1084),
+        _c(1.1084, 1.1097, 1.1070, 1.1089),
+        _c(1.1089, 1.1112, 1.1086, 1.1098),
+        _c(1.1098, 1.1100, 1.1070, 1.1080),
+        _c(1.1080, 1.1097, 1.1072, 1.1086),
+        _c(1.1090, 1.1110, 1.1086, 1.1100),
+        _c(1.1100, 1.1103, 1.1068, 1.1070),
+    ]
+
+    result = evaluate_two_setups(candles, "15m")
+
+    assert result.signal.action == SHORT
+    assert result.signal.stop_reference is not None
+    assert result.signal.zone is not None
+    assert result.signal.stop_reference > result.signal.zone.high
 
 
 def test_latest_candle_is_not_used_to_construct_zones():
