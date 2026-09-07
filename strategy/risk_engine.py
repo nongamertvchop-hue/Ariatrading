@@ -150,12 +150,18 @@ def evaluate_risk(
     )
     if quantity <= 0:
         return RiskDecision(False, "computed quantity is below broker minimum step")
+
+    if limits.min_quantity > 0 and quantity < limits.min_quantity:
+        return RiskDecision(False, "computed quantity is below configured minimum quantity")
+
     if limits.max_quantity is not None and quantity > limits.max_quantity:
         quantity = limits.max_quantity
         if quantity_step > 0:
             quantity = (quantity // quantity_step) * quantity_step
         if quantity <= 0:
             return RiskDecision(False, "maximum quantity cap is below broker minimum step")
+        if limits.min_quantity > 0 and quantity < limits.min_quantity:
+            return RiskDecision(False, "quantity cap leaves less than configured minimum quantity")
 
     risk_amount = abs(entry - stop) * value_per_price_unit * quantity
     if risk_amount > requested_risk * (1.0 + 1e-12):
