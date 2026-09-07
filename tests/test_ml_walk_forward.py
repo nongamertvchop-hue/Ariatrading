@@ -54,6 +54,16 @@ def test_ml_walk_forward_runs_without_future_fold_training():
         assert fold.test_labeled_samples >= 0
         assert fold.train_samples >= 0
         assert fold.train_positive <= fold.train_samples
+        if fold.train_samples:
+            assert fold.train_last_signal_index is not None
+            assert fold.train_last_label_end_index == fold.train_last_signal_index + result.horizon_bars
+            assert fold.train_last_label_end_index < fold.test_start
+        else:
+            assert fold.train_last_signal_index is None
+            assert fold.train_last_label_end_index is None
+        if fold.test_first_signal_index is not None:
+            assert fold.test_start <= fold.test_first_signal_index < fold.test_end
+            assert fold.test_first_signal_index <= fold.test_last_signal_index < fold.test_end
 
 
 def test_ml_comparison_is_descriptive_and_non_optimizing():
