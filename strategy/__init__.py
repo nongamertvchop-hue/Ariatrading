@@ -23,6 +23,7 @@ from .market_snapshot import MarketSnapshot
 from .ml_evaluation import MLComparison, compare_ml_results
 from .ml_features import FEATURE_NAMES, MLSample, build_signal_sample, extract_signal_features
 from .ml_meta import MLResearchMetrics, MetaFilterModel, MetaFilterResult, chronological_train_test
+from .ml_stability import FeatureImportance, MLStabilityReport, permutation_feature_importance
 from .ml_walk_forward import MLWalkForwardFold, MLWalkForwardResult, ml_walk_forward_backtest
 from .paper import CLOSED, OPEN, PaperAccount, PaperPosition, PaperTradingEngine
 from .paper_session import PaperSessionResult, PaperSessionRunner
@@ -67,5 +68,6 @@ __all__ = [
     "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest",
     "MLWalkForwardFold", "MLWalkForwardResult", "ml_walk_forward_backtest",
     "MLComparison", "compare_ml_results",
+    "FeatureImportance", "MLStabilityReport", "permutation_feature_importance",
     "REGIMES", "RegimeStats", "classify_regime", "stratify_samples",
 ]
