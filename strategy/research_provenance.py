@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass
-from math import isfinite
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 
@@ -116,6 +117,63 @@ def build_research_provenance(
     )
 
 
+def save_research_provenance(
+    provenance: ResearchProvenance,
+    path: str | os.PathLike[str],
+) -> None:
+    """Atomically persist provenance as canonical JSON."""
+    if not isinstance(provenance, ResearchProvenance):
+        raise TypeError("provenance must be a ResearchProvenance instance")
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    serialized = _canonical_json(provenance.to_dict())
+    temporary = target.with_name(f".{target.name}.tmp")
+    try:
+        temporary.write_text(serialized, encoding="utf-8")
+        with temporary.open("rb") as handle:
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    except OSError as exc:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise OSError(f"failed to persist research provenance: {exc}") from exc
+
+
+def load_research_provenance(path: str | os.PathLike[str]) -> ResearchProvenance:
+    """Load and validate a persisted provenance record."""
+    target = Path(path)
+    try:
+        raw = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"failed to load research provenance: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ValueError("research provenance must be a JSON object")
+    required = {
+        "schema_version",
+        "dataset_fingerprint",
+        "feature_fingerprint",
+        "model_name",
+        "model_config_fingerprint",
+        "code_version",
+    }
+    if set(raw) != required:
+        raise ValueError("research provenance has an unexpected schema")
+    try:
+        return ResearchProvenance(
+            dataset_fingerprint=str(raw["dataset_fingerprint"]),
+            feature_fingerprint=str(raw["feature_fingerprint"]),
+            model_name=str(raw["model_name"]),
+            model_config_fingerprint=str(raw["model_config_fingerprint"]),
+            code_version=str(raw["code_version"]),
+            schema_version=int(raw["schema_version"]),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("invalid research provenance fields") from exc
+
+
 def provenance_compatible(left: ResearchProvenance, right: ResearchProvenance) -> bool:
     """Return whether two artifacts are comparable under strict provenance."""
     if not isinstance(left, ResearchProvenance) or not isinstance(right, ResearchProvenance):
@@ -134,5 +192,7 @@ __all__ = [
     "ResearchProvenance",
     "build_research_provenance",
     "fingerprint_payload",
+    "save_research_provenance",
+    "load_research_provenance",
     "provenance_compatible",
 ]
