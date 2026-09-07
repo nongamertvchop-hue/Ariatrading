@@ -3,7 +3,8 @@
 The package keeps the two core setups stable while exposing consistent
 interfaces across strategy, forecast, backtest, execution-cost simulation,
 replay, realtime monitoring, paper simulation, journaling, walk-forward
-validation, robustness analysis, and reproducible research control.
+validation, robustness analysis, reproducible research control, and ML
+meta-filter research.
 """
 
 from .backtest import (
@@ -18,6 +19,8 @@ from .execution import ExecutionModel, entry_price, exit_price
 from .forecast import ForecastResult, HorizonForecast, ScenarioForecast, forecast
 from .journal import JournalEvent, PaperTradeJournal
 from .market_snapshot import MarketSnapshot
+from .ml_features import FEATURE_NAMES, MLSample, build_signal_sample, extract_signal_features
+from .ml_meta import MLResearchMetrics, MetaFilterModel, MetaFilterResult, chronological_train_test
 from .paper import CLOSED, OPEN, PaperAccount, PaperPosition, PaperTradingEngine
 from .paper_session import PaperSessionResult, PaperSessionRunner
 from .pipeline import ResearchReport, run_research
@@ -54,5 +57,7 @@ __all__ = [
     "DatasetFingerprint", "ResearchConfig", "ResearchRun", "build_research_run",
     "config_fingerprint", "fingerprint_candles",
     "ControlledResearchResult", "run_controlled_research",
+    "FEATURE_NAMES", "MLSample", "build_signal_sample", "extract_signal_features",
+    "MLResearchMetrics", "MetaFilterModel", "MetaFilterResult", "chronological_train_test",
     "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest",
 ]
