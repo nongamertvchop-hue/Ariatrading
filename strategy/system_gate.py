@@ -2,9 +2,9 @@
 
 This module is an orchestration safety layer. It does not generate signals,
 select ML models, or place broker orders. It verifies that independently
-computed strategy, data, portfolio-risk, trade-risk, reconciliation,
-execution-recovery, and optional ML-evidence decisions agree before an
-execution adapter is allowed to proceed.
+computed strategy, data, portfolio-risk, trade-risk, broker-contract,
+reconciliation, execution-recovery, and optional ML-evidence decisions agree
+before an execution adapter is allowed to proceed.
 
 The two deterministic LONG/SHORT setups remain the only source of direction.
 """
@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite
 
+from .broker_contract import ContractValidation
 from .engine import EngineSignal, LONG, SHORT, WAIT
 from .execution_recovery import ExecutionRecoveryDecision, ExecutionRecoveryReport
 from .ml_evidence_gate import MLEvidenceDecision
@@ -45,16 +46,17 @@ def evaluate_system_readiness(
     risk: RiskDecision,
     reconciliation: ReconciliationDecision,
     execution_recovery: ExecutionRecoveryReport | None,
+    broker_contract: ContractValidation | None = None,
     ml_evidence: MLEvidenceDecision | None = None,
     require_ml_evidence: bool = False,
 ) -> SystemGateDecision:
     """Combine all hard pre-execution safety contracts into one decision.
 
     The function is deliberately fail-closed. A missing recovery report, an
-    unsafe strategy state, bad data, portfolio/risk rejection, an existing
-    broker position, a position-state mismatch, or missing required ML
-    evidence produces DENY. ML evidence can be required explicitly, but it
-    never changes LONG/SHORT direction by itself.
+    unsafe strategy state, bad data, portfolio/risk rejection, an invalid broker
+    contract, an existing broker position, a position-state mismatch, or
+    missing required ML evidence produces DENY. ML evidence can be required
+    explicitly, but it never changes LONG/SHORT direction by itself.
     """
     if not isinstance(signal, EngineSignal):
         raise ValueError("signal must be an EngineSignal")
@@ -68,6 +70,8 @@ def evaluate_system_readiness(
         raise ValueError("reconciliation must be a ReconciliationDecision")
     if execution_recovery is not None and not isinstance(execution_recovery, ExecutionRecoveryReport):
         raise ValueError("execution_recovery must be an ExecutionRecoveryReport or None")
+    if broker_contract is not None and not isinstance(broker_contract, ContractValidation):
+        raise ValueError("broker_contract must be a ContractValidation or None")
     if ml_evidence is not None and not isinstance(ml_evidence, MLEvidenceDecision):
         raise ValueError("ml_evidence must be an MLEvidenceDecision or None")
     if not isinstance(require_ml_evidence, bool):
@@ -96,6 +100,16 @@ def evaluate_system_readiness(
     if not isfinite(risk.quantity) or risk.quantity <= 0:
         return SystemGateDecision(DENY, False, "risk quantity must be finite and > 0", checks=tuple(checks))
     checks.append("trade-risk=OK")
+
+    if broker_contract is not None:
+        if not broker_contract.allowed:
+            return SystemGateDecision(
+                DENY,
+                False,
+                f"broker contract rejected: {broker_contract.reason}",
+                checks=tuple(checks),
+            )
+        checks.append("broker-contract=OK")
 
     if not reconciliation.safe:
         return SystemGateDecision(
