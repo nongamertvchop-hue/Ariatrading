@@ -91,15 +91,16 @@ def test_backtest_entry_timing_next_bar_open_matches_paper_lifecycle(monkeypatch
     monkeypatch.setattr(backtest_module, "_latest_zones", fake_zones)
     monkeypatch.setattr(backtest_module, "evaluate_long", fake_long)
 
-    candles = make_candles(20)
+    candles = make_candles(40)
     for candle in candles:
         candle["open"] = 100.0
         candle["high"] = 100.5
         candle["low"] = 99.5
         candle["close"] = 100.0
-    # First decision occurs after warmup. Its next-bar fill is deliberately
-    # different from the signal reference, then the following bar reaches TP.
-    decision_index = 12
+    # First decision occurs at the normal 15m warmup boundary. Its next-bar
+    # fill is deliberately different from the signal reference, then the
+    # following bar reaches TP.
+    decision_index = 32
     candles[decision_index + 1]["open"] = 101.0
     candles[decision_index + 2]["high"] = 105.0
 
@@ -133,7 +134,7 @@ def test_backtest_default_entry_timing_remains_signal_reference(monkeypatch):
         ),
     )
 
-    candles = make_candles(20)
+    candles = make_candles(40)
     for candle in candles:
         candle["open"] = 101.0
         candle["high"] = 102.5
