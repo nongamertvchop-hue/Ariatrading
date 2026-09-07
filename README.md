@@ -2,7 +2,7 @@
 
 Educational price-action research and paper-automation project for EURUSD-style OHLC data.
 
-**Current version: 0.16.0**
+**Current version: 0.17.0**
 
 ## Core idea
 
@@ -88,9 +88,17 @@ The runtime uses atomic JSON checkpoint replacement for the current single-proce
 
 The replay deliberately preserves the live-session timing contract: a directional signal discovered on candle N is stored as pending state and can only be opened on a later candle, using that later candle's OPEN as the simulated fill reference. Future candles are never supplied to the monitor before their replay step.
 
-This is a validation harness, not a profitability claim. It does not send MT5 orders and does not promote the system toward live execution by itself.
+## Paper outcome labeling
 
-## Development safety rules
+`strategy.paper_outcomes.label_paper_signals()` is a post-replay research layer. It does not feed labels back into strategy decisions. A directional signal is labeled only from lifecycle information that occurs after its decision boundary:
+
+- `WIN` / `LOSS` — the paper position was subsequently closed.
+- `SKIPPED` — the directional signal was not opened after a later replay step was observed.
+- `UNRESOLVED` — the replay ended before the signal could receive a next-bar entry or before an opened position closed.
+
+This separation is intentional: outcome labels may use future information for **research measurement**, but that future information must never be visible when generating the original signal.
+
+## Safety rules
 
 - Closed-candle decisions only.
 - A signal from bar N can only fill on a later bar, never on bar N itself.
@@ -99,5 +107,4 @@ This is a validation harness, not a profitability claim. It does not send MT5 or
 - Checkpoint persistence errors are not swallowed.
 - Restore errors halt the runtime rather than attempting automatic ledger repair.
 - Strategy logic and execution simulation remain separate.
-- Historical replay must use the same realtime monitor and paper-session path; do not create a parallel strategy implementation.
 - No live broker orders are sent by this repository.
