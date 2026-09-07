@@ -1,7 +1,7 @@
-"""Evaluation helpers for comparing baseline and ML-filtered research results.
+"""Evaluation helpers for leakage-safe ML research results.
 
-This module only summarizes already-separated out-of-sample results. It never
-selects a threshold, retrains a model, or mutates trades.
+This module summarizes already-separated out-of-sample results. It never
+selects thresholds, retrains models, or mutates trades.
 """
 
 from dataclasses import dataclass
@@ -20,12 +20,21 @@ class MLComparison:
     net_r_delta: float
     expectancy_r_delta: float
     win_rate_delta: float
+    drawdown_r_delta: float
 
     @property
     def filtered_trade_fraction(self) -> float:
         if self.baseline_trade_count == 0:
             return 0.0
         return self.filtered_trade_count / self.baseline_trade_count
+
+    @property
+    def expectancy_improved(self) -> bool:
+        return self.expectancy_r_delta > 0.0
+
+    @property
+    def drawdown_improved(self) -> bool:
+        return self.drawdown_r_delta < 0.0
 
 
 def compare_ml_results(
@@ -53,6 +62,7 @@ def compare_ml_results(
         net_r_delta=filtered_metrics.net_r - baseline_metrics.net_r,
         expectancy_r_delta=filtered_metrics.expectancy_r - baseline_metrics.expectancy_r,
         win_rate_delta=filtered_metrics.win_rate - baseline_metrics.win_rate,
+        drawdown_r_delta=filtered_metrics.max_drawdown_r - baseline_metrics.max_drawdown_r,
     )
 
 
