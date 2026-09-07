@@ -1,29 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
-from strategy.candles import Candle
 from strategy.feed_integrity import validate_feed_batch
-
-
-class Bar(Candle):
-    """Candle subclass used only to provide the expected feed shape."""
-
-    pass
-
-
-def _bars(count: int = 3):
-    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    return [
-        Bar(
-            1.0 + i * 0.0001,
-            1.1 + i * 0.0001,
-            0.9 + i * 0.0001,
-            1.05 + i * 0.0001,
-            # This constructor shape is intentionally invalid if Candle has no time.
-        )
-        for i in range(count)
-    ]
 
 
 class TimedBar:
