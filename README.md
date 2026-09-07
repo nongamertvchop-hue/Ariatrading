@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.9.2**
+**Current version: 0.10.0**
 
 ## Core idea
 
@@ -29,10 +29,15 @@ The project is layered so every stage can be used together without duplicating s
 9. **Execution simulation** — optional spread, commission, slippage, latency, session and precision effects, isolated from strategy decisions.
 10. **Research validation** — chronological splits, R-based metrics, profit factor, drawdown and bootstrap expectancy uncertainty.
 11. **Walk-forward validation** — expanding-history, rolling out-of-sample windows with hard test boundaries.
-12. **Realtime data** — closed-candle monitoring with duplicate suppression and nearest-zone selection.
-13. **Realtime replay** — historical harness that feeds the same realtime monitor path deterministically, without creating a second strategy.
-14. **Paper session** — next-bar paper entry, lifecycle management, and append-only event journaling.
-15. **Integration facade** — `strategy.pipeline.run_research()` connects the core research stages into one consistent API.
+12. **ML meta-filter research** — chronological classical ML filtering of existing LONG/SHORT signals only.
+13. **ML diagnostics** — feature drift, fold-level behavior, permutation stability, and evidence consistency checks.
+14. **Deep-learning challengers** — optional causal LSTM and Transformer sequence models that score existing signals but cannot create direction.
+15. **ML evidence gate** — explicit readiness policy that can require regime, stability, robustness, behavior, drift, and both deep-learning challengers.
+16. **Realtime data** — closed-candle monitoring with duplicate suppression and nearest-zone selection.
+17. **Realtime replay** — historical harness that feeds the same realtime monitor path deterministically, without creating a second strategy.
+18. **Paper session** — next-bar paper entry, lifecycle management, and append-only event journaling.
+19. **Execution recovery safety** — persistent order state, append-only audit chain, and fail-closed recovery consistency checks.
+20. **Integration facade** — `strategy.pipeline.run_research()` connects the core research stages into one consistent API.
 
 ## Key modules
 
@@ -52,12 +57,26 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/execution.py` — research-only execution-friction simulation and centralized entry/exit price adjustments.
 - `strategy/validation.py` — research metrics and chronological validation tools.
 - `strategy/walk_forward.py` — rolling out-of-sample research windows.
-- `strategy/pipeline.py` — high-level end-to-end research facade.
+- `strategy/ml_features.py` — causal signal features and future-only supervised labels.
+- `strategy/ml_meta.py` — chronological classical ML meta-filter.
+- `strategy/ml_walk_forward.py` — leakage-safe expanding-history ML evaluation.
+- `strategy/ml_drift.py` — training-boundary feature distribution drift diagnostics.
+- `strategy/ml_behavior.py` — fold-by-fold ML filter impact diagnostics.
+- `strategy/ml_stability.py` — permutation feature stability diagnostics.
+- `strategy/ml_evidence_gate.py` — explicit ML evidence completeness/readiness policy.
+- `strategy/deep_learning.py` — optional PyTorch LSTM and Transformer sequence challengers.
+- `strategy/research_validation.py` — aggregated, fingerprinted research evidence.
+- `strategy/research_audit.py` — temporal and evidence consistency checks.
+- `strategy/research_gate.py` — baseline research evidence completeness gate.
 - `strategy/realtime.py` — closed-candle realtime monitor.
 - `strategy/realtime_replay.py` — deterministic historical replay of the realtime monitor.
 - `strategy/paper.py` — deterministic single-position paper simulator.
 - `strategy/paper_session.py` — realtime-to-paper orchestration with next-bar entry and idempotency.
 - `strategy/journal.py` — SIGNAL/OPEN/CLOSE research event journal.
+- `strategy/order_state.py` — deterministic order lifecycle state machine.
+- `strategy/order_persistence.py` — crash-safe order-state snapshot persistence.
+- `strategy/execution_audit.py` — append-only hash-chain execution audit journal.
+- `strategy/execution_recovery.py` — fail-closed post-restart execution consistency gate.
 - `adapters/mt5_feed.py` — read-only MT5 market-data adapter.
 
 ## System flow
@@ -85,10 +104,17 @@ LONG / SHORT / WAIT
         +---- Historical path -> Risk -> Backtest -> Validation
         |                         |
         |                         +---- Walk-forward OOS
+        |                         +---- Classical ML meta-filter
+        |                         +---- Drift / behavior / stability
+        |                         +---- LSTM / Transformer challengers
+        |                         +---- ML Evidence Gate
         |
         +---- Realtime path -> Supervisor -> Paper Session -> Journal
                                   |
                                   +---- Realtime historical replay
+
+Execution safety path:
+Order State -> Crash-safe Persistence -> Audit Hash Chain -> Recovery Gate
 ```
 
 The realtime path uses the same strategy engine rather than a separate live strategy:
@@ -96,6 +122,34 @@ The realtime path uses the same strategy engine rather than a separate live stra
 `MT5 terminal -> MT5BarFeed -> RealtimeMonitor -> engine -> LONG/SHORT/WAIT -> Supervisor -> PaperSessionRunner`
 
 The MT5 adapter is read-only. It does not call `order_send()`.
+
+## ML and deep-learning research rules
+
+The ML layer is a **meta-filter**, not a third trading setup. The deterministic engine must first produce a valid LONG or SHORT signal. A model may reject or score that signal, but it cannot invent a new entry direction.
+
+All supervised evaluation must preserve chronology:
+
+- features at decision index use only candles available at or before that index;
+- future candles are used only for labels;
+- training labels must finish before the OOS boundary;
+- normalization statistics are fitted on training sequences only;
+- OOS samples never update model weights;
+- final OOS data must not be used for threshold/model selection.
+
+`strategy/deep_learning.py` provides two challenger architectures:
+
+- **LSTM** — recurrent sequence encoder for temporal dependencies.
+- **Transformer** — self-attention sequence encoder with explicit positional encoding.
+
+PyTorch is optional and isolated from the core strategy. Install `requirements-ml.txt` when running deep-learning research. The models are deliberately not connected to MT5 order execution.
+
+The `MLEvidencePolicy` can require both LSTM and Transformer evidence. This is intentionally a **comparison requirement**, not a winner-selection mechanism: the system records both results so a researcher can inspect untouched OOS behavior without silently promoting whichever model looks best in-sample.
+
+## ML evidence gate
+
+`evaluate_ml_evidence_gate()` is a readiness check, not a profitability claim. By default it expects trained OOS folds plus regime, feature-stability, execution-robustness, fold-level behavior, and feature-drift evidence. Deep learning can be made mandatory with `MLEvidencePolicy(require_deep_learning=True)`; when enabled, both LSTM and Transformer evidence can be required.
+
+A `READY` result means the requested evidence exists and passes structural checks. It does **not** mean the strategy is profitable or safe for live money.
 
 ## Timestamp-aligned MTF
 
@@ -176,20 +230,23 @@ The validation layer is deliberately descriptive. It reports historical behavior
 
 ## Testing
 
-The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, realtime state handling, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, and the integrated research facade.
+The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML evidence readiness, realtime state handling, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, order persistence/recovery, execution audit integrity, and the integrated research facade.
+
+The deep-learning implementation is optional in the default CI path because PyTorch is a large dependency. `requirements-ml.txt` provides the explicit ML environment for LSTM/Transformer experiments.
 
 ## Version / continuation protocol
 
-Current version: **0.9.2**.
+Current version: **0.10.0**.
 
 At the start of a new chat:
 
 1. Read `VERSION.md` and this README.
 2. Inspect latest Git history and GitHub Actions status.
 3. Identify the current milestone and unfinished work.
-4. Continue existing modules instead of recreating them.
-5. Any behavior change gets a test or an explicit reason why a test is impractical.
-6. Update the version only when the change matches semantic-versioning rules.
+4. Inspect newly added files before making changes.
+5. Continue existing modules instead of recreating them.
+6. Any behavior change gets a test or an explicit reason why a test is impractical.
+7. Update the version only when the change matches semantic-versioning rules.
 
 ## Important
 
