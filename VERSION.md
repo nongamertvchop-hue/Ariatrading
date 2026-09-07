@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.14.0**
+Current version: **0.14.1**
 
 ## Versioning rule
 
@@ -15,7 +15,7 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.14.0
+## Current milestone — 0.14.1
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
@@ -35,10 +35,12 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - Position reconciliation now optionally tracks average entry price and enforces normalized broker symbol/volume contract consistency, while remaining backward compatible with older snapshots.
 - Average-entry and broker-contract mismatches fail closed before a reconciled position can be considered safe.
 - MT5 integration remains read-only; no order execution is implemented.
-- Webaria now includes a realtime Signal Advisor backed by the Worker market-data API and a browser-safe Paper Risk Engine.
-- A dedicated MTF Signal Advisor now evaluates 1D -> 4H -> 1H -> 15M using the existing `/api/signal` outputs. Higher timeframes filter an existing 15M setup and cannot create a third strategy.
+- Webaria includes a realtime Signal Advisor backed by the Worker market-data API and a browser-safe Paper Risk Engine.
+- A dedicated MTF Signal Advisor evaluates 1D -> 4H -> 1H -> 15M using the existing `/api/signal` outputs. Higher timeframes filter an existing 15M setup and cannot create a third strategy.
 - The MTF Advisor records signal snapshots locally in the browser for research/journal review; the journal is not a broker execution log and is not shared between devices.
 - MTF and Webaria paper-engine page contracts are covered by automated tests.
+- Worker market-data traffic now passes through a lightweight gateway that reduces duplicate upstream requests with short-lived fresh caching and serves recent successful snapshots as stale fallback during temporary provider/quota/network errors.
+- The gateway does not change strategy semantics, does not expose secrets, and does not execute orders.
 
 ## Next milestones
 
