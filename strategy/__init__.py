@@ -10,7 +10,7 @@ diagnostics, deep-learning challenger models, deep-learning walk-forward
 research, aggregated research evidence, research-gate completeness checks,
 execution recovery, paper execution conformance, broker symbol-contract
 validation, research provenance, feed integrity, the final system readiness
-gate, and deterministic historical paper replay.
+gate, deterministic historical paper replay, and leakage-safe paper outcomes.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
@@ -40,6 +40,7 @@ from .order_persistence import OrderPersistenceError, load_order_state, save_ord
 from .order_state import OrderRecord, OrderState, OrderStateMachine, OrderTransition
 from .paper import CLOSED, OPEN, PaperAccount, PaperPosition, PaperTradingEngine
 from .paper_execution_conformance import RecoveryResult, submit_with_recovery
+from .paper_outcomes import LOSS as PAPER_LOSS, SKIPPED, UNRESOLVED, WIN as PAPER_WIN, PaperSignalOutcome, label_paper_signals
 from .paper_replay import PaperReplayResult, replay_paper_session
 from .paper_session import PaperSessionResult, PaperSessionRunner
 from .pipeline import ResearchReport, run_research
@@ -83,13 +84,13 @@ __all__ = [
     "JournalEvent", "PaperTradeJournal", "signal_event_id", "MarketSnapshot", "ReplayPoint", "ReplayResult", "replay_forecasts",
     "DataQuality", "RealtimeGuard", "expected_closed_bar_open", "RealtimeReplayResult", "replay_realtime_monitor",
     "PaperReplayResult", "replay_paper_session",
+    "PaperSignalOutcome", "label_paper_signals", "PAPER_WIN", "PAPER_LOSS", "SKIPPED", "UNRESOLVED",
     "ALLOW", "SupervisorDecision", "supervise", "ResearchReport", "run_research",
     "BacktestResult", "run_backtest", "run_all_timeframes", "ENTRY_TIMING_SIGNAL_REFERENCE", "ENTRY_TIMING_NEXT_BAR_OPEN",
     "CLOSED", "OPEN", "PaperAccount", "PaperPosition", "PaperTradingEngine", "PaperSessionResult", "PaperSessionRunner",
     "RobustnessScenario", "RobustnessCase", "RobustnessReport", "run_robustness_analysis",
     "DatasetFingerprint", "ResearchConfig", "ResearchRun", "build_research_run", "config_fingerprint", "fingerprint_candles",
-    "ControlledResearchResult", "run_controlled_research", "ValidationEvidence",
-    "build_validation_evidence", "INCOMPLETE", "READY", "ResearchGateDecision", "evaluate_research_gate",
+    "ControlledResearchResult", "run_controlled_research", "ValidationEvidence", "build_validation_evidence", "INCOMPLETE", "READY", "ResearchGateDecision", "evaluate_research_gate",
     "ResearchAuditReport", "audit_validation_evidence",
     "FEATURE_NAMES", "MLSample", "build_signal_sample", "extract_signal_features",
     "MLResearchMetrics", "MetaFilterModel", "MetaFilterResult", "chronological_train_test",
