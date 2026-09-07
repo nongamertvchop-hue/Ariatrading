@@ -22,6 +22,7 @@ from .paper import CLOSED, OPEN, PaperAccount, PaperPosition, PaperTradingEngine
 from .paper_session import PaperSessionResult, PaperSessionRunner
 from .pipeline import ResearchReport, run_research
 from .realtime_guard import DataQuality, RealtimeGuard, expected_closed_bar_open
+from .realtime_replay import RealtimeReplayResult, replay_realtime_monitor
 from .realtime_supervisor import ALLOW, SupervisorDecision, supervise
 from .replay import ReplayPoint, ReplayResult, replay_forecasts
 from .walk_forward import WalkForwardFold, WalkForwardResult, walk_forward_backtest
@@ -33,6 +34,7 @@ __all__ = [
     "JournalEvent", "PaperTradeJournal",
     "MarketSnapshot", "ReplayPoint", "ReplayResult", "replay_forecasts",
     "DataQuality", "RealtimeGuard", "expected_closed_bar_open",
+    "RealtimeReplayResult", "replay_realtime_monitor",
     "ALLOW", "SupervisorDecision", "supervise", "ResearchReport", "run_research",
     "BacktestResult", "run_backtest", "run_all_timeframes",
     "ENTRY_TIMING_SIGNAL_REFERENCE", "ENTRY_TIMING_NEXT_BAR_OPEN",
