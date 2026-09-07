@@ -109,6 +109,11 @@ def run_backtest(
     to the strategy, while exit simulation is capped at ``end_index`` so a trade
     cannot consume observations from a later out-of-sample window.
 
+    When the backtest starts from index zero, the normal strategy warmup is
+    honored. When ``start_index`` is already an out-of-sample boundary, that
+    earlier data is the available history, so evaluation begins at ``start_index``
+    instead of applying the warmup a second time inside the test window.
+
     ``entry_timing`` controls the historical fill assumption:
 
     - ``signal_reference`` uses the strategy confirmation reference on the
@@ -133,8 +138,8 @@ def run_backtest(
     if not start_index < end_index <= len(candles):
         raise ValueError("end_index must be > start_index and <= len(candles)")
 
-    warm_start = min(max(config.lookback + 2, 10, warmup or 0), len(candles))
-    evaluation_start = max(start_index, warm_start)
+    normal_warm_start = min(max(config.lookback + 2, 10, warmup or 0), len(candles))
+    evaluation_start = normal_warm_start if start_index == 0 else start_index
     if evaluation_start >= end_index:
         return BacktestResult(timeframe, 0, 0, 0, 0, (), ())
 
