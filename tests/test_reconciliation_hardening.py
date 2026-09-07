@@ -28,34 +28,42 @@ def closed_trade():
     return paper, closed
 
 
+def opened_version(position):
+    return replace(
+        position,
+        status="OPEN",
+        outcome="OPEN",
+        exit_time=None,
+        exit_price=None,
+        r_multiple=0.0,
+        bars_held=0,
+    )
+
+
 def test_reconciliation_rejects_win_loss_counter_mismatch():
     paper, closed = closed_trade()
     journal = PaperTradeJournal()
-    journal.record_open(event_time=closed.entry_time, symbol="EURUSD", timeframe="1m", position=replace(closed, status="OPEN", outcome="OPEN", exit_time=None, exit_price=None, r_multiple=0.0, bars_held=0))
-    journal.record_close(event_time=closed.exit_time, symbol="EURUSD", timeframe="1m", position=closed)
+    journal.record_open(event_time=closed.entry_time, symbol="EURUSD", timeframe="1m", position=opened_version(closed))
+    journal.record_close(
+        event_time=closed.exit_time,
+        symbol="EURUSD",
+        timeframe="1m",
+        position=replace(closed, outcome="WIN"),
+    )
 
     with pytest.raises(ReconciliationError, match="WIN_LOSS_COUNT_MISMATCH"):
         reconcile_paper_state(
-            paper=replace_account_for_test(paper, wins=paper.account.wins + 1),
+            paper=paper,
             journal=journal,
             pending_signal=None,
             last_processed_bar_time=dt(3),
         )
 
 
-def replace_account_for_test(paper: PaperTradingEngine, *, wins: int) -> PaperTradingEngine:
-    state = paper.to_state()
-    state["account"]["wins"] = wins
-    restored = PaperTradingEngine()
-    restored.restore_state(state)
-    return restored
-
-
 def test_reconciliation_rejects_realized_r_mismatch():
     paper, closed = closed_trade()
     journal = PaperTradeJournal()
-    opened = replace(closed, status="OPEN", outcome="OPEN", exit_time=None, exit_price=None, r_multiple=0.0, bars_held=0)
-    journal.record_open(event_time=opened.entry_time, symbol="EURUSD", timeframe="1m", position=opened)
+    journal.record_open(event_time=closed.entry_time, symbol="EURUSD", timeframe="1m", position=opened_version(closed))
     journal.record_close(
         event_time=closed.exit_time,
         symbol="EURUSD",
@@ -75,8 +83,8 @@ def test_reconciliation_rejects_realized_r_mismatch():
 def test_reconciliation_rejects_next_trade_id_not_ahead_of_journal():
     paper, position = closed_trade()
     journal = PaperTradeJournal()
-    forged = replace(position, trade_id=99, status="OPEN", outcome="OPEN", exit_time=None, exit_price=None, r_multiple=0.0, bars_held=0)
-    journal.record_open(event_time=forged.entry_time, symbol="EURUSD", timeframe="1m", position=forged)
+    forged = replace(position, trade_id=99)
+    journal.record_open(event_time=forged.entry_time, symbol="EURUSD", timeframe="1m", position=opened_version(forged))
 
     with pytest.raises(ReconciliationError, match="NEXT_TRADE_ID_NOT_MONOTONIC"):
         reconcile_paper_state(
