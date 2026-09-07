@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from .engine import LONG, SHORT, WAIT, EngineSignal, evaluate_long, evaluate_short
-from .execution import ExecutionModel, simulate_realistic_exit
+from .execution import ExecutionModel, entry_price, simulate_realistic_exit
 from .levels_v2 import PriceZone, find_resistance_zones, find_support_zones
 from .mtf import bar_duration, build_timestamp_aligned_mtf_context
 from .risk import LOSS, OPEN, WIN, RiskPlan, TradeResult, build_risk_plan, simulate_exit
@@ -172,26 +172,42 @@ def run_backtest(
                 if fill_index >= end_index:
                     i += 1
                     continue
-                entry_price = float(candles[fill_index]["open"])
+                reference_entry = float(candles[fill_index]["open"])
                 future_start = fill_index + 1
             else:
                 fill_index = i
-                entry_price = float(signal.entry_reference)
+                reference_entry = float(signal.entry_reference)
                 future_start = i + 1
 
-            plan: RiskPlan = build_risk_plan(
-                signal.action,
-                entry_price,
-                signal.zone,
-                adaptive_confirmation_buffer(prior, timeframe),
-                reward_risk,
-            )
-            future = candles[future_start:min(end_index, future_start + max_hold_bars)]
-            trade = (
-                simulate_exit(plan, future, max_hold_bars)
-                if execution_model is None
-                else simulate_realistic_exit(plan, future, execution_model, max_hold_bars)
-            )
+            if execution_model is None:
+                entry = reference_entry
+                plan = build_risk_plan(
+                    signal.action,
+                    entry,
+                    signal.zone,
+                    adaptive_confirmation_buffer(prior, timeframe),
+                    reward_risk,
+                )
+                future = candles[future_start:min(end_index, future_start + max_hold_bars)]
+                trade = simulate_exit(plan, future, max_hold_bars)
+            else:
+                entry = entry_price(reference_entry, signal.action, execution_model)
+                plan: RiskPlan = build_risk_plan(
+                    signal.action,
+                    entry,
+                    signal.zone,
+                    adaptive_confirmation_buffer(prior, timeframe),
+                    reward_risk,
+                )
+                future = candles[future_start:min(end_index, future_start + max_hold_bars)]
+                trade = simulate_realistic_exit(
+                    plan,
+                    future,
+                    execution_model,
+                    max_hold_bars,
+                    entry_is_effective=True,
+                )
+
             trades.append(trade)
             if trade.bars_held > 0 and trade.outcome in {WIN, LOSS}:
                 i = future_start + trade.bars_held
