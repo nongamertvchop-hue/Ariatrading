@@ -12,7 +12,7 @@ def test_recently_broken_support_is_not_active():
     zone = PriceZone(1.0990, 1.1000, SUPPORT, 3)
     candles = [
         _c(1.1010, 1.1015, 1.0995, 1.1008),
-        _c(1.1008, 1.1009, 1.0980, 1.0975),
+        _c(1.1008, 1.1009, 1.0980, 1.0980),
     ]
 
     active = _active_zones([zone], candles, "15m")
@@ -24,8 +24,8 @@ def test_zone_can_be_relevant_again_after_later_interaction():
     zone = PriceZone(1.0990, 1.1000, SUPPORT, 3)
     candles = [
         _c(1.1010, 1.1015, 1.0995, 1.1008),
-        _c(1.1008, 1.1009, 1.0980, 1.0975),
-        _c(1.0975, 1.1002, 1.0970, 1.0998),
+        _c(1.1008, 1.1009, 1.0980, 1.0980),
+        _c(1.0980, 1.1002, 1.0970, 1.0998),
     ]
 
     active = _active_zones([zone], candles, "15m")
