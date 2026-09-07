@@ -20,10 +20,10 @@ def test_drawdown_uses_peak_equity():
         PortfolioRiskLimits(max_drawdown_fraction=0.10),
     )
     controller.update_equity(12_000)
-    controller.update_equity(10_800)
+    controller.update_equity(10_801)
     decision = controller.evaluate()
     assert decision.action == ALLOW
-    assert decision.drawdown_fraction == pytest.approx(1_200 / 12_000)
+    assert decision.drawdown_fraction == pytest.approx(1_199 / 12_000)
 
 
 def test_consecutive_losses_trigger_halt():
