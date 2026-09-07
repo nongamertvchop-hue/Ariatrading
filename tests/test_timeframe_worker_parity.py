@@ -12,7 +12,7 @@ EXPECTED_TIMEFRAMES = ("1m", "5m", "15m", "30m", "1h", "4h", "1D")
 def _extract_python_multipliers(text: str) -> dict[str, float]:
     pattern = re.compile(
         r'"(?P<tf>1m|5m|15m|30m|1h|4h|1D)"\s*:\s*TimeframeConfig\('
-        r'"(?P=name)"\s*,\s*30\s*,\s*(?P<value>[0-9]+(?:\.[0-9]+)?)\s*,'
+        r'"(?:1m|5m|15m|30m|1h|4h|1D)"\s*,\s*30\s*,\s*(?P<value>[0-9]+(?:\.[0-9]+)?)\s*,'
     )
     return {match.group("tf"): float(match.group("value")) for match in pattern.finditer(text)}
 
