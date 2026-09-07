@@ -4,8 +4,9 @@ The package keeps the two core setups stable while exposing consistent
 interfaces across strategy, forecast, backtest, execution-cost simulation,
 replay, realtime monitoring, paper simulation, journaling, walk-forward
 validation, robustness analysis, reproducible research control, ML
-meta-filter research, experiment registry, regime diagnostics, aggregated
-research evidence, research-gate completeness checks, and audit diagnostics.
+meta-filter research, experiment registry, regime diagnostics, ML feature
+drift diagnostics, aggregated research evidence, research-gate completeness
+checks, and audit diagnostics.
 """
 
 from .backtest import (
@@ -21,6 +22,7 @@ from .experiment_registry import ExperimentRecord, build_experiment_record
 from .forecast import ForecastResult, HorizonForecast, ScenarioForecast, forecast
 from .journal import JournalEvent, PaperTradeJournal
 from .market_snapshot import MarketSnapshot
+from .ml_drift import FeatureDrift, MLDriftReport, analyze_feature_drift
 from .ml_evaluation import MLComparison, compare_ml_results
 from .ml_features import FEATURE_NAMES, MLSample, build_signal_sample, extract_signal_features
 from .ml_meta import MLResearchMetrics, MetaFilterModel, MetaFilterResult, chronological_train_test
@@ -99,4 +101,5 @@ __all__ = [
     "MLComparison", "compare_ml_results",
     "FeatureImportance", "MLStabilityReport", "permutation_feature_importance",
     "REGIMES", "RegimeStats", "classify_regime", "stratify_samples",
+    "FeatureDrift", "MLDriftReport", "analyze_feature_drift",
 ]
