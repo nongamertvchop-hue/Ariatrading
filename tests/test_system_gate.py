@@ -34,7 +34,7 @@ def test_system_gate_allows_only_when_all_hard_checks_pass():
         "data=OK",
         "portfolio-risk=OK",
         "trade-risk=OK",
-        "position-state=RECONCILED",
+        "position-state=FLAT",
         "execution-recovery=OK",
     )
 
@@ -54,6 +54,16 @@ def test_system_gate_blocks_unsafe_strategy_even_when_other_checks_pass():
     decision = evaluate_system_readiness(**values)
     assert decision.action == DENY
     assert "protection is not SAFE" in decision.reason
+
+
+def test_system_gate_blocks_new_entry_when_broker_has_existing_position():
+    values = _inputs()
+    values["reconciliation"] = ReconciliationDecision(
+        "ALLOW", True, "local and broker position reconciled", 1
+    )
+    decision = evaluate_system_readiness(**values)
+    assert decision.action == DENY
+    assert "existing broker position" in decision.reason
 
 
 def test_system_gate_can_require_ml_evidence_without_changing_direction():
