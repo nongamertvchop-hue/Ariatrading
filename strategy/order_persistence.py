@@ -37,6 +37,7 @@ def save_order_state(machine: OrderStateMachine, path: str | os.PathLike[str]) -
     }
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
+    temp_name: str | None = None
     try:
         with NamedTemporaryFile(
             mode="w",
@@ -52,10 +53,11 @@ def save_order_state(machine: OrderStateMachine, path: str | os.PathLike[str]) -
             os.fsync(handle.fileno())
         os.replace(temp_name, target)
     except OSError as exc:
-        try:
-            Path(temp_name).unlink(missing_ok=True)
-        except UnboundLocalError:
-            pass
+        if temp_name is not None:
+            try:
+                Path(temp_name).unlink(missing_ok=True)
+            except OSError:
+                pass
         raise OrderPersistenceError(f"failed to persist order state: {exc}") from exc
 
 
@@ -78,27 +80,24 @@ def load_order_state(path: str | os.PathLike[str]) -> OrderStateMachine:
         if not required.issubset(item):
             raise OrderPersistenceError("order snapshot record is missing required fields")
         try:
-            transition = machine.create(
-                client_order_id=str(item["client_order_id"]),
-                idempotency_key=str(item["idempotency_key"]),
-                direction=str(item["direction"]),
-                quantity=float(item["quantity"]),
-            )
-            if not transition.accepted:
-                raise OrderPersistenceError("duplicate order in snapshot")
-            record = transition.record
+            client_order_id = str(item["client_order_id"])
+            idempotency_key = str(item["idempotency_key"])
+            direction = str(item["direction"])
+            quantity = float(item["quantity"])
             state = OrderState(str(item["state"]))
             broker_id = item.get("broker_order_id")
             filled = float(item.get("filled_quantity", 0.0))
-            if state != OrderState.CREATED:
-                transition = machine.transition(
-                    record.client_order_id,
-                    state,
+            machine.restore(
+                OrderRecord(
+                    client_order_id=client_order_id,
+                    idempotency_key=idempotency_key,
+                    direction=direction,
+                    quantity=quantity,
+                    state=state,
                     broker_order_id=None if broker_id is None else str(broker_id),
                     filled_quantity=filled,
                 )
-                if not transition.accepted:
-                    raise OrderPersistenceError(f"invalid persisted state transition for {record.client_order_id}")
+            )
         except (TypeError, ValueError, KeyError) as exc:
             raise OrderPersistenceError("invalid order snapshot field") from exc
 
