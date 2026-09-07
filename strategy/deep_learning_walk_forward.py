@@ -74,16 +74,17 @@ class DeepLearningWalkForwardResult:
 
 
 def _fingerprint(samples: tuple[MLSample, ...]) -> str:
+    """Hash model-input rows only; labels belong to target provenance, not features."""
     rows = [
         {
             "index": sample.index,
             "timestamp": sample.timestamp.isoformat() if hasattr(sample.timestamp, "isoformat") else sample.timestamp,
             "features": [format(float(value), ".17g") for value in sample.features],
-            "label": sample.label,
         }
         for sample in samples
     ]
-    canonical = json.dumps(rows, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    payload = {"feature_width": len(samples[0].features) if samples else 0, "rows": rows}
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return sha256(canonical.encode("utf-8")).hexdigest()
 
 
