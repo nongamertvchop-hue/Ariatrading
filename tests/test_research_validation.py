@@ -53,6 +53,12 @@ def _ml_result(timeframe="1h"):
         train_positive=5,
         test_labeled_samples=4,
         model_trained=True,
+        train_last_signal_index=6,
+        train_last_label_end_index=9,
+        test_first_signal_index=10,
+        test_last_signal_index=13,
+        train_feature_sha256="a" * 64,
+        test_feature_sha256="b" * 64,
     )
     return SimpleNamespace(
         timeframe=timeframe,
