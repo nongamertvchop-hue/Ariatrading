@@ -100,6 +100,8 @@ def build_causal_sequences(
             continue
         sequences.append(tuple(sample.features for sample in window))
         labels.append(combined[position].label)
+    if not sequences:
+        raise ValueError("not enough samples for sequence_length")
     return tuple(sequences), tuple(labels)
 
 
@@ -204,8 +206,6 @@ def train_deep_sequence_model(
         raise ValueError("not enough training samples for sequence_length")
 
     test_sequences, test_labels = build_causal_sequences(train[-(sequence_length - 1):], test, sequence_length=sequence_length)
-    if not test_sequences:
-        raise ValueError("not enough test samples for sequence_length")
 
     torch, nn = _torch()
     torch.manual_seed(seed)
