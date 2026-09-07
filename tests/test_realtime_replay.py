@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from strategy.realtime_replay import replay_realtime_monitor
 
 
@@ -48,10 +50,5 @@ def test_realtime_replay_uses_only_historical_prefix():
 
 
 def test_realtime_replay_rejects_invalid_start_index():
-    with_start = make_candles(10)
-    try:
-        replay_realtime_monitor(with_start, "TEST", "1m", start_index=10)
-    except ValueError as exc:
-        assert "start_index" in str(exc)
-    else:
-        raise AssertionError("expected invalid start_index to raise")
+    with pytest.raises(ValueError, match="start_index"):
+        replay_realtime_monitor(make_candles(10), "TEST", "1m", start_index=10)
