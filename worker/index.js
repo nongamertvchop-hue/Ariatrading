@@ -356,7 +356,7 @@ async function handleSignal(request, env) {
     structure_bias: structure.bias,
     zone: selected?.zone ?? null,
     entry_reference: result.entryReference ?? null,
-    stop_reference: selected?.zone && result.action === selected.direction ? stopReference(selected.zone, selected.direction, candles, timeframe) : null,
+    stop_reference: selected?.zone && result.action === selected.direction ? stopReference(selected.zone, selected.direction, candles.slice(0, -1), timeframe) : null,
     breakout_state: result.breakoutState,
     score,
     candles,
