@@ -10,7 +10,8 @@ diagnostics, deep-learning challenger models, deep-learning walk-forward
 research, aggregated research evidence, research-gate completeness checks,
 execution recovery, paper execution conformance, broker symbol-contract
 validation, research provenance, feed integrity, the final system readiness
-gate, deterministic historical paper replay, and leakage-safe paper outcomes.
+gate, deterministic historical paper replay, leakage-safe paper outcomes, and
+paired baseline-vs-MTF paper comparison.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
@@ -36,6 +37,7 @@ from .ml_model_comparison import MLChallengerAggregate, MLModelComparison, Model
 from .ml_model_health import CalibrationBin, MLModelHealth, MLModelHealthReport, analyze_model_health
 from .ml_stability import FeatureImportance, MLStabilityReport, permutation_feature_importance
 from .ml_walk_forward import MLWalkForwardFold, MLWalkForwardResult, ml_walk_forward_backtest
+from .mtf_paper_comparison import MtfPaperComparison, PaperComparisonMetrics, compare_mtf_paper_sessions
 from .order_persistence import OrderPersistenceError, load_order_state, save_order_state
 from .order_state import OrderRecord, OrderState, OrderStateMachine, OrderTransition
 from .paper import CLOSED, OPEN, PaperAccount, PaperPosition, PaperTradingEngine
@@ -85,6 +87,7 @@ __all__ = [
     "DataQuality", "RealtimeGuard", "expected_closed_bar_open", "RealtimeReplayResult", "replay_realtime_monitor",
     "PaperReplayResult", "replay_paper_session",
     "PaperSignalOutcome", "label_paper_signals", "PAPER_WIN", "PAPER_LOSS", "SKIPPED", "UNRESOLVED",
+    "PaperComparisonMetrics", "MtfPaperComparison", "compare_mtf_paper_sessions",
     "ALLOW", "SupervisorDecision", "supervise", "ResearchReport", "run_research",
     "BacktestResult", "run_backtest", "run_all_timeframes", "ENTRY_TIMING_SIGNAL_REFERENCE", "ENTRY_TIMING_NEXT_BAR_OPEN",
     "CLOSED", "OPEN", "PaperAccount", "PaperPosition", "PaperTradingEngine", "PaperSessionResult", "PaperSessionRunner",
