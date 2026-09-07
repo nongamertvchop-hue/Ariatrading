@@ -73,6 +73,8 @@ def load_order_state(path: str | os.PathLike[str]) -> OrderStateMachine:
         raise OrderPersistenceError("unsupported or malformed order-state snapshot")
 
     machine = OrderStateMachine()
+    seen_client_ids: set[str] = set()
+    seen_idempotency_keys: set[str] = set()
     for item in raw["orders"]:
         if not isinstance(item, dict):
             raise OrderPersistenceError("order snapshot contains a non-object record")
@@ -82,7 +84,11 @@ def load_order_state(path: str | os.PathLike[str]) -> OrderStateMachine:
         try:
             client_order_id = str(item["client_order_id"])
             idempotency_key = str(item["idempotency_key"])
-            direction = str(item["direction"])
+            if client_order_id in seen_client_ids or idempotency_key in seen_idempotency_keys:
+                raise OrderPersistenceError("duplicate order identity in snapshot")
+            seen_client_ids.add(client_order_id)
+            seen_idempotency_keys.add(idempotency_key)
+
             quantity = float(item["quantity"])
             state = OrderState(str(item["state"]))
             broker_id = item.get("broker_order_id")
@@ -91,13 +97,15 @@ def load_order_state(path: str | os.PathLike[str]) -> OrderStateMachine:
                 OrderRecord(
                     client_order_id=client_order_id,
                     idempotency_key=idempotency_key,
-                    direction=direction,
+                    direction=str(item["direction"]),
                     quantity=quantity,
                     state=state,
                     broker_order_id=None if broker_id is None else str(broker_id),
                     filled_quantity=filled,
                 )
             )
+        except OrderPersistenceError:
+            raise
         except (TypeError, ValueError, KeyError) as exc:
             raise OrderPersistenceError("invalid order snapshot field") from exc
 
