@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.9.0**
+**Current version: 0.9.1**
 
 ## Core idea
 
@@ -47,7 +47,7 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/scoring.py` — explainable setup quality score.
 - `strategy/engine.py` — central LONG/SHORT/WAIT strategy interface.
 - `strategy/risk.py` — hypothetical risk plans and baseline exit simulation.
-- `strategy/backtest.py` — sequential backtest plus bounded research windows and optional MTF/execution integration.
+- `strategy/backtest.py` — sequential backtest plus bounded research windows, explicit entry timing, and optional MTF/execution integration.
 - `strategy/execution.py` — research-only execution-friction simulation.
 - `strategy/validation.py` — research metrics and chronological validation tools.
 - `strategy/walk_forward.py` — rolling out-of-sample research windows.
@@ -116,12 +116,21 @@ For rolling out-of-sample validation, use `strategy.walk_forward.walk_forward_ba
 
 The components remain separately callable for unit testing and research experiments.
 
+## Backtest entry timing
+
+`run_backtest()` exposes an explicit `entry_timing` parameter:
+
+- `signal_reference` — preserves the original historical assumption and uses the strategy confirmation reference on the signal candle.
+- `next_bar_open` — fills at the next candle's open and begins exit monitoring only after that fill candle, matching the paper-session lifecycle.
+
+The default remains `signal_reference` for backward compatibility. For research intended to mirror the realtime paper path, use `next_bar_open` consistently in both `run_backtest()` and `walk_forward_backtest()`.
+
 ## Backtest and execution assumptions
 
 - Only closed historical information is used to construct zones and structure.
 - Confirmed swings require right-side confirmation candles.
 - A signal requires a separate reaction/test and confirmation sequence.
-- Historical backtest entry uses the strategy's confirmation reference.
+- Historical backtest entry timing is explicit; the legacy default is the signal reference, while paper-session-compatible research uses next-bar open.
 - Paper-session entry from a realtime signal uses the next bar's open.
 - Stop is beyond the reaction zone by an adaptive buffer.
 - Default target is 2R.
@@ -133,7 +142,7 @@ The components remain separately callable for unit testing and research experime
 
 ## Walk-forward validation
 
-`walk_forward_backtest()` repeatedly evaluates non-overlapping test windows. Each fold retains all earlier candles as history, while strategy decisions inside the test window only see candles available before each decision. Exit simulation is capped at the fold boundary, preventing a trade in one OOS window from consuming future observations in another window.
+`walk_forward_backtest()` repeatedly evaluates non-overlapping test windows. Each fold retains all earlier candles as history, while strategy decisions inside the test window only see candles available before each decision. Exit simulation is capped at the fold boundary, preventing a trade in one OOS window from consuming future observations in another window. The same explicit `entry_timing` option is propagated into each fold.
 
 This reduces a common validation mistake: reporting performance from a full-sample backtest as though it were untouched future data. Walk-forward evaluation is still historical evidence, not proof of profitability.
 
@@ -147,11 +156,11 @@ The validation layer is deliberately descriptive. It reports historical behavior
 
 ## Testing
 
-The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk, baseline and realistic execution simulation, bounded backtesting, validation, walk-forward windows, realtime state handling, paper trading, paper-session lifecycle, journaling, and the integrated research facade.
+The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, validation, walk-forward windows, realtime state handling, paper trading, paper-session lifecycle, journaling, and the integrated research facade.
 
 ## Version / continuation protocol
 
-Current version: **0.9.0**.
+Current version: **0.9.1**.
 
 At the start of a new chat:
 
