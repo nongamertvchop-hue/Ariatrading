@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Callable
 
 from .engine import LONG, SHORT, WAIT, EngineSignal, evaluate_long, evaluate_short
 from .execution import ExecutionModel, entry_price, simulate_realistic_exit
@@ -14,6 +15,7 @@ from .validation import ResearchMetrics, evaluate_trades
 
 ENTRY_TIMING_SIGNAL_REFERENCE = "signal_reference"
 ENTRY_TIMING_NEXT_BAR_OPEN = "next_bar_open"
+SignalFilter = Callable[[int, EngineSignal], bool]
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,7 @@ class BacktestResult:
     wait_signals: int
     trades: tuple[TradeResult, ...]
     signals: tuple[EngineSignal, ...]
+    signal_indices: tuple[int, ...] = ()
 
     @property
     def total_directional_signals(self) -> int:
@@ -101,6 +104,7 @@ def run_backtest(
     start_index: int | None = None,
     end_index: int | None = None,
     entry_timing: str = ENTRY_TIMING_SIGNAL_REFERENCE,
+    signal_filter: SignalFilter | None = None,
 ) -> BacktestResult:
     """Run strategy/risk sequentially over a bounded research window.
 
@@ -109,17 +113,17 @@ def run_backtest(
     to the strategy, while exit simulation is capped at ``end_index`` so a trade
     cannot consume observations from a later out-of-sample window.
 
-    When the backtest starts from index zero, the normal strategy warmup is
-    honored. When ``start_index`` is already an out-of-sample boundary, that
-    earlier data is the available history, so evaluation begins at ``start_index``
-    instead of applying the warmup a second time inside the test window.
-
     ``entry_timing`` controls the historical fill assumption:
 
     - ``signal_reference`` uses the strategy confirmation reference on the
       signal candle. This preserves the original backtest behavior.
     - ``next_bar_open`` opens at the next candle's open, matching the paper
       session lifecycle and avoiding same-candle execution assumptions.
+
+    ``signal_filter`` is evaluated after deterministic strategy selection but
+    before risk/entry simulation. It receives the actual decision index, so a
+    research model can filter an existing LONG/SHORT signal without changing
+    the underlying setup logic.
     """
     config = get_timeframe_config(timeframe)
     if reward_risk <= 0 or max_hold_bars < 1:
@@ -127,7 +131,7 @@ def run_backtest(
     if entry_timing not in {ENTRY_TIMING_SIGNAL_REFERENCE, ENTRY_TIMING_NEXT_BAR_OPEN}:
         raise ValueError("entry_timing must be 'signal_reference' or 'next_bar_open'")
     if not candles:
-        return BacktestResult(timeframe, 0, 0, 0, 0, (), ())
+        return BacktestResult(timeframe, 0, 0, 0, 0, (), (), ())
 
     if start_index is None:
         start_index = 0
@@ -141,9 +145,9 @@ def run_backtest(
     normal_warm_start = min(max(config.lookback + 2, 10, warmup or 0), len(candles))
     evaluation_start = normal_warm_start if start_index == 0 else start_index
     if evaluation_start >= end_index:
-        return BacktestResult(timeframe, 0, 0, 0, 0, (), ())
+        return BacktestResult(timeframe, 0, 0, 0, 0, (), (), ())
 
-    signals, trades = [], []
+    signals, signal_indices, trades = [], [], []
     i = evaluation_start
     while i < end_index:
         current, prior = candles[i], candles[:i]
@@ -165,8 +169,14 @@ def run_backtest(
         else:
             signal = EngineSignal(WAIT, "no unique directional setup", timeframe)
         signals.append(signal)
+        signal_indices.append(i)
 
-        if signal.action in {LONG, SHORT} and signal.entry_reference is not None and signal.zone is not None:
+        if (
+            signal.action in {LONG, SHORT}
+            and signal.entry_reference is not None
+            and signal.zone is not None
+            and (signal_filter is None or signal_filter(i, signal))
+        ):
             if entry_timing == ENTRY_TIMING_NEXT_BAR_OPEN:
                 fill_index = i + 1
                 if fill_index >= end_index:
@@ -222,6 +232,7 @@ def run_backtest(
         sum(s.action == WAIT for s in signals),
         tuple(trades),
         tuple(signals),
+        tuple(signal_indices),
     )
 
 
@@ -243,3 +254,13 @@ def run_all_timeframes(
         )
         for tf, c in candles_by_timeframe.items()
     }
+
+
+__all__ = [
+    "BacktestResult",
+    "ENTRY_TIMING_NEXT_BAR_OPEN",
+    "ENTRY_TIMING_SIGNAL_REFERENCE",
+    "SignalFilter",
+    "run_all_timeframes",
+    "run_backtest",
+]
