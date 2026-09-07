@@ -30,7 +30,10 @@ def test_realized_and_equity_loss_are_not_double_counted():
 
 
 def test_drawdown_uses_peak_equity():
-    controller = PortfolioRiskController(10_000, PortfolioRiskLimits(max_drawdown_fraction=0.10))
+    controller = PortfolioRiskController(
+        10_000,
+        PortfolioRiskLimits(max_drawdown_fraction=0.10, max_weekly_drawdown_fraction=1.0),
+    )
     controller.update_equity(12_000)
     controller.update_equity(10_801)
     decision = controller.evaluate()
