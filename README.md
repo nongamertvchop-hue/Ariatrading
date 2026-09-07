@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.15.0**
+**Current version: 0.15.1**
 
 ## Core idea
 
@@ -193,7 +193,7 @@ The MTF Advisor is deliberately conservative: it cannot invent LONG/SHORT direct
 
 Webaria Paper Trading is simulation-only. Browser-local state and signal journals are useful for testing the interface and research workflow but are not durable multi-device execution records.
 
-The MT5 demo runtime requires an explicit control endpoint and secret token. Its control client treats an unreachable or invalid control plane as OFF, and the `DemoAutoTrader` checks that control immediately before the broker call. The browser control endpoint only changes the persistent switch and never submits an MT5 order itself. Cloudflare Durable Objects provide the persistent, strongly consistent coordination primitive used for that state.
+The MT5 demo runtime requires an explicit control endpoint and secret token. Its control client treats an unreachable or invalid control plane as OFF, and the `DemoAutoTrader` checks that control immediately before the broker call. The browser control endpoint only changes the persistent switch and never submits an MT5 order itself. Cloudflare Durable Objects provide the persistent coordination primitive used for that state.
 
 ## Testing
 
@@ -203,7 +203,7 @@ The deep-learning implementation is optional in the default CI path because PyTo
 
 ## Version / continuation protocol
 
-Current version: **0.15.0**.
+Current version: **0.15.1**.
 
 At the start of a new chat:
 
