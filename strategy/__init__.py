@@ -33,6 +33,7 @@ from .research_control import (
     config_fingerprint,
     fingerprint_candles,
 )
+from .research_runner import ControlledResearchResult, run_controlled_research
 from .robustness import RobustnessCase, RobustnessReport, RobustnessScenario, run_robustness_analysis
 from .walk_forward import WalkForwardFold, WalkForwardResult, walk_forward_backtest
 
@@ -52,5 +53,6 @@ __all__ = [
     "RobustnessScenario", "RobustnessCase", "RobustnessReport", "run_robustness_analysis",
     "DatasetFingerprint", "ResearchConfig", "ResearchRun", "build_research_run",
     "config_fingerprint", "fingerprint_candles",
+    "ControlledResearchResult", "run_controlled_research",
     "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest",
 ]
