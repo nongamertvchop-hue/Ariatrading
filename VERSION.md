@@ -48,11 +48,13 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - MTF filtering uses only higher-timeframe candles whose full intervals closed by the entry candle close, preventing future higher-timeframe information from entering the decision.
 - Comparison metrics include directional signals, opened/closed trades, WIN/LOSS counts, unresolved/skipped signals, realized R, win rate, mean/median R, and signal-to-trade conversion.
 - MTF comparison has dedicated tests for conflict blocking, supportive alignment preservation, no-new-setup behavior, timestamp alignment, and closed-trade metrics.
+- `strategy/signal_quality.py` aggregates post-replay signal evidence by timeframe, market regime, breakout state, and setup-score bucket.
+- Signal-quality regime classification uses only the candle prefix available at the signal bar; future candles can affect the outcome label but cannot change the decision-time regime assignment.
+- Signal-quality reports fail closed on missing/duplicate signal outcomes and missing decision candles instead of silently dropping observations.
 
 ## Next milestones
 
 ### 0.18.x — evidence hardening
-- Add signal-quality reports by timeframe, regime, breakout state, and setup score bucket.
 - Add paired statistical analysis for MTF filtering, including confidence intervals only after sufficient sample sizes.
 - Continue auditing execution-friction sensitivity and realtime/replay parity.
 - Add stronger checkpoint lifecycle invariants, including account win/loss consistency and trade-id monotonicity.
