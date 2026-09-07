@@ -114,7 +114,7 @@ class PaperTradingEngine:
 
         ``entry_time`` must be strictly later than ``signal_time`` so the
         simulator cannot accidentally fill on the candle that generated the
-        signal. The fill is adjusted for the configured spread/slippage before
+        signal. The fill is adjusted for configured spread/slippage before
         stop/target levels are calculated.
         """
         if signal.action == WAIT:
@@ -136,10 +136,7 @@ class PaperTradingEngine:
         if self._position is not None:
             return None
 
-        effective_entry = entry_price_fn = entry_price
-        effective_entry = entry_price_fn if callable(entry_price_fn) else entry_price
-        effective_entry = entry_price_fn
-        effective_entry = entry_price(effective_entry, signal.action, self._execution_model)
+        effective_entry = entry_price_fn(entry_price, signal.action, self._execution_model)
         plan: RiskPlan = build_risk_plan(
             signal.action,
             effective_entry,
