@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.14.0**
+**Current version: 0.15.0**
 
 ## Core idea
 
@@ -49,6 +49,9 @@ The project is layered so every stage can be used together without duplicating s
 29. **Webaria MTF Signal Advisor** — 1D -> 4H -> 1H -> 15M dashboard. Higher timeframes filter the existing 15M setup and cannot create a new entry pattern.
 30. **Webaria signal journal** — browser-local snapshots of advisor outputs for research review; this is not a broker execution log and is not synchronized between devices.
 31. **Webaria Paper Risk Engine** — browser-safe risk sizing, stop validation, P/L and conservative bar-exit semantics, isolated from broker execution.
+32. **MT5 demo execution boundary** — a separate adapter can submit protected orders only when the connected account is explicitly a MetaTrader 5 Demo account; real accounts are rejected.
+33. **Demo Auto Trader** — realtime orchestration that consumes the existing monitor and requires an explicit `SystemGateDecision` and risk-plan resolver before a demo order is sent.
+34. **Continuous demo runtime** — closed-candle polling loop for a Windows/MT5 host; runtime/execution ambiguity stops the process instead of retrying blindly.
 
 ## Key modules
 
@@ -101,6 +104,9 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/broker_contract.py` — normalized broker-symbol contract checks.
 - `adapters/mt5_feed.py` — read-only MT5 market-data adapter.
 - `adapters/paper_broker.py` — broker-like paper/demo simulator for deterministic execution tests.
+- `live/demo_mt5.py` — **DEMO-ONLY** MT5 order adapter with account, symbol, volume, SL/TP, duplicate-position, order-check, and execution-result validation.
+- `live/demo_auto_trader.py` — strategy-to-demo execution orchestration through the existing System Gate contract.
+- `live/demo_runtime.py` — continuous closed-candle demo runtime.
 - `Webaria/paper-engine.js` — browser-safe paper risk primitives; no broker calls.
 - `Webaria/signal-advisor.html` — single-timeframe realtime Signal Advisor.
 - `Webaria/mtf-advisor.html` — multi-timeframe Signal Advisor and local signal journal.
@@ -136,9 +142,18 @@ LONG / SHORT / WAIT
         |                         +---- DL walk-forward folds + provenance
         |                         +---- ML Evidence Gate
         |
-        +---- Realtime path -> Supervisor -> System Gate -> Paper Session
+        +---- Realtime path -> Supervisor -> System Gate
                                   |
-                                  +---- Realtime historical replay
+                                  +---- Paper Session -> Paper Broker
+                                  |
+                                  +---- DEMO Auto Trader
+                                  |       |
+                                  |       +---- MT5 Demo Account Guard
+                                  |       +---- Symbol/Volume Contract
+                                  |       +---- order_check()
+                                  |       +---- order_send()
+                                  |       +---- SL / TP protection
+                                  |       +---- Managed-position protection
                                   |
                                   +---- Webaria Signal Advisor
                                   |       |
@@ -147,30 +162,17 @@ LONG / SHORT / WAIT
                                   |       +---- Browser-local signal journal
                                   |
                                   +---- Webaria Paper Risk Engine
-
-Paper execution validation path:
-System Gate -> Broker Contract -> Order State -> Persistence -> Audit
-                                      |
-                                      v
-                               Paper Broker Simulator
-                                      |
-                             Position Reconciliation
-                                      |
-                                      v
-                              Recovery verification
-                                      |
-                                ALLOW / HALT
 ```
 
-The realtime path uses the same strategy engine rather than a separate live strategy:
+The realtime path uses the same strategy engine rather than a separate execution strategy:
 
-`MT5 terminal -> MT5BarFeed -> feed integrity -> RealtimeMonitor -> engine -> LONG/SHORT/WAIT -> Supervisor -> SystemGate -> PaperSessionRunner`
+`MT5 terminal -> MT5BarFeed -> feed integrity -> RealtimeMonitor -> engine -> LONG/SHORT/WAIT -> Supervisor -> SystemGate -> DemoAutoTrader -> MT5DemoExecutionAdapter`
 
 The Webaria Advisor path uses the Worker API for market-data analysis:
 
 `Twelve Data -> Cloudflare Worker /api/signal -> Webaria Signal Advisor -> MTF filter -> Paper Risk Planner`
 
-The MT5 adapter remains read-only. There is no live order-sending implementation in this repository.
+MT5 market-data reading remains available through `MT5BarFeed`. Demo order sending is isolated in `live/demo_mt5.py`; **real-account execution is deliberately unsupported and rejected by the adapter.**
 
 ## Validation principles
 
@@ -180,15 +182,17 @@ The MTF Advisor is deliberately conservative: it cannot invent LONG/SHORT direct
 
 Webaria Paper Trading is simulation-only. Browser-local state and signal journals are useful for testing the interface and research workflow but are not durable multi-device execution records.
 
+The MT5 demo runtime is intended for a dedicated demo account. It never accepts credentials from source code, and its execution adapter hard-rejects any account whose MT5 `trade_mode` is not `ACCOUNT_TRADE_MODE_DEMO`. MT5's documented `order_check()` is required before `order_send()`, and every successful submission is validated by return code. citeturn522763search0turn522763search1turn522763search5
+
 ## Testing
 
-The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk and quantity constraints, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML model health, ML evidence readiness, fixed-window ML challenger comparison, deep-learning sequence causality, deep-learning walk-forward contracts and provenance persistence, realtime state handling, feed-integrity boundary behavior, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, paper-broker failure semantics, paper-position reconciliation semantics including average-entry and broker-contract mismatches, order persistence/recovery, execution audit integrity, broker contract validation, the integrated research facade/system gate, Webaria paper-risk behavior, the single-timeframe Signal Advisor contract, and the multi-timeframe Signal Advisor contract.
+The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk and quantity constraints, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML model health, ML evidence readiness, fixed-window ML challenger comparison, deep-learning sequence causality, deep-learning walk-forward contracts and provenance persistence, realtime state handling, feed-integrity boundary behavior, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, paper-broker failure semantics, paper-position reconciliation semantics including average-entry and broker-contract mismatches, order persistence/recovery, execution audit integrity, broker contract validation, the integrated research facade/system gate, Webaria paper-risk behavior, and the single-timeframe Signal Advisor contract. Demo execution tests additionally verify the real-account guard, hard volume cap, order-check-before-send contract, SL/TP validation and managed-order behavior.
 
-The deep-learning implementation is optional in the default CI path because PyTorch is a large dependency. `requirements-ml.txt` provides the explicit ML environment for LSTM/Transformer experiments.
+The deep-learning implementation is optional in the default CI path because PyTorch is a large dependency. `requirements-ml.txt` provides the explicit ML environment for LSTM/Transformer experiments. `requirements-realtime.txt` already contains the MetaTrader5 Python package used by the MT5 feed and demo execution boundary.
 
 ## Version / continuation protocol
 
-Current version: **0.14.0**.
+Current version: **0.15.0**.
 
 At the start of a new chat:
 
@@ -202,4 +206,4 @@ At the start of a new chat:
 
 ## Important
 
-This repository is for programming practice and historical/realtime market-data research. It does not establish that a strategy is profitable. It is intentionally read-only with respect to MT5 trading actions. Any future execution architecture must remain isolated from the research engine and should only be considered after robust out-of-sample validation.
+This repository is for programming practice and historical/realtime market-data research with a dedicated MT5 demo execution path. It does not establish that a strategy is profitable. **Live/real-account trading is intentionally unsupported.** Any future real execution architecture must remain separately isolated from the research engine and should only be considered after robust out-of-sample and forward-demo validation.
