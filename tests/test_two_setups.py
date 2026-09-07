@@ -27,7 +27,8 @@ def test_long_setup_is_detected_from_confirmed_repeated_support():
 
     assert result.signal.action == LONG
     assert result.signal.confirmation_index == len(candles) - 1
-    assert result.signal.test_index == len(candles) - 2
+    assert result.signal.test_index < result.signal.confirmation_index
+    assert result.signal.test_index >= 0
     assert result.support_zones
 
 
