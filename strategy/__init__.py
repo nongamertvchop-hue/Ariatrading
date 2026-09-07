@@ -4,8 +4,8 @@ The package keeps the two core setups stable while exposing consistent
 interfaces across strategy, forecast, backtest, execution-cost simulation,
 replay, realtime monitoring, paper simulation, journaling, walk-forward
 validation, robustness analysis, reproducible research control, ML
-meta-filter research, experiment registry, regime diagnostics, and aggregated
-research evidence.
+meta-filter research, experiment registry, regime diagnostics, aggregated
+research evidence, and research-gate completeness checks.
 """
 
 from .backtest import (
@@ -41,6 +41,7 @@ from .research_control import (
     config_fingerprint,
     fingerprint_candles,
 )
+from .research_gate import INCOMPLETE, READY, ResearchGateDecision, evaluate_research_gate
 from .research_runner import ControlledResearchResult, run_controlled_research
 from .research_validation import ValidationEvidence, build_validation_evidence
 from .regime import REGIMES, RegimeStats, classify_regime, stratify_samples
@@ -66,6 +67,7 @@ __all__ = [
     "config_fingerprint", "fingerprint_candles",
     "ControlledResearchResult", "run_controlled_research",
     "ValidationEvidence", "build_validation_evidence",
+    "INCOMPLETE", "READY", "ResearchGateDecision", "evaluate_research_gate",
     "FEATURE_NAMES", "MLSample", "build_signal_sample", "extract_signal_features",
     "MLResearchMetrics", "MetaFilterModel", "MetaFilterResult", "chronological_train_test",
     "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest",
