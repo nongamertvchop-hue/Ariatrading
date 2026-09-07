@@ -25,7 +25,10 @@ class TimeframeConfig:
 _CONFIGS = {
     "1m": TimeframeConfig("1m", 30, 0.80, 0.00005, 0.00100, 0.20),
     "5m": TimeframeConfig("5m", 30, 0.80, 0.00008, 0.00150, 0.20),
-    "15m": TimeframeConfig("15m", 30, 0.85, 0.00010, 0.00250, 0.20),
+    # Zone tolerance is applied on both sides of every swing price. Keeping
+    # the 15m tolerance tighter prevents normal reaction candles from being
+    # swallowed by an oversized zone while preserving adaptive sizing.
+    "15m": TimeframeConfig("15m", 30, 0.35, 0.00010, 0.00250, 0.20),
     "30m": TimeframeConfig("30m", 30, 0.85, 0.00012, 0.00350, 0.20),
     "1h": TimeframeConfig("1h", 30, 0.90, 0.00015, 0.00500, 0.20),
     "4h": TimeframeConfig("4h", 30, 0.95, 0.00020, 0.01000, 0.20),
