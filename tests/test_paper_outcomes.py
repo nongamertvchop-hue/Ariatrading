@@ -1,8 +1,9 @@
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from strategy.journal import JournalEvent
-from strategy.paper import CLOSED, LOSS, OPEN, PaperPosition
+from strategy.paper import CLOSED, OPEN, PaperPosition
 from strategy.paper_outcomes import SKIPPED, UNRESOLVED, WIN, label_paper_signals
 from strategy.paper_session import PaperSessionResult
 
@@ -51,15 +52,18 @@ def _position(signal_time, entry_time, *, status=OPEN, outcome=OPEN, trade_id=1,
 def test_closed_signal_gets_future_win_label():
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     signal = _signal_result(start, "signal-1")
-    opened = _signal_result(start + timedelta(minutes=1), "other-signal")
-    opened.opened = _position(start, start + timedelta(minutes=1))
-    closed = _signal_result(start + timedelta(minutes=3), "other-signal-2")
-    closed.closed = _position(
-        start,
-        start + timedelta(minutes=1),
-        status=CLOSED,
-        outcome=WIN,
-        exit_time=start + timedelta(minutes=3),
+    opened = _signal_result(start + timedelta(minutes=1), "wait-1", action="WAIT")
+    opened = replace(opened, opened=_position(start, start + timedelta(minutes=1)))
+    closed = _signal_result(start + timedelta(minutes=3), "wait-2", action="WAIT")
+    closed = replace(
+        closed,
+        closed=_position(
+            start,
+            start + timedelta(minutes=1),
+            status=CLOSED,
+            outcome=WIN,
+            exit_time=start + timedelta(minutes=3),
+        ),
     )
 
     labels = label_paper_signals([signal, opened, closed])
@@ -83,7 +87,7 @@ def test_final_signal_without_next_bar_is_unresolved():
 def test_directional_signal_not_opened_before_replay_end_is_skipped():
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     first = _signal_result(start, "signal-skipped")
-    later = _signal_result(start + timedelta(minutes=1), "wait-event", action="SHORT")
+    later = _signal_result(start + timedelta(minutes=1), "wait-event", action="WAIT")
 
     labels = label_paper_signals([first, later])
 
