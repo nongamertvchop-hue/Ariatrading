@@ -74,7 +74,10 @@ def test_short_setup_exposes_protective_stop_above_resistance():
         _c(1.1089, 1.1112, 1.1086, 1.1098),
         _c(1.1098, 1.1100, 1.1070, 1.1080),
         _c(1.1080, 1.1097, 1.1072, 1.1086),
-        _c(1.1090, 1.1110, 1.1086, 1.1100),
+        # Deliberate bearish rejection at the confirmed resistance. The old
+        # fixture was bullish, so it did not satisfy the sequence's rejection
+        # invariant after the tighter 15m zone calibration.
+        _c(1.1108, 1.1115, 1.1095, 1.1098),
         _c(1.1100, 1.1103, 1.1068, 1.1070),
     ]
 
