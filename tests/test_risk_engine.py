@@ -9,7 +9,14 @@ def test_position_size_stays_within_risk_budget():
 
 
 def test_quantity_step_is_floored_not_rounded_up():
-    quantity = position_size(10_000, 100.0, 99.0, 0.01, value_per_price_unit=1.0, quantity_step=3.0)
+    quantity = position_size(
+        10_000,
+        100.0,
+        99.0,
+        0.01,
+        value_per_price_unit=1.0,
+        quantity_step=3.0,
+    )
     assert quantity == 99.0
 
 
@@ -34,7 +41,7 @@ def test_open_risk_limit_caps_requested_size():
         open_risk_amount=200,
     )
     assert decision.allowed
-    assert decision.risk_amount <= pytest.approx(100.0, abs=1e-12)
+    assert decision.risk_amount <= 100.0 + 1e-12
 
 
 def test_max_positions_blocks_new_trade():
