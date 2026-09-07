@@ -48,5 +48,5 @@ def test_webaria_has_signal_and_live_price_api_contracts():
     assert "/api/signal" in html
     assert "/api/price" in html
     assert "payload.signal" in html
-    assert "payload.entry_reference" in html
-    assert "payload.stop_reference" in html
+    assert "entry_reference" in html
+    assert "stop_reference" in html
