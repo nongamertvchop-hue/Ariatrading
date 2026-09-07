@@ -3,7 +3,7 @@ import json
 import pytest
 
 from strategy.order_persistence import OrderPersistenceError, load_order_state, save_order_state
-from strategy.order_state import OrderState, OrderStateMachine
+from strategy.order_state import OrderRecord, OrderState, OrderStateMachine
 
 
 def test_save_and_load_round_trip(tmp_path):
@@ -47,7 +47,7 @@ def test_all_persistable_states_restore_without_replaying_history(tmp_path):
     for index, (state, filled) in enumerate(cases):
         machine = OrderStateMachine()
         machine.restore(
-            __import__("strategy.order_state", fromlist=["OrderRecord"]).OrderRecord(
+            OrderRecord(
                 client_order_id=f"c-{index}",
                 idempotency_key=f"i-{index}",
                 direction="LONG",
