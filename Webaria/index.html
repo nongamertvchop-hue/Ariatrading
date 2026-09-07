@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="copyright" content="Copyright (c) 2026 tryth5556 / nongamertvchop. All rights reserved.">
   <title>Webaria</title>
   <style>
     html, body {
@@ -13,6 +14,7 @@
 
     body {
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       background: #fff;
@@ -20,14 +22,38 @@
       font-family: Arial, Helvetica, sans-serif;
     }
 
+    main {
+      flex: 1;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
     h1 {
       margin: 0;
       font-size: clamp(2rem, 8vw, 5rem);
       font-weight: 400;
     }
+
+    footer {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 16px 20px;
+      text-align: center;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      color: #555;
+    }
   </style>
 </head>
 <body>
-  <h1>Webaria</h1>
+  <main>
+    <h1>Webaria</h1>
+  </main>
+
+  <footer>
+    © 2026 tryth5556 / nongamertvchop. All rights reserved.
+  </footer>
 </body>
 </html>
