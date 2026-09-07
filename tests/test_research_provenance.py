@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from strategy.research_provenance import (
@@ -5,7 +7,9 @@ from strategy.research_provenance import (
     ResearchProvenance,
     build_research_provenance,
     fingerprint_payload,
+    load_research_provenance,
     provenance_compatible,
+    save_research_provenance,
 )
 
 
@@ -60,3 +64,42 @@ def test_model_config_change_breaks_compatibility():
 def test_provenance_record_validates_schema():
     with pytest.raises(ValueError, match="schema"):
         ResearchProvenance("d", "f", "m", "c", "v", PROVENANCE_SCHEMA_VERSION + 1)
+
+
+def test_provenance_round_trips_atomically(tmp_path):
+    provenance = build_research_provenance(
+        dataset=[1, 2, 3],
+        feature_names=["a", "b"],
+        model_name="lstm",
+        model_config={"hidden_size": 32},
+        code_version="0.13.2",
+    )
+    path = tmp_path / "provenance.json"
+    save_research_provenance(provenance, path)
+
+    loaded = load_research_provenance(path)
+    assert loaded == provenance
+    assert loaded.fingerprint == provenance.fingerprint
+
+
+def test_corrupt_provenance_is_rejected(tmp_path):
+    path = tmp_path / "provenance.json"
+    path.write_text("{not-json", encoding="utf-8")
+    with pytest.raises(ValueError, match="load research provenance"):
+        load_research_provenance(path)
+
+
+def test_unexpected_provenance_fields_are_rejected(tmp_path):
+    path = tmp_path / "provenance.json"
+    payload = {
+        "schema_version": 1,
+        "dataset_fingerprint": "d",
+        "feature_fingerprint": "f",
+        "model_name": "m",
+        "model_config_fingerprint": "c",
+        "code_version": "v",
+        "unexpected": True,
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="unexpected schema"):
+        load_research_provenance(path)
