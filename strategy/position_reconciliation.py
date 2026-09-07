@@ -18,16 +18,13 @@ FLAT = "FLAT"
 ALLOW = "ALLOW"
 HALT = "HALT"
 
+DEFAULT_QUANTITY_TOLERANCE = 1e-5
+DEFAULT_PRICE_TOLERANCE = 1e-5
+
 
 @dataclass(frozen=True)
 class PositionSnapshot:
-    """Normalized position representation used by reconciliation.
-
-    ``average_entry_price`` is optional for backward compatibility with older
-    paper/research snapshots. When both local and broker states provide it,
-    reconciliation requires the values to agree within the configured
-    tolerance.
-    """
+    """Normalized position representation used by reconciliation."""
 
     symbol: str
     direction: str
@@ -116,16 +113,16 @@ def reconcile_position(
     local: LocalPositionState | None,
     broker_positions: list[PositionSnapshot],
     *,
-    quantity_tolerance: float = 1e-12,
-    price_tolerance: float = 1e-12,
+    quantity_tolerance: float = DEFAULT_QUANTITY_TOLERANCE,
+    price_tolerance: float = DEFAULT_PRICE_TOLERANCE,
     broker_contract: SymbolContract | None = None,
 ) -> ReconciliationDecision:
     """Require local and broker position state to agree before new execution.
 
-    Contract validation is optional so existing research callers remain
-    backward compatible. When supplied, every broker position must satisfy the
-    normalized symbol/volume contract. Average-entry price precision is also
-    checked when the broker supplies that value.
+    The defaults model normal broker/JSON floating-point representation noise,
+    rather than exact mathematical equality. When a symbol contract is known,
+    callers should still choose tolerances no larger than the precision implied
+    by that contract; the broker's volume-step validation remains strict.
     """
     if quantity_tolerance < 0 or not isfinite(quantity_tolerance):
         raise ValueError("quantity_tolerance must be finite and >= 0")
@@ -178,8 +175,8 @@ def new_entry_allowed(
     local: LocalPositionState | None,
     broker_positions: list[PositionSnapshot],
     *,
-    quantity_tolerance: float = 1e-12,
-    price_tolerance: float = 1e-12,
+    quantity_tolerance: float = DEFAULT_QUANTITY_TOLERANCE,
+    price_tolerance: float = DEFAULT_PRICE_TOLERANCE,
     broker_contract: SymbolContract | None = None,
 ) -> ReconciliationDecision:
     """Only permit a new entry when both sides agree that the account is flat."""
