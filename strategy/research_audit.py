@@ -28,11 +28,12 @@ def audit_validation_evidence(
     evidence: ValidationEvidence,
     ml_result: MLWalkForwardResult,
 ) -> ResearchAuditReport:
-    """Check evidence consistency and basic anti-leakage invariants.
+    """Check evidence consistency and temporal anti-leakage invariants.
 
-    Fold boundaries are checked against the walk-forward configuration so a
-    malformed or manually altered result cannot silently present overlapping
-    or reversed OOS windows as valid evidence.
+    Fold boundaries are checked against the walk-forward configuration, and
+    recorded signal/label provenance is checked against those boundaries so a
+    malformed or manually altered result cannot silently present leaked
+    training data as valid OOS evidence.
     """
     findings: list[str] = []
     errors: list[str] = []
@@ -80,6 +81,39 @@ def audit_validation_evidence(
             errors.append(
                 f"fold {fold.fold_index} is marked trained without two-class training data"
             )
+
+        if fold.train_samples == 0:
+            if fold.train_last_signal_index is not None or fold.train_last_label_end_index is not None:
+                errors.append(f"fold {fold.fold_index} has training provenance without samples")
+        else:
+            if fold.train_last_signal_index is None or fold.train_last_label_end_index is None:
+                errors.append(f"fold {fold.fold_index} is missing training temporal provenance")
+            else:
+                if fold.train_last_signal_index < 0 or fold.train_last_signal_index >= fold.test_start:
+                    errors.append(f"fold {fold.fold_index} has training signal outside history")
+                if fold.train_last_label_end_index != fold.train_last_signal_index + ml_result.horizon_bars:
+                    errors.append(f"fold {fold.fold_index} has inconsistent training label horizon")
+                if fold.train_last_label_end_index >= fold.test_start:
+                    errors.append(f"fold {fold.fold_index} has training label ending at or after OOS start")
+
+        directional_test_count = sum(
+            1
+            for signal in fold.baseline.signals
+            if signal.action in {"LONG", "SHORT"}
+        )
+        if fold.test_first_signal_index is None or fold.test_last_signal_index is None:
+            if directional_test_count:
+                errors.append(f"fold {fold.fold_index} is missing test signal provenance")
+        else:
+            if fold.test_first_signal_index < fold.test_start or fold.test_first_signal_index >= fold.test_end:
+                errors.append(f"fold {fold.fold_index} has first test signal outside OOS window")
+            if fold.test_last_signal_index < fold.test_start or fold.test_last_signal_index >= fold.test_end:
+                errors.append(f"fold {fold.fold_index} has last test signal outside OOS window")
+            if fold.test_first_signal_index > fold.test_last_signal_index:
+                errors.append(f"fold {fold.fold_index} has reversed test signal provenance")
+            if fold.test_labeled_samples > directional_test_count:
+                errors.append(f"fold {fold.fold_index} has invalid labeled test-sample provenance")
+
         previous_test_start = fold.test_start
         previous_test_end = fold.test_end
 
