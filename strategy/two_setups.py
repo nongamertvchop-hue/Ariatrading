@@ -10,9 +10,11 @@ No indicators, forecasts, or orders are introduced by this module.
 
 from dataclasses import dataclass
 
+from .candles import Candle
 from .engine import EngineSignal, LONG, SHORT, WAIT, evaluate_long, evaluate_short
-from .levels_v2 import PriceZone, find_resistance_zones, find_support_zones
-from .timeframe import adaptive_zone_tolerance, get_timeframe_config
+from .fake_breakout import classify_resistance_breakout, classify_support_breakout
+from .levels_v2 import PriceZone, RESISTANCE, SUPPORT, find_resistance_zones, find_support_zones
+from .timeframe import adaptive_confirmation_buffer, adaptive_zone_tolerance, get_timeframe_config
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,50 @@ def _zone_distance(zone: PriceZone, price: float) -> float:
 def _rank_zones(zones: list[PriceZone], price: float) -> list[PriceZone]:
     """Prefer nearby zones, then zones with more independent reactions."""
     return sorted(zones, key=lambda zone: (_zone_distance(zone, price), -zone.touches, zone.center))
+
+
+def _active_zones(
+    zones: list[PriceZone],
+    candles: list[dict],
+    timeframe: str,
+) -> list[PriceZone]:
+    """Keep zones whose latest interaction has not decisively broken them.
+
+    A zone may become relevant again after price returns and interacts with it.
+    Therefore we only inspect the candle containing the latest interaction,
+    rather than permanently deleting a zone after an older breakout.
+    """
+    if not candles:
+        return zones
+
+    buffer = adaptive_confirmation_buffer(candles, timeframe)
+    completed = [
+        Candle(float(raw["open"]), float(raw["high"]), float(raw["low"]), float(raw["close"]))
+        for raw in candles
+    ]
+    active: list[PriceZone] = []
+
+    for zone in zones:
+        latest_touch: Candle | None = None
+        for candle in completed:
+            if candle.low <= zone.high and candle.high >= zone.low:
+                latest_touch = candle
+
+        if latest_touch is None:
+            active.append(zone)
+            continue
+
+        if zone.kind == SUPPORT:
+            breakout = classify_support_breakout(latest_touch, zone, buffer)
+        elif zone.kind == RESISTANCE:
+            breakout = classify_resistance_breakout(latest_touch, zone, buffer)
+        else:
+            raise ValueError("zone kind must be SUPPORT or RESISTANCE")
+
+        if breakout.state != "TRUE_BREAKOUT":
+            active.append(zone)
+
+    return active
 
 
 def evaluate_two_setups(
@@ -79,6 +125,9 @@ def evaluate_two_setups(
         tolerance=tolerance,
         min_touches=min_touches,
     )
+
+    supports = _active_zones(supports, history, timeframe)
+    resistances = _active_zones(resistances, history, timeframe)
 
     current_close = float(candles[-1]["close"])
     ranked_supports = _rank_zones(supports, current_close)
