@@ -6,8 +6,8 @@ replay, realtime monitoring, paper simulation, journaling, walk-forward
 validation, robustness analysis, reproducible research control, ML
 meta-filter research, experiment registry, regime diagnostics, ML feature
 drift diagnostics, ML OOS behavior diagnostics, ML model health diagnostics,
-deep-learning challenger models, aggregated research evidence, research-gate completeness checks, and
-audit diagnostics.
+deep-learning challenger models, aggregated research evidence, research-gate completeness checks,
+execution recovery, and the final system readiness gate.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
@@ -48,6 +48,7 @@ from .research_validation import ValidationEvidence, build_validation_evidence
 from .regime import REGIMES, RegimeStats, classify_regime, stratify_samples
 from .risk_engine import RiskDecision, RiskLimits, evaluate_risk, position_size
 from .robustness import RobustnessCase, RobustnessReport, RobustnessScenario, run_robustness_analysis
+from .system_gate import SystemGateDecision, evaluate_system_readiness
 from .trade_guard import TradeGuardDecision, evaluate_trade_guard
 from .two_setups import TwoSetupResult, evaluate_two_setups
 from .walk_forward import WalkForwardFold, WalkForwardResult, walk_forward_backtest
@@ -59,6 +60,7 @@ __all__ = [
     "PortfolioRiskLimits", "PortfolioRiskState", "PortfolioRiskDecision", "PortfolioRiskController", "PORTFOLIO_ALLOW", "HALT",
     "PositionSnapshot", "LocalPositionState", "ReconciliationDecision", "reconcile_position", "new_entry_allowed", "FLAT",
     "TradeGuardDecision", "evaluate_trade_guard",
+    "SystemGateDecision", "evaluate_system_readiness",
     "OrderState", "OrderRecord", "OrderTransition", "OrderStateMachine", "OrderPersistenceError", "save_order_state", "load_order_state",
     "AuditEvent", "AuditJournal", "AuditJournalError", "ExecutionRecoveryDecision", "ExecutionRecoveryReport", "verify_execution_recovery",
     "ExecutionModel", "entry_price", "exit_price",
@@ -71,8 +73,9 @@ __all__ = [
     "CLOSED", "OPEN", "PaperAccount", "PaperPosition", "PaperTradingEngine", "PaperSessionResult", "PaperSessionRunner",
     "RobustnessScenario", "RobustnessCase", "RobustnessReport", "run_robustness_analysis",
     "DatasetFingerprint", "ResearchConfig", "ResearchRun", "build_research_run", "config_fingerprint", "fingerprint_candles",
-    "ControlledResearchResult", "run_controlled_research", "ValidationEvidence", "build_validation_evidence",
-    "INCOMPLETE", "READY", "ResearchGateDecision", "evaluate_research_gate", "ResearchAuditReport", "audit_validation_evidence",
+    "ControlledResearchResult", "run_controlled_research", "ValidationEvidence",
+    "build_validation_evidence", "INCOMPLETE", "READY", "ResearchGateDecision", "evaluate_research_gate",
+    "ResearchAuditReport", "audit_validation_evidence",
     "FEATURE_NAMES", "MLSample", "build_signal_sample", "extract_signal_features",
     "MLResearchMetrics", "MetaFilterModel", "MetaFilterResult", "chronological_train_test",
     "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest", "MLWalkForwardFold", "MLWalkForwardResult", "ml_walk_forward_backtest",
