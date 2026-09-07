@@ -41,11 +41,14 @@ def label_paper_signals(
 
     A signal that is opened and later closed receives WIN/LOSS from the paper
     engine's recorded close event. A directional signal that was never opened
-    is SKIPPED (for example because a position was already open). A directional
-    signal still waiting for its next bar or whose position remains open when
-    the replay ends is UNRESOLVED. WAIT signals are excluded because they are
-    not trade candidates.
+    is SKIPPED, except for a signal on the final replay candle, which remains
+    UNRESOLVED because its required next bar was never observed. An opened
+    position that remains open when replay ends is also UNRESOLVED. WAIT signals
+    are excluded because they are not trade candidates.
     """
+    if not results:
+        return ()
+
     signal_rows = {
         result.signal_event.event_id: result
         for result in results
@@ -73,15 +76,15 @@ def label_paper_signals(
         if result.closed is not None:
             closed_trade[result.closed.trade_id] = result
 
+    signal_to_trade = {event_id: trade_id for trade_id, event_id in opened_trade_to_signal.items()}
     labels: list[PaperSignalOutcome] = []
+    final_result = results[-1]
+
     for event_id, result in signal_rows.items():
         signal_event = result.signal_event
-        trade_id = next(
-            (trade_id for trade_id, candidate in opened_trade_to_signal.items() if candidate == event_id),
-            None,
-        )
+        trade_id = signal_to_trade.get(event_id)
         if trade_id is None:
-            outcome = UNRESOLVED if result is results[-1] else SKIPPED
+            outcome = UNRESOLVED if result is final_result else SKIPPED
             labels.append(
                 PaperSignalOutcome(
                     event_id=event_id,
@@ -110,7 +113,12 @@ def label_paper_signals(
             continue
 
         closed = close_result.closed
-        assert closed is not None
+        if closed is None:
+            raise ValueError("closed trade result is missing its closed position")
+        if closed.exit_time is None or closed.exit_time <= signal_event.signal_time:
+            raise ValueError("paper outcome close must occur after signal time")
+        if closed.outcome not in {WIN, LOSS}:
+            raise ValueError("paper outcome must be WIN or LOSS")
         labels.append(
             PaperSignalOutcome(
                 event_id=event_id,
