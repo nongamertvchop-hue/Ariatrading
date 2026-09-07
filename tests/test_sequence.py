@@ -86,7 +86,7 @@ def test_resistance_clean_rejection_without_wick_dominance_is_wait():
     zone = PriceZone(1.1090, 1.1100, RESISTANCE, 3)
     candles = [
         {"open": 1.1100, "high": 1.1105, "low": 1.1075, "close": 1.1082},
-        {"open": 1.1098, "high": 1.1085, "low": 1.1050, "close": 1.1055},
+        {"open": 1.1085, "high": 1.1085, "low": 1.1050, "close": 1.1055},
     ]
     result = evaluate_sequence(candles, zone, "15m", SHORT)
     assert result.action == WAIT
