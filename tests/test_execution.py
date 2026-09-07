@@ -48,6 +48,29 @@ def test_execution_model_applies_spread_and_slippage_to_realized_r():
     assert result.r_multiple < p.rr
 
 
+def test_execution_adjusted_risk_plan_can_be_simulated_without_double_entry_cost():
+    model = ExecutionModel(spread=0.0002, slippage=0.0001, commission=0.0001)
+    raw_plan = plan()
+    effective = entry_price(raw_plan.entry, raw_plan.direction, model)
+    effective_plan = build_risk_plan(
+        raw_plan.direction,
+        effective,
+        PriceZone(1.0990, 1.1000, SUPPORT, 3),
+        stop_buffer=0.0002,
+        reward_risk=2.0,
+    )
+    bars = [candle(datetime(2026, 1, 1, 1, tzinfo=timezone.utc), 1.1060, 1.1010)]
+
+    explicit = simulate_realistic_exit(effective_plan, bars, model, entry_is_effective=True)
+    legacy = simulate_realistic_exit(raw_plan, bars, model)
+
+    assert explicit.entry == pytest.approx(legacy.entry)
+    assert explicit.stop == pytest.approx(effective_plan.stop)
+    assert explicit.target == pytest.approx(effective_plan.target)
+    assert explicit.r_multiple == pytest.approx((explicit.exit_price - explicit.entry - model.commission) / explicit.risk_distance) if explicit.exit_price else False
+    assert explicit.r_multiple != pytest.approx(legacy.r_multiple)
+
+
 def test_higher_friction_does_not_improve_realized_r():
     p = plan()
     bars = [candle(datetime(2026, 1, 1, 1, tzinfo=timezone.utc), 1.1060, 1.1010)]
