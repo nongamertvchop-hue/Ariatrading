@@ -72,7 +72,7 @@ class PaperSessionRunner:
         }
 
     def restore_state(self, state: dict[str, Any]) -> None:
-        """Restore a checkpoint before the next monitor poll."""
+        """Restore a checkpoint and reconcile all cross-component lifecycle state."""
         if not isinstance(state, dict) or state.get("version") != SESSION_STATE_VERSION:
             raise ValueError("unsupported or invalid paper session state version")
         last_raw = state.get("last_processed_bar_time")
@@ -84,8 +84,15 @@ class PaperSessionRunner:
             raise ValueError("pending signal must be directional")
         self.paper.restore_state(state.get("paper"))
         self.journal.restore_state(state.get("journal"))
-        if pending is not None and self.paper.position is not None:
-            raise ValueError("checkpoint cannot contain both pending signal and open position")
+
+        from live.reconciliation import reconcile_paper_state
+
+        reconcile_paper_state(
+            paper=self.paper,
+            journal=self.journal,
+            pending_signal=pending,
+            last_processed_bar_time=last_bar_time,
+        )
         self._last_processed_bar_time = last_bar_time
         self._pending_signal = pending
 
