@@ -18,7 +18,6 @@ from typing import Callable
 
 from adapters.mt5_feed import MT5BarFeed
 from strategy.realtime import RealtimeMonitor
-from strategy.system_gate import SystemGateDecision
 
 from .demo_auto_trader import DemoAutoTradeResult, DemoAutoTrader, GateResolver, RiskPlanResolver
 from .demo_mt5 import MT5DemoExecutionAdapter
@@ -52,10 +51,9 @@ class DemoRuntime:
             self.feed.mt5,
             max_volume=max_demo_volume,
         )
-        # The feed initialized the same terminal module. Shut that connection
-        # down only through the executor/feed lifecycle after the demo guard is
-        # established below.
-        self.executor._assert_demo_account()
+        # MT5BarFeed initialized the shared terminal connection. The adapter
+        # performs the public demo-account guard before the runtime can start.
+        self.executor.account_snapshot()
         self.monitor = RealtimeMonitor(self.feed, symbol, timeframe, lookback=lookback)
         self.trader = DemoAutoTrader(
             self.monitor,
