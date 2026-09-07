@@ -75,6 +75,10 @@ def _ml_payload(result: MLWalkForwardResult) -> dict[str, Any]:
                 "train_positive": fold.train_positive,
                 "test_labeled_samples": fold.test_labeled_samples,
                 "model_trained": fold.model_trained,
+                "train_last_signal_index": fold.train_last_signal_index,
+                "train_last_label_end_index": fold.train_last_label_end_index,
+                "test_first_signal_index": fold.test_first_signal_index,
+                "test_last_signal_index": fold.test_last_signal_index,
             }
             for fold in result.folds
         ],
