@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.13.2**
+Current version: **0.13.3**
 
 ## Versioning rule
 
@@ -15,11 +15,10 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.13.2
+## Current milestone — 0.13.3
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
-- Timestamp-aligned MTF context excludes higher-timeframe candles that have not fully closed at the entry timestamp.
 - Sequential backtests support bounded evaluation windows so research can isolate out-of-sample periods without allowing exits to cross the test boundary.
 - Backtest entry timing is explicit: the legacy signal-reference assumption remains available, while `next_bar_open` matches the paper-session lifecycle.
 - Historical execution simulation models spread, commission, slippage, bar-based latency, session boundaries and price precision without placing orders.
@@ -30,17 +29,18 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - Portfolio daily-loss accounting combines independently recorded realized loss with session-equity loss using the maximum rather than summing both sources, preventing double counting while preserving a fail-closed limit.
 - Broker-symbol contract validation now provides an explicit execution-boundary check for symbol identity, price precision, and volume min/max/step constraints.
 - Research provenance now fingerprints dataset content, ordered feature definitions, model configuration, and code version so ML/DL artifacts can be compared reproducibly.
-- Feed integrity validation now rejects malformed OHLC, duplicate/out-of-order timestamps, non-UTC timestamps by default, and timestamps misaligned to the configured timeframe grid. It intentionally does not treat FX session/weekend gaps as automatically invalid.
+- Research provenance can now be persisted and loaded atomically with schema validation.
+- Feed integrity validation now runs directly at the realtime boundary, rejecting malformed OHLC, duplicate/out-of-order timestamps, non-UTC timestamps by default, and timestamps misaligned to the configured timeframe grid. It intentionally does not treat FX session/weekend gaps as automatically invalid.
+- Deep-learning walk-forward research can persist a deterministic provenance artifact describing its dataset and full model/research configuration, without forcing provenance writes when the feature is unused.
 - MT5 integration remains read-only; no order execution is implemented.
 
 ## Next milestones
 
 ### 0.13.x — production-boundary hardening
-- Integrate feed-integrity validation directly into the realtime feed boundary without breaking legitimate session gaps.
-- Persist research provenance alongside walk-forward and deep-learning artifacts.
-- Compare classical ML, LSTM and Transformer only on identical untouched OOS windows; never select a winner using the final OOS window.
-- Add execution-friction sensitivity reports and historical replay parity checks.
-- Expand paper-position reconciliation to include explicit average-entry/position-contract checks.
+- Extend paper-position reconciliation to include explicit average-entry and position-contract checks.
+- Complete identical-window classical ML/LSTM/Transformer comparison and strict final-OOS separation.
+- Add execution-friction sensitivity reports and deterministic realtime/replay parity checks.
+- Audit all research artifact persistence for atomicity, schema evolution, and corruption handling.
 
 ### 1.0.0 — Only after validation
 - Freeze a documented strategy specification only after out-of-sample and robustness checks.
