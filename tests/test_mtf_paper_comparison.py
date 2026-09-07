@@ -6,6 +6,7 @@ from strategy.mtf import MultiTimeframeContext
 from strategy.mtf_paper_comparison import _MtfFilterMonitor, _metrics
 from strategy.paper_session import PaperSessionResult
 from strategy.journal import JournalEvent
+from strategy.realtime import LiveEvaluation
 
 
 @dataclass
@@ -17,9 +18,7 @@ class FakeMonitor:
 
 
 def _evaluation(action=LONG):
-    from types import SimpleNamespace
-
-    return SimpleNamespace(
+    return LiveEvaluation(
         symbol="TEST",
         timeframe="15m",
         evaluated_at=datetime(2026, 1, 1, 0, 15, tzinfo=timezone.utc),
