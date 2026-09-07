@@ -3,7 +3,6 @@ import pytest
 from strategy.broker_contract import SymbolContract
 from strategy.position_reconciliation import (
     ALLOW,
-    FLAT,
     HALT,
     LONG,
     LocalPositionState,
@@ -118,16 +117,15 @@ def test_broker_contract_price_precision_mismatch_halts():
         local(average_entry_price=1.10000),
         [broker(average_entry_price=1.100001)],
         broker_contract=contract(),
-        price_tolerance=0.00001,
     )
     assert not decision.safe
     assert "symbol contract" in decision.reason
 
 
-def test_broker_contract_volume_step_mismatch_halts():
+def test_broker_contract_volume_step_mismatch_halts_even_without_entry_price():
     decision = reconcile_position(
-        local(quantity=0.015, average_entry_price=1.10000),
-        [broker(quantity=0.015, average_entry_price=1.10000)],
+        local(quantity=0.015),
+        [broker(quantity=0.015)],
         broker_contract=contract(),
     )
     assert not decision.safe
