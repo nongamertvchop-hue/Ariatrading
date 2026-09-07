@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.15.0**
+Current version: **0.15.1**
 
 ## Versioning rule
 
@@ -15,7 +15,7 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.15.0
+## Current milestone — 0.15.1
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
@@ -39,12 +39,13 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - Signal journal events now have deterministic IDs derived from symbol, timeframe, closed-bar decision time and action, enabling duplicate-safe research snapshots without relying on evaluation wall-clock time.
 - `live/paper_runtime.py` provides the automatic closed-candle paper runtime. It continuously drives the existing realtime monitor and paper-session lifecycle, exposes operational snapshots, supports bounded runs for tests, and fails closed on unexpected runtime errors.
 - The runtime explicitly rejects DEMO mode until a real MT5 execution adapter exists, preventing accidental promotion from paper simulation to broker execution.
-- Automation runtime behavior and signal-event deduplication are covered by dedicated tests.
+- Runtime checkpoints use atomic JSON persistence and restore the session, paper account, open position, pending signal, last processed candle, and journal state.
+- Cross-component reconciliation now validates paper position, journal OPEN/CLOSE lifecycle, account counters, pending signal, and checkpoint timeline invariants before restart can resume.
+- Automation runtime behavior, persistence, reconciliation, and signal-event deduplication are covered by dedicated tests.
 
 ## Next milestones
 
 ### 0.15.x — automation validation and demo boundary
-- Add persistent runtime state for restart-safe paper sessions without weakening fail-closed behavior.
 - Add historical signal replay to the automatic runtime using the same realtime replay semantics as Python.
 - Add outcome labeling for paper signals only after the next completed bars are known, without changing the live signal itself.
 - Compare MTF filtered vs unfiltered paper signals on identical chronological windows.
