@@ -3,15 +3,18 @@ from datetime import datetime, timezone
 import pytest
 
 from strategy.deep_learning import DeepLearningMetrics
-from strategy.ml_features import MLSample
+from strategy.ml_features import FEATURE_NAMES, MLSample
 from strategy.ml_model_comparison import aggregate_challenger_results, compare_ml_models
 
 
 def _sample(index, label):
+    features = [0.0] * len(FEATURE_NAMES)
+    features[0] = float(1 if index % 2 else -1)
+    features[1] = float(index % 3) / 2.0
     return MLSample(
         index=index,
         timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        features=(float(index), float(index % 3)),
+        features=tuple(features),
         label=label,
     )
 
@@ -45,7 +48,7 @@ def test_comparison_uses_same_fixed_oos_window(monkeypatch):
             train_samples=8,
             test_samples=4,
             sequence_length=kwargs["sequence_length"],
-            feature_count=2,
+            feature_count=len(FEATURE_NAMES),
             accuracy=0.75 if model_type == "lstm" else 0.50,
             positive_precision=0.60,
             positive_recall=0.70,
