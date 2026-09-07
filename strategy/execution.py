@@ -76,26 +76,32 @@ def simulate_realistic_exit(
     future_candles: list[dict],
     model: ExecutionModel,
     max_bars: int | None = None,
+    *,
+    entry_is_effective: bool = False,
 ) -> TradeResult:
-    """Simulate exits after explicit execution frictions are applied.
+    """Simulate exits with explicit execution frictions.
 
-    The simulator keeps the strategy's original stop/target levels. Spread,
-    slippage and commission affect realized entry/exit economics; latency skips
-    the first configured number of future bars. If both stop and target are
-    reachable in one candle, the stop remains the conservative first event.
+    By default, ``plan.entry`` is a strategy/reference price and entry
+    spread/slippage are applied here. When the caller has already built the
+    risk plan from an execution-adjusted entry, ``entry_is_effective=True``
+    prevents entry costs from being applied twice.
+
+    Stop/target remain the risk-plan levels. Exit spread/slippage and commission
+    affect realized economics. Latency skips the first configured future bars.
+    When both stop and target are touched in one OHLC bar, stop is conservative
+    first because intrabar ordering is unknown.
     """
     if max_bars is not None and max_bars < 1:
         raise ValueError("max_bars must be >= 1")
 
     sample = future_candles if max_bars is None else future_candles[:max_bars]
+    effective_entry = plan.entry if entry_is_effective else entry_price(plan.entry, plan.direction, model)
     if model.latency_bars >= len(sample):
-        return TradeResult(plan.direction, plan.entry, plan.stop, plan.target, None, OPEN, len(sample), 0.0)
+        return TradeResult(plan.direction, effective_entry, plan.stop, plan.target, None, OPEN, len(sample), 0.0)
 
     risk = plan.risk_distance
     if risk <= 0:
         raise ValueError("risk distance must be > 0")
-
-    effective_entry = entry_price(plan.entry, plan.direction, model)
 
     for i, raw in enumerate(sample[model.latency_bars:], start=model.latency_bars + 1):
         if not _in_session(raw, model):
