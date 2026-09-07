@@ -59,7 +59,7 @@ def test_execution_adjusted_risk_plan_can_be_simulated_without_double_entry_cost
         stop_buffer=0.0002,
         reward_risk=2.0,
     )
-    bars = [candle(datetime(2026, 1, 1, 1, tzinfo=timezone.utc), 1.1060, 1.1010)]
+    bars = [candle(datetime(2026, 1, 1, 1, tzinfo=timezone.utc), 1.1070, 1.1010)]
 
     explicit = simulate_realistic_exit(effective_plan, bars, model, entry_is_effective=True)
     legacy = simulate_realistic_exit(raw_plan, bars, model)
