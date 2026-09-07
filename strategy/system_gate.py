@@ -51,9 +51,10 @@ def evaluate_system_readiness(
     """Combine all hard pre-execution safety contracts into one decision.
 
     The function is deliberately fail-closed. A missing recovery report, an
-    unsafe strategy state, bad data, portfolio/risk rejection, a position-state
-    mismatch, or missing required ML evidence produces DENY. ML evidence can be
-    required explicitly, but it never changes LONG/SHORT direction by itself.
+    unsafe strategy state, bad data, portfolio/risk rejection, an existing
+    broker position, a position-state mismatch, or missing required ML
+    evidence produces DENY. ML evidence can be required explicitly, but it
+    never changes LONG/SHORT direction by itself.
     """
     if not isinstance(signal, EngineSignal):
         raise ValueError("signal must be an EngineSignal")
@@ -103,7 +104,14 @@ def evaluate_system_readiness(
             f"position reconciliation rejected: {reconciliation.reason}",
             checks=tuple(checks),
         )
-    checks.append("position-state=RECONCILED")
+    if reconciliation.broker_count != 0:
+        return SystemGateDecision(
+            DENY,
+            False,
+            "existing broker position prevents new entry",
+            checks=tuple(checks),
+        )
+    checks.append("position-state=FLAT")
 
     if execution_recovery is None:
         return SystemGateDecision(
