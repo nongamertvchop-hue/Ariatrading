@@ -93,7 +93,7 @@ def evaluate_sequence(
                 if breakout.state == TRUE_BREAKOUT:
                     return SequenceResult(WAIT, BROKEN, "support closed decisively below the zone", test_index, current_index, breakout_state=breakout.state)
                 continue
-            reclaim = breakout.state == FAKE_BREAKOUT
+            reclaim = breakout.state == FAKE_BREAKOUT and rejection_pressure(test, LONG)
             rejection = (
                 breakout.state == NO_BREAKOUT
                 and test.close > zone.high
@@ -113,7 +113,7 @@ def evaluate_sequence(
             if breakout.state == TRUE_BREAKOUT:
                 return SequenceResult(WAIT, BROKEN, "resistance closed decisively above the zone", test_index, current_index, breakout_state=breakout.state)
             continue
-        reclaim = breakout.state == FAKE_BREAKOUT
+        reclaim = breakout.state == FAKE_BREAKOUT and rejection_pressure(test, SHORT)
         rejection = (
             breakout.state == NO_BREAKOUT
             and test.close < zone.low
