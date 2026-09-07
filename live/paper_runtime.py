@@ -60,12 +60,13 @@ class RuntimeSnapshot:
 
 
 class PaperAutomationRuntime:
-    """Drive the existing realtime -> paper path automatically.
+    """Drive the existing realtime -> paper path.
 
-    ``DEMO`` is deliberately rejected for now because the repository has no
-    MT5 order-sending adapter. Adding a real/demo adapter later must happen
-    behind an explicit execution interface rather than changing this runtime's
-    paper semantics.
+    ``DEMO`` is deliberately rejected because the repository has no MT5
+    order-sending adapter. Unexpected failures are fail-closed by default.
+    ``fail_closed=False`` is retained only as an explicit research/testing
+    option; it records the failure and skips that cycle rather than silently
+    treating the cycle as successful.
     """
 
     def __init__(
@@ -76,14 +77,18 @@ class PaperAutomationRuntime:
         config: PaperRuntimeConfig | None = None,
         mode: ExecutionMode = ExecutionMode.PAPER,
     ) -> None:
-        if mode is not ExecutionMode.PAPER:
+        try:
+            normalized_mode = ExecutionMode(mode)
+        except ValueError as exc:
+            raise ValueError(f"unsupported execution mode: {mode!r}") from exc
+        if normalized_mode is not ExecutionMode.PAPER:
             raise RuntimeError(
                 "DEMO mode is not enabled: this repository currently has no MT5 order execution adapter"
             )
         self.monitor = monitor
         self.session = session or PaperSessionRunner(monitor)
         self.config = config or PaperRuntimeConfig()
-        self.mode = mode
+        self.mode = normalized_mode
         self._state = RuntimeState.STOPPED
         self._last_error: str | None = None
         self._stop_requested = False
@@ -120,9 +125,10 @@ class PaperAutomationRuntime:
     def step(self, now: datetime | None = None) -> PaperSessionResult | None:
         """Process exactly one closed-bar opportunity.
 
-        Any unexpected runtime exception halts the loop when ``fail_closed`` is
-        enabled. The exception is re-raised so a process supervisor can observe
-        the failure instead of treating it as a successful cycle.
+        Unexpected failures halt the runtime by default and are re-raised so an
+        external process supervisor can observe the fault. In explicit research
+        mode (``fail_closed=False``), the failure is recorded and this cycle is
+        skipped; it is never reported as a successful session result.
         """
         if self._state is RuntimeState.HALTED:
             raise RuntimeError(self._last_error or "paper runtime is halted")
@@ -136,7 +142,8 @@ class PaperAutomationRuntime:
             self._last_error = f"{type(exc).__name__}: {exc}"
             if self.config.fail_closed:
                 self._state = RuntimeState.HALTED
-            raise
+                raise
+            return None
         return result
 
     def run(
