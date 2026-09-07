@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.9.1**
+**Current version: 0.9.2**
 
 ## Core idea
 
@@ -30,8 +30,9 @@ The project is layered so every stage can be used together without duplicating s
 10. **Research validation** — chronological splits, R-based metrics, profit factor, drawdown and bootstrap expectancy uncertainty.
 11. **Walk-forward validation** — expanding-history, rolling out-of-sample windows with hard test boundaries.
 12. **Realtime data** — closed-candle monitoring with duplicate suppression and nearest-zone selection.
-13. **Paper session** — next-bar paper entry, lifecycle management, and append-only event journaling.
-14. **Integration facade** — `strategy.pipeline.run_research()` connects the core research stages into one consistent API.
+13. **Realtime replay** — historical harness that feeds the same realtime monitor path deterministically, without creating a second strategy.
+14. **Paper session** — next-bar paper entry, lifecycle management, and append-only event journaling.
+15. **Integration facade** — `strategy.pipeline.run_research()` connects the core research stages into one consistent API.
 
 ## Key modules
 
@@ -48,11 +49,12 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/engine.py` — central LONG/SHORT/WAIT strategy interface.
 - `strategy/risk.py` — hypothetical risk plans and baseline exit simulation.
 - `strategy/backtest.py` — sequential backtest plus bounded research windows, explicit entry timing, and optional MTF/execution integration.
-- `strategy/execution.py` — research-only execution-friction simulation.
+- `strategy/execution.py` — research-only execution-friction simulation and centralized entry/exit price adjustments.
 - `strategy/validation.py` — research metrics and chronological validation tools.
 - `strategy/walk_forward.py` — rolling out-of-sample research windows.
 - `strategy/pipeline.py` — high-level end-to-end research facade.
 - `strategy/realtime.py` — closed-candle realtime monitor.
+- `strategy/realtime_replay.py` — deterministic historical replay of the realtime monitor.
 - `strategy/paper.py` — deterministic single-position paper simulator.
 - `strategy/paper_session.py` — realtime-to-paper orchestration with next-bar entry and idempotency.
 - `strategy/journal.py` — SIGNAL/OPEN/CLOSE research event journal.
@@ -81,11 +83,12 @@ APPROACH -> TEST -> RECLAIM/REJECT -> CONFIRM
 LONG / SHORT / WAIT
         |
         +---- Historical path -> Risk -> Backtest -> Validation
+        |                         |
+        |                         +---- Walk-forward OOS
         |
         +---- Realtime path -> Supervisor -> Paper Session -> Journal
-        |
-        v
-Walk-forward / Out-of-sample research
+                                  |
+                                  +---- Realtime historical replay
 ```
 
 The realtime path uses the same strategy engine rather than a separate live strategy:
@@ -125,6 +128,17 @@ The components remain separately callable for unit testing and research experime
 
 The default remains `signal_reference` for backward compatibility. For research intended to mirror the realtime paper path, use `next_bar_open` consistently in both `run_backtest()` and `walk_forward_backtest()`.
 
+## Execution-cost consistency
+
+Execution price adjustments are centralized in `strategy.execution`:
+
+- `entry_price()` applies spread/slippage once to the reference fill.
+- `exit_price()` applies the opposite-side spread/slippage once at exit.
+- A risk plan can be built from an already-adjusted entry and passed to `simulate_realistic_exit(..., entry_is_effective=True)` to prevent double application.
+- Backtest and paper simulation use the same entry/exit price semantics.
+
+This keeps risk geometry and realized research economics aligned when execution friction is enabled.
+
 ## Backtest and execution assumptions
 
 - Only closed historical information is used to construct zones and structure.
@@ -146,6 +160,12 @@ The default remains `signal_reference` for backward compatibility. For research 
 
 This reduces a common validation mistake: reporting performance from a full-sample backtest as though it were untouched future data. Walk-forward evaluation is still historical evidence, not proof of profitability.
 
+## Realtime historical replay
+
+`replay_realtime_monitor()` feeds chronological historical prefixes into the actual `RealtimeMonitor`. The harness normalizes evaluation timestamps to deterministic replay boundaries, making repeated runs comparable while preserving the monitor's closed-bar, duplicate-suppression, forecast and supervisor logic.
+
+It is a consistency harness, not an additional strategy. Future candles are never included in the prefix for an earlier replay point.
+
 ## Paper monitoring
 
 The paper session runner is deliberately non-ordering. It records each evaluated signal, fills approved signals at the next bar's open, manages the existing position before evaluating a new entry opportunity, and ignores duplicate/old candles. Journal events are append-only and can be exported as plain dictionaries for later analysis.
@@ -156,11 +176,11 @@ The validation layer is deliberately descriptive. It reports historical behavior
 
 ## Testing
 
-The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, validation, walk-forward windows, realtime state handling, paper trading, paper-session lifecycle, journaling, and the integrated research facade.
+The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, realtime state handling, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, and the integrated research facade.
 
 ## Version / continuation protocol
 
-Current version: **0.9.1**.
+Current version: **0.9.2**.
 
 At the start of a new chat:
 
