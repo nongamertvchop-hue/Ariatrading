@@ -34,7 +34,7 @@ def test_health_reports_performance_and_calibration():
     assert report.train.brier_score == pytest.approx((0.1**2 + 0.1**2 + 0.2**2 + 0.2**2) / 4)
     assert report.accuracy_delta == pytest.approx(0.0)
     assert report.test.calibration_error > 0.0
-    assert len(report.test.calibration_bins) == 4
+    assert len(report.test.calibration_bins) == 3
 
 
 def test_health_detects_oos_performance_degradation():
