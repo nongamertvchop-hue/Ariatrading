@@ -28,6 +28,7 @@ from .ml_evaluation import MLComparison, compare_ml_results
 from .ml_evidence_gate import MLEvidenceDecision, MLEvidencePolicy, evaluate_ml_evidence_gate
 from .ml_features import FEATURE_NAMES, MLSample, build_signal_sample, extract_signal_features
 from .ml_meta import MLResearchMetrics, MetaFilterModel, MetaFilterResult, chronological_train_test
+from .ml_model_comparison import MLChallengerAggregate, MLModelComparison, ModelClassificationMetrics, aggregate_challenger_results, compare_ml_models
 from .ml_model_health import CalibrationBin, MLModelHealth, MLModelHealthReport, analyze_model_health
 from .ml_stability import FeatureImportance, MLStabilityReport, permutation_feature_importance
 from .ml_walk_forward import MLWalkForwardFold, MLWalkForwardResult, ml_walk_forward_backtest
@@ -88,4 +89,5 @@ __all__ = [
     "CalibrationBin", "MLModelHealth", "MLModelHealthReport", "analyze_model_health",
     "ModelType", "DeepLearningMetrics", "build_causal_sequences", "train_deep_sequence_model",
     "DeepLearningWalkForwardFold", "DeepLearningWalkForwardResult", "deep_learning_walk_forward_backtest",
+    "ModelClassificationMetrics", "MLModelComparison", "MLChallengerAggregate", "compare_ml_models", "aggregate_challenger_results",
 ]
