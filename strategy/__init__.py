@@ -19,6 +19,7 @@ from .backtest import (
 from .engine import EngineSignal, LONG, SHORT, WAIT, evaluate_long, evaluate_short
 from .execution import ExecutionModel, entry_price, exit_price
 from .execution_audit import AuditEvent, AuditJournal, AuditJournalError
+from .execution_recovery import ExecutionRecoveryDecision, ExecutionRecoveryReport, verify_execution_recovery
 from .experiment_registry import ExperimentRecord, build_experiment_record
 from .forecast import ForecastResult, HorizonForecast, ScenarioForecast, forecast
 from .journal import JournalEvent, PaperTradeJournal
@@ -78,6 +79,7 @@ __all__ = [
     "OrderState", "OrderRecord", "OrderTransition", "OrderStateMachine",
     "OrderPersistenceError", "save_order_state", "load_order_state",
     "AuditEvent", "AuditJournal", "AuditJournalError",
+    "ExecutionRecoveryDecision", "ExecutionRecoveryReport", "verify_execution_recovery",
     "ExecutionModel", "entry_price", "exit_price",
     "ExperimentRecord", "build_experiment_record",
     "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
@@ -98,7 +100,7 @@ __all__ = [
     "INCOMPLETE", "READY", "ResearchGateDecision", "evaluate_research_gate",
     "ResearchAuditReport", "audit_validation_evidence",
     "FEATURE_NAMES", "MLSample", "build_signal_sample", "extract_signal_features",
-    "MLResearchMetrics", "MetaFilterModel", "chronological_train_test",
+    "MLResearchMetrics", "MetaFilterModel", "MetaFilterResult", "chronological_train_test",
     "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest",
     "MLWalkForwardFold", "MLWalkForwardResult", "ml_walk_forward_backtest",
     "MLComparison", "compare_ml_results",
