@@ -106,30 +106,16 @@ class PaperTradingEngine:
 
     def to_state(self) -> dict[str, Any]:
         """Return a JSON-compatible checkpoint of mutable engine state."""
-        account = self.account
         return {
             "version": STATE_VERSION,
-            "config": {
-                "initial_balance": self._initial_balance,
-                "stop_buffer": self._stop_buffer,
-                "reward_risk": self._reward_risk,
-                "execution_model": {
-                    "spread": self._execution_model.spread,
-                    "slippage": self._execution_model.slippage,
-                    "commission": self._execution_model.commission,
-                    "latency_bars": self._execution_model.latency_bars,
-                    "price_digits": self._execution_model.price_digits,
-                    "session_start": self._execution_model.session_start.isoformat() if self._execution_model.session_start else None,
-                    "session_end": self._execution_model.session_end.isoformat() if self._execution_model.session_end else None,
-                },
-            },
+            "config": self._config_state(),
             "account": {
-                "initial_balance": account.initial_balance,
-                "balance": account.balance,
-                "realized_r": account.realized_r,
-                "closed_trades": account.closed_trades,
-                "wins": account.wins,
-                "losses": account.losses,
+                "initial_balance": self._initial_balance,
+                "balance": self._balance,
+                "realized_r": self._realized_r,
+                "closed_trades": self._closed_trades,
+                "wins": self._wins,
+                "losses": self._losses,
             },
             "next_trade_id": self._next_trade_id,
             "position": self._position_state(self._position),
@@ -139,10 +125,11 @@ class PaperTradingEngine:
         """Restore a validated checkpoint without changing strategy semantics."""
         if not isinstance(state, dict) or state.get("version") != STATE_VERSION:
             raise ValueError("unsupported or invalid paper engine state version")
+        if state.get("config") != self._config_state():
+            raise ValueError("checkpoint paper configuration does not match runtime configuration")
         account = state.get("account")
         if not isinstance(account, dict):
             raise ValueError("paper engine state account is invalid")
-        expected = self.account
         restored = PaperAccount(
             initial_balance=self._finite_positive(account.get("initial_balance"), "initial_balance"),
             balance=self._finite(account.get("balance"), "balance"),
@@ -151,7 +138,7 @@ class PaperTradingEngine:
             wins=self._non_negative_int(account.get("wins"), "wins"),
             losses=self._non_negative_int(account.get("losses"), "losses"),
         )
-        if restored.initial_balance != expected.initial_balance:
+        if restored.initial_balance != self._initial_balance:
             raise ValueError("checkpoint initial_balance does not match runtime configuration")
         if restored.closed_trades != restored.wins + restored.losses:
             raise ValueError("checkpoint trade counters are inconsistent")
@@ -162,8 +149,6 @@ class PaperTradingEngine:
         position = self._position_from_state(state.get("position"))
         if position is not None and position.trade_id >= next_trade_id:
             raise ValueError("next_trade_id must be greater than open position trade_id")
-        if position is not None and restored.closed_trades > 0 and position.trade_id < restored.closed_trades:
-            raise ValueError("checkpoint trade ids are inconsistent")
 
         self._balance = restored.balance
         self._realized_r = restored.realized_r
@@ -172,6 +157,22 @@ class PaperTradingEngine:
         self._losses = restored.losses
         self._next_trade_id = next_trade_id
         self._position = position
+
+    def _config_state(self) -> dict[str, Any]:
+        return {
+            "initial_balance": self._initial_balance,
+            "stop_buffer": self._stop_buffer,
+            "reward_risk": self._reward_risk,
+            "execution_model": {
+                "spread": self._execution_model.spread,
+                "slippage": self._execution_model.slippage,
+                "commission": self._execution_model.commission,
+                "latency_bars": self._execution_model.latency_bars,
+                "price_digits": self._execution_model.price_digits,
+                "session_start": self._execution_model.session_start.isoformat() if self._execution_model.session_start else None,
+                "session_end": self._execution_model.session_end.isoformat() if self._execution_model.session_end else None,
+            },
+        }
 
     @staticmethod
     def _position_state(position: PaperPosition | None) -> dict[str, Any] | None:
@@ -278,8 +279,8 @@ class PaperTradingEngine:
 
         ``entry_time`` must be strictly later than ``signal_time`` so the
         simulator cannot accidentally fill on the candle that generated the
-        signal. The fill is adjusted for configured spread/slippage before
-        stop/target levels are calculated.
+        signal. The fill is adjusted for spread/slippage before stop/target
+        levels are calculated.
         """
         if signal.action == WAIT:
             return None
