@@ -4,34 +4,45 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="copyright" content="Copyright (c) 2026 tryth5556 / nongamertvchop. All rights reserved.">
-  <title>Webaria Chart</title>
+  <title>Webaria Trading Terminal</title>
   <style>
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #0b0e11; color: #d9dde3; font-family: Arial, Helvetica, sans-serif; }
-    body { display: flex; flex-direction: column; }
-    header { height: 52px; flex: 0 0 52px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid #252a31; background: #11151a; }
-    .brand { font-size: 16px; font-weight: 700; margin-right: 8px; letter-spacing: .2px; }
-    select, button { border: 1px solid #303640; background: #181d23; color: #d9dde3; border-radius: 5px; padding: 7px 9px; font-size: 13px; }
-    button { cursor: pointer; }
-    .status { margin-left: auto; font-size: 12px; color: #89929e; white-space: nowrap; }
-    main { position: relative; flex: 1; min-height: 0; }
-    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-    .center-copy { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; text-align: center; padding: 24px; }
-    .center-copy > div { max-width: 520px; padding: 18px 22px; border: 1px solid #252a31; border-radius: 8px; background: rgba(11,14,17,.86); box-shadow: 0 8px 30px rgba(0,0,0,.25); }
-    .center-copy strong { display: block; font-size: 22px; margin-bottom: 7px; }
-    .center-copy span { color: #89929e; font-size: 13px; line-height: 1.5; }
-    .hud { position: absolute; top: 12px; left: 12px; pointer-events: none; background: rgba(11,14,17,.86); border: 1px solid #252a31; border-radius: 6px; padding: 9px 11px; font-size: 12px; line-height: 1.6; max-width: calc(100% - 24px); }
-    .hud strong { font-size: 14px; }
-    .error { color: #e3a7a7; }
-    .hint { position: absolute; right: 12px; bottom: 30px; color: #69727e; font-size: 11px; pointer-events: none; }
-    .copyright { position: absolute; left: 12px; bottom: 9px; color: #4f5863; font-size: 10px; pointer-events: none; }
-    @media (max-width: 560px) {
-      .brand { display: none; }
-      header { padding: 0 7px; }
-      select, button { font-size: 12px; padding: 6px 7px; }
-      .status { font-size: 10px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
-      .center-copy strong { font-size: 18px; }
+    html, body { width:100%; height:100%; margin:0; overflow:hidden; background:#0b0e11; color:#d9dde3; font-family:Arial,Helvetica,sans-serif; }
+    body { display:flex; flex-direction:column; }
+    header { min-height:52px; display:flex; align-items:center; gap:8px; padding:0 10px; border-bottom:1px solid #252a31; background:#11151a; }
+    .brand { font-weight:700; margin-right:5px; letter-spacing:.2px; }
+    select, button, input { border:1px solid #303640; background:#181d23; color:#d9dde3; border-radius:5px; padding:7px 9px; font-size:13px; }
+    button { cursor:pointer; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .status { margin-left:auto; font-size:11px; color:#89929e; white-space:nowrap; }
+    main { position:relative; flex:1; min-height:0; }
+    canvas { display:block; width:100%; height:100%; touch-action:none; }
+    .hud { position:absolute; top:10px; left:10px; pointer-events:none; background:rgba(11,14,17,.88); border:1px solid #252a31; border-radius:6px; padding:9px 11px; font-size:12px; line-height:1.55; max-width:52%; }
+    .hud strong { font-size:14px; }
+    .center-copy { position:absolute; inset:0; display:grid; place-items:center; pointer-events:none; text-align:center; padding:24px; }
+    .center-copy > div { max-width:520px; padding:18px 22px; border:1px solid #252a31; border-radius:8px; background:rgba(11,14,17,.9); }
+    .center-copy strong { display:block; font-size:22px; margin-bottom:7px; }
+    .center-copy span { color:#89929e; font-size:13px; line-height:1.5; }
+    .error { color:#e3a7a7; }
+    .hint { position:absolute; right:12px; bottom:34px; color:#69727e; font-size:11px; pointer-events:none; }
+    .copyright { position:absolute; left:12px; bottom:9px; color:#4f5863; font-size:10px; pointer-events:none; }
+    .trade-panel { position:absolute; top:10px; right:10px; width:255px; background:rgba(11,14,17,.93); border:1px solid #252a31; border-radius:8px; padding:10px; box-shadow:0 8px 30px rgba(0,0,0,.25); }
+    .trade-panel h3 { margin:0 0 8px; font-size:13px; }
+    .row { display:flex; gap:6px; align-items:center; margin:6px 0; }
+    .row > * { flex:1; }
+    .metric { display:flex; justify-content:space-between; font-size:11px; color:#89929e; margin:4px 0; }
+    .metric strong { color:#d9dde3; font-weight:600; }
+    .buy { background:#173d2e; border-color:#2f7b5a; }
+    .sell { background:#432025; border-color:#88434e; }
+    .flat { background:#20252c; }
+    .panel-note { color:#69727e; font-size:10px; line-height:1.4; margin-top:8px; }
+    .position { border-top:1px solid #252a31; margin-top:8px; padding-top:8px; }
+    @media (max-width:720px) {
+      .brand { display:none; }
+      .trade-panel { left:10px; right:10px; top:auto; bottom:36px; width:auto; }
+      .hud { max-width:calc(100% - 20px); top:10px; }
+      .hint { display:none; }
     }
   </style>
 </head>
@@ -47,333 +58,52 @@
     <canvas id="chart"></canvas>
     <div id="centerCopy" class="center-copy"><div><strong>Webaria</strong><span id="centerMessage">Loading market data…</span></div></div>
     <div id="hud" class="hud">Loading market data…</div>
+    <aside class="trade-panel" aria-label="Paper trading panel">
+      <h3>Paper Trading</h3>
+      <div class="metric"><span>Balance</span><strong id="balance">10,000.00</strong></div>
+      <div class="metric"><span>Equity</span><strong id="equity">10,000.00</strong></div>
+      <div class="metric"><span>Live price</span><strong id="livePrice">—</strong></div>
+      <div class="row"><input id="qty" type="number" min="1" step="1" value="1000" aria-label="Position size"></div>
+      <div class="row"><button id="buy" class="buy" type="button">LONG</button><button id="sell" class="sell" type="button">SHORT</button></div>
+      <button id="close" class="flat" type="button" disabled>Close Position</button>
+      <div class="position">
+        <div class="metric"><span>Position</span><strong id="position">FLAT</strong></div>
+        <div class="metric"><span>Entry</span><strong id="entry">—</strong></div>
+        <div class="metric"><span>Unrealized P/L</span><strong id="pnl">0.00</strong></div>
+      </div>
+      <div class="panel-note">Simulation only. Orders are local to this browser and do not reach a broker.</div>
+    </aside>
     <div class="hint">Drag to pan · wheel/pinch to zoom · move to inspect</div>
     <div class="copyright">© 2026 tryth5556 / nongamertvchop · All rights reserved.</div>
   </main>
   <script>
-    const canvas = document.getElementById('chart');
-    const ctx = canvas.getContext('2d');
-    const wrap = document.getElementById('chartWrap');
-    const symbolEl = document.getElementById('symbol');
-    const timeframeEl = document.getElementById('timeframe');
-    const statusEl = document.getElementById('status');
-    const hudEl = document.getElementById('hud');
-    const centerCopyEl = document.getElementById('centerCopy');
-    const centerMessageEl = document.getElementById('centerMessage');
-    const state = {
-      candles: [],
-      analysis: null,
-      livePrice: null,
-      zoom: 1,
-      offset: 0,
-      dragging: false,
-      lastX: 0,
-      loading: false,
-      crosshair: null,
-    };
-    let historyTimer;
-    let priceTimer;
-
-    function priceDigits(price) {
-      return Math.abs(Number(price)) >= 20 ? 3 : 5;
-    }
-
-    function formatPrice(price) {
-      const value = Number(price);
-      return Number.isFinite(value) ? value.toFixed(priceDigits(value)) : '—';
-    }
-
-    function resize() {
-      const ratio = window.devicePixelRatio || 1;
-      const rect = wrap.getBoundingClientRect();
-      canvas.width = Math.max(1, Math.floor(rect.width * ratio));
-      canvas.height = Math.max(1, Math.floor(rect.height * ratio));
-      canvas.style.width = rect.width + 'px';
-      canvas.style.height = rect.height + 'px';
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      draw();
-    }
-
-    function visibleCount() { return Math.max(20, Math.min(state.candles.length, Math.floor(90 / state.zoom))); }
-
-    function visibleSlice() {
-      const count = visibleCount();
-      const end = Math.max(count, state.candles.length - Math.max(0, Math.floor(state.offset)));
-      return { data: state.candles.slice(Math.max(0, end - count), end) };
-    }
-
-    function niceStep(range) {
-      const raw = range / 7;
-      const power = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-12))));
-      const n = raw / power;
-      return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * power;
-    }
-
-    function drawGrid(w, h, left, right, top, bottom) {
-      ctx.fillStyle = '#0b0e11';
-      ctx.fillRect(0, 0, w, h);
-      ctx.strokeStyle = '#171c22';
-      ctx.lineWidth = 1;
-      const plotW = Math.max(1, w - left - right);
-      const plotH = Math.max(1, h - top - bottom);
-      for (let i = 1; i <= 6; i += 1) {
-        const x = left + plotW * i / 7;
-        ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, h - bottom); ctx.stroke();
-      }
-      for (let i = 1; i <= 7; i += 1) {
-        const y = top + plotH * i / 8;
-        ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w - right, y); ctx.stroke();
-      }
-    }
-
-    function drawPriceLine(value, y, left, right, w, label, dashed = [5, 4]) {
-      if (!Number.isFinite(Number(value))) return;
-      ctx.setLineDash(dashed);
-      ctx.strokeStyle = '#7b8490';
-      ctx.beginPath(); ctx.moveTo(left, y(Number(value))); ctx.lineTo(w - right, y(Number(value))); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#181d23';
-      ctx.fillRect(w - right, y(Number(value)) - 10, right - 7, 20);
-      ctx.fillStyle = '#d9dde3';
-      ctx.textAlign = 'left';
-      ctx.fillText(`${label} ${formatPrice(value)}`, w - right + 7, y(Number(value)) + 4);
-    }
-
-    function drawZone(zone, y, left, right, w, label) {
-      if (!zone || !Number.isFinite(zone.low) || !Number.isFinite(zone.high)) return;
-      const topY = y(zone.high);
-      const bottomY = y(zone.low);
-      ctx.fillStyle = 'rgba(115, 126, 140, .12)';
-      ctx.fillRect(left, Math.min(topY, bottomY), w - left - right, Math.abs(bottomY - topY));
-      ctx.strokeStyle = '#6b7480';
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath(); ctx.moveTo(left, topY); ctx.lineTo(w - right, topY); ctx.moveTo(left, bottomY); ctx.lineTo(w - right, bottomY); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#9ba4af';
-      ctx.font = '11px Arial';
-      ctx.textAlign = 'left';
-      ctx.fillText(`${label} ${formatPrice(zone.low)}–${formatPrice(zone.high)} · ${zone.touches} touches`, left + 4, Math.max(22, topY - 5));
-    }
-
-    function drawCrosshair(data, left, right, top, bottom, w, h, y, cw) {
-      if (!state.crosshair || !data.length) return;
-      const x = Math.max(left, Math.min(w - right, state.crosshair.x));
-      const rawIndex = Math.floor((x - left) / Math.max(cw, 1));
-      const idx = Math.max(0, Math.min(data.length - 1, rawIndex));
-      const candle = data[idx];
-      const candleX = left + (idx + .5) * cw;
-      const crossY = Math.max(top, Math.min(h - bottom, state.crosshair.y));
-      const prices = data.flatMap(c => [c.low, c.high]);
-      const hi = Math.max(...prices, Number(state.livePrice || -Infinity));
-      const lo = Math.min(...prices, Number(state.livePrice || Infinity));
-      const pad = Math.max((hi - lo) * .08, hi * .0002);
-      const crossPrice = lo - pad + (h - bottom - crossY) / Math.max(1, h - top - bottom) * ((hi + pad) - (lo - pad));
-
-      ctx.setLineDash([3, 3]);
-      ctx.strokeStyle = '#646e79';
-      ctx.beginPath(); ctx.moveTo(candleX, top); ctx.lineTo(candleX, h - bottom); ctx.moveTo(left, crossY); ctx.lineTo(w - right, crossY); ctx.stroke();
-      ctx.setLineDash([]);
-
-      ctx.fillStyle = '#181d23';
-      ctx.fillRect(left, crossY - 10, 67, 20);
-      ctx.fillStyle = '#d9dde3';
-      ctx.textAlign = 'left';
-      ctx.fillText(formatPrice(crossPrice), left + 7, crossY + 4);
-
-      const d = new Date(candle.datetime);
-      ctx.fillStyle = '#181d23';
-      ctx.fillRect(Math.max(left, candleX - 48), h - bottom, 96, 20);
-      ctx.fillStyle = '#d9dde3';
-      ctx.textAlign = 'center';
-      ctx.fillText(Number.isNaN(d.getTime()) ? String(idx + 1) : d.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' }), candleX, h - 9);
-
-      ctx.fillStyle = 'rgba(11,14,17,.90)';
-      ctx.fillRect(Math.min(candleX + 9, w - right - 180), Math.max(top + 8, crossY - 62), 171, 52);
-      ctx.fillStyle = '#c6ccd4';
-      ctx.textAlign = 'left';
-      ctx.fillText(`O ${formatPrice(candle.open)}  H ${formatPrice(candle.high)}`, Math.min(candleX + 17, w - right - 172), Math.max(top + 25, crossY - 39));
-      ctx.fillText(`L ${formatPrice(candle.low)}  C ${formatPrice(candle.close)}`, Math.min(candleX + 17, w - right - 172), Math.max(top + 42, crossY - 22));
-    }
-
-    function draw() {
-      const rect = wrap.getBoundingClientRect();
-      const w = rect.width;
-      const h = rect.height;
-      const left = 12, right = 108, top = 12, bottom = 28;
-      drawGrid(w, h, left, right, top, bottom);
-      if (!state.candles.length) return;
-
-      const { data } = visibleSlice();
-      const cw = Math.max(1, (w - left - right) / data.length);
-      const prices = data.flatMap(c => [c.low, c.high]);
-      if (Number.isFinite(state.livePrice)) prices.push(state.livePrice);
-      if (state.analysis?.zone) prices.push(state.analysis.zone.low, state.analysis.zone.high);
-      if (Number.isFinite(state.analysis?.entry_reference)) prices.push(state.analysis.entry_reference);
-      if (Number.isFinite(state.analysis?.stop_reference)) prices.push(state.analysis.stop_reference);
-      const lo0 = Math.min(...prices), hi0 = Math.max(...prices);
-      const pad = Math.max((hi0 - lo0) * .08, hi0 * .0002);
-      const lo = lo0 - pad, hi = hi0 + pad;
-      const plotH = h - top - bottom;
-      const y = p => top + (hi - p) / (hi - lo) * plotH;
-
-      ctx.strokeStyle = '#1c2229';
-      ctx.lineWidth = 1;
-      ctx.font = '11px Arial';
-      ctx.fillStyle = '#69727e';
-      ctx.textAlign = 'left';
-      const step = niceStep(hi - lo);
-      const first = Math.ceil(lo / step) * step;
-      for (let p = first; p <= hi; p += step) {
-        const yy = y(p);
-        ctx.beginPath(); ctx.moveTo(left, yy); ctx.lineTo(w - right, yy); ctx.stroke();
-        ctx.fillText(formatPrice(p), w - right + 7, yy + 4);
-      }
-
-      if (state.analysis?.zone) {
-        const zoneLabel = state.analysis.zone.kind === 'SUPPORT' ? 'SUPPORT' : 'RESISTANCE';
-        drawZone(state.analysis.zone, y, left, right, w, zoneLabel);
-      }
-
-      data.forEach((c, i) => {
-        const x = left + (i + .5) * cw;
-        const openY = y(c.open), closeY = y(c.close), up = c.close >= c.open;
-        ctx.strokeStyle = up ? '#52c48d' : '#e06b75';
-        ctx.fillStyle = ctx.strokeStyle;
-        ctx.beginPath(); ctx.moveTo(x, y(c.high)); ctx.lineTo(x, y(c.low)); ctx.stroke();
-        ctx.fillRect(x - Math.max(1, cw * .32), Math.min(openY, closeY), Math.max(1, cw * .64), Math.max(1, Math.abs(openY - closeY)));
-      });
-
-      if (state.analysis?.entry_reference != null) drawPriceLine(state.analysis.entry_reference, y, left, right, w, 'Entry', [2, 3]);
-      if (state.analysis?.stop_reference != null) drawPriceLine(state.analysis.stop_reference, y, left, right, w, 'Stop', [7, 4]);
-
-      const last = data[data.length - 1], ly = y(last.close);
-      ctx.setLineDash([4, 4]); ctx.strokeStyle = '#59616c';
-      ctx.beginPath(); ctx.moveTo(left, ly); ctx.lineTo(w - right, ly); ctx.stroke(); ctx.setLineDash([]);
-      if (Number.isFinite(state.livePrice)) {
-        const liveY = y(state.livePrice);
-        ctx.setLineDash([6, 3]); ctx.strokeStyle = '#d9dde3';
-        ctx.beginPath(); ctx.moveTo(left, liveY); ctx.lineTo(w - right, liveY); ctx.stroke(); ctx.setLineDash([]);
-        ctx.fillStyle = '#d9dde3'; ctx.fillRect(w - right, liveY - 10, right - 7, 20);
-        ctx.fillStyle = '#0b0e11'; ctx.fillText(formatPrice(state.livePrice), w - right + 7, liveY + 4);
-      } else {
-        ctx.fillStyle = '#181d23'; ctx.fillRect(w - right, ly - 10, right - 7, 20);
-        ctx.fillStyle = '#d9dde3'; ctx.fillText(formatPrice(last.close), w - right + 7, ly + 4);
-      }
-
-      ctx.textAlign = 'center'; ctx.fillStyle = '#69727e';
-      const labels = Math.max(2, Math.floor((w - left - right) / 100));
-      for (let i = 0; i < labels; i += 1) {
-        const idx = Math.min(data.length - 1, Math.floor(i * (data.length - 1) / Math.max(1, labels - 1)));
-        const d = new Date(data[idx].datetime);
-        if (!Number.isNaN(d.getTime())) ctx.fillText(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), left + (idx + .5) * cw, h - 9);
-      }
-
-      drawCrosshair(data, left, right, top, bottom, w, h, y, cw);
-    }
-
-    function showCenter(message, visible = true) {
-      centerMessageEl.textContent = message;
-      centerCopyEl.style.display = visible ? 'grid' : 'none';
-    }
-
-    function updateHud(payload) {
-      state.analysis = payload;
-      const signal = payload.signal || 'WAIT';
-      const score = Number.isFinite(payload.score?.total) ? ` · score ${payload.score.total}/100` : '';
-      const zone = payload.zone ? `${payload.zone.kind} ${formatPrice(payload.zone.center)}` : 'no zone';
-      hudEl.className = 'hud';
-      hudEl.innerHTML = `<strong>${payload.symbol || symbolEl.value}</strong><br>${payload.timeframe || timeframeEl.value} · ${signal}${score}<br>${payload.state || ''} · ${zone}`;
-    }
-
-    async function loadHistory() {
-      if (state.loading) return;
-      state.loading = true;
-      statusEl.textContent = 'Updating candles…';
-      try {
-        const params = new URLSearchParams({ symbol: symbolEl.value, timeframe: timeframeEl.value });
-        const response = await fetch(`/api/signal?${params}`, { cache: 'no-store' });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
-        if (!Array.isArray(payload.candles) || payload.candles.length === 0) throw new Error('API returned no completed candles');
-        state.candles = payload.candles;
-        state.analysis = payload;
-        state.offset = Math.max(0, Math.min(state.offset, Math.max(0, state.candles.length - visibleCount())));
-        showCenter('', false);
-        updateHud(payload);
-        statusEl.textContent = 'Candles updated';
-        draw();
-      } catch (error) {
-        showCenter(`Market data unavailable: ${error.message}`, true);
-        hudEl.className = 'hud error';
-        hudEl.textContent = `Market data unavailable: ${error.message}`;
-        statusEl.textContent = 'Offline / error';
-        draw();
-      } finally {
-        state.loading = false;
-      }
-    }
-
-    async function loadLivePrice() {
-      try {
-        const params = new URLSearchParams({ symbol: symbolEl.value });
-        const response = await fetch(`/api/price?${params}`, { cache: 'no-store' });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
-        const nextPrice = Number(payload.price);
-        if (!Number.isFinite(nextPrice)) throw new Error('API returned an invalid live price');
-        state.livePrice = nextPrice;
-        statusEl.textContent = `Live ${new Date(payload.generated_at).toLocaleTimeString()}`;
-        draw();
-      } catch (error) {
-        if (!state.candles.length) showCenter(`Live price unavailable: ${error.message}`, true);
-        statusEl.textContent = 'Live price error';
-      }
-    }
-
-    function restartPolling() {
-      clearInterval(historyTimer);
-      clearInterval(priceTimer);
-      historyTimer = setInterval(loadHistory, 60000);
-      priceTimer = setInterval(loadLivePrice, 5000);
-    }
-
-    symbolEl.addEventListener('change', () => { state.offset = 0; state.livePrice = null; state.analysis = null; loadHistory(); loadLivePrice(); });
-    timeframeEl.addEventListener('change', () => { state.offset = 0; state.analysis = null; loadHistory(); });
-    document.getElementById('refresh').addEventListener('click', () => { loadHistory(); loadLivePrice(); });
-    window.addEventListener('resize', resize);
-
-    canvas.addEventListener('pointerdown', e => {
-      state.dragging = true;
-      state.lastX = e.clientX;
-      state.crosshair = { x: e.clientX, y: e.clientY };
-      canvas.setPointerCapture(e.pointerId);
-      draw();
-    });
-    canvas.addEventListener('pointermove', e => {
-      state.crosshair = { x: e.clientX, y: e.clientY };
-      if (state.dragging) {
-        const dx = e.clientX - state.lastX;
-        state.lastX = e.clientX;
-        const count = visibleCount();
-        state.offset = Math.max(0, Math.min(Math.max(0, state.candles.length - count), state.offset + dx / Math.max(1, wrap.clientWidth / count)));
-      }
-      draw();
-    });
-    canvas.addEventListener('pointerup', e => { state.dragging = false; canvas.releasePointerCapture(e.pointerId); draw(); });
-    canvas.addEventListener('pointercancel', () => { state.dragging = false; draw(); });
-    canvas.addEventListener('pointerleave', () => { if (!state.dragging) { state.crosshair = null; draw(); } });
-    canvas.addEventListener('wheel', e => {
-      e.preventDefault();
-      const direction = e.deltaY < 0 ? 1.15 : .87;
-      state.zoom = Math.max(.5, Math.min(6, state.zoom * direction));
-      state.offset = Math.max(0, Math.min(Math.max(0, state.candles.length - visibleCount()), state.offset));
-      draw();
-    }, { passive: false });
-
-    resize();
-    loadHistory();
-    loadLivePrice();
-    restartPolling();
+    const canvas=document.getElementById('chart'),ctx=canvas.getContext('2d'),wrap=document.getElementById('chartWrap'),symbolEl=document.getElementById('symbol'),timeframeEl=document.getElementById('timeframe'),statusEl=document.getElementById('status'),hudEl=document.getElementById('hud'),centerCopyEl=document.getElementById('centerCopy'),centerMessageEl=document.getElementById('centerMessage'),balanceEl=document.getElementById('balance'),equityEl=document.getElementById('equity'),livePriceEl=document.getElementById('livePrice'),qtyEl=document.getElementById('qty'),buyEl=document.getElementById('buy'),sellEl=document.getElementById('sell'),closeEl=document.getElementById('close'),positionEl=document.getElementById('position'),entryEl=document.getElementById('entry'),pnlEl=document.getElementById('pnl');
+    const state={candles:[],analysis:null,livePrice:null,zoom:1,offset:0,dragging:false,lastX:0,loading:false,crosshair:null,paper:{balance:10000,position:null}};
+    let historyTimer,priceTimer;const storageKey='webaria-paper-v1';
+    function priceDigits(p){return Math.abs(Number(p))>=20?3:5} function formatPrice(p){const n=Number(p);return Number.isFinite(n)?n.toFixed(priceDigits(n)):'—'} function formatMoney(v){const n=Number(v);return Number.isFinite(n)?n.toFixed(2):'0.00'}
+    function loadPaper(){try{const s=JSON.parse(localStorage.getItem(storageKey)||'null');if(s&&Number.isFinite(s.balance)&&(s.position===null||typeof s.position==='object'))state.paper=s}catch(_){ }renderPaper()}
+    function savePaper(){localStorage.setItem(storageKey,JSON.stringify(state.paper))}
+    function currentPnl(){const p=state.paper.position,price=Number(state.livePrice);if(!p||!Number.isFinite(price))return 0;return(price-p.entry)*(p.side==='LONG'?1:-1)*p.qty}
+    function renderPaper(){const pnl=currentPnl(),p=state.paper.position;balanceEl.textContent=formatMoney(state.paper.balance);equityEl.textContent=formatMoney(state.paper.balance+pnl);livePriceEl.textContent=formatPrice(state.livePrice);positionEl.textContent=p?`${p.side} ${p.qty}`:'FLAT';entryEl.textContent=p?formatPrice(p.entry):'—';pnlEl.textContent=`${pnl>=0?'+':''}${formatMoney(pnl)}`;closeEl.disabled=!p;buyEl.disabled=!!p;sellEl.disabled=!!p}
+    function openPaper(side){const qty=Math.max(1,Number(qtyEl.value)),price=Number(state.livePrice);if(!Number.isFinite(price)||state.paper.position)return;state.paper.position={symbol:symbolEl.value,side,qty,entry:price,openedAt:new Date().toISOString()};savePaper();renderPaper();draw()}
+    function closePaper(){const p=state.paper.position,price=Number(state.livePrice);if(!p||!Number.isFinite(price))return;const pnl=(price-p.entry)*(p.side==='LONG'?1:-1)*p.qty;state.paper.balance+=pnl;state.paper.position=null;savePaper();renderPaper();draw();statusEl.textContent=`Paper trade closed ${pnl>=0?'+':''}${formatMoney(pnl)}`}
+    function resize(){const ratio=window.devicePixelRatio||1,r=wrap.getBoundingClientRect();canvas.width=Math.max(1,Math.floor(r.width*ratio));canvas.height=Math.max(1,Math.floor(r.height*ratio));canvas.style.width=r.width+'px';canvas.style.height=r.height+'px';ctx.setTransform(ratio,0,0,ratio,0,0);draw()}
+    function visibleCount(){return Math.max(20,Math.min(state.candles.length,Math.floor(90/state.zoom)))}
+    function visibleSlice(){const count=visibleCount(),end=Math.max(count,state.candles.length-Math.max(0,Math.floor(state.offset)));return state.candles.slice(Math.max(0,end-count),end)}
+    function niceStep(range){const raw=range/7,power=Math.pow(10,Math.floor(Math.log10(Math.max(raw,1e-12)))),n=raw/power;return(n<=1?1:n<=2?2:n<=5?5:10)*power}
+    function drawGrid(w,h,left,right,top,bottom){ctx.fillStyle='#0b0e11';ctx.fillRect(0,0,w,h);ctx.strokeStyle='#171c22';ctx.lineWidth=1;const pw=Math.max(1,w-left-right),ph=Math.max(1,h-top-bottom);for(let i=1;i<=6;i++){const x=left+pw*i/7;ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,h-bottom);ctx.stroke()}for(let i=1;i<=7;i++){const y=top+ph*i/8;ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(w-right,y);ctx.stroke()}}
+    function drawPriceLine(value,y,left,right,w,label,dashed){if(!Number.isFinite(Number(value)))return;const yy=y(Number(value));ctx.setLineDash(dashed);ctx.strokeStyle='#7b8490';ctx.beginPath();ctx.moveTo(left,yy);ctx.lineTo(w-right,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#181d23';ctx.fillRect(w-right,yy-10,right-7,20);ctx.fillStyle='#d9dde3';ctx.textAlign='left';ctx.fillText(`${label} ${formatPrice(value)}`,w-right+7,yy+4)}
+    function drawZone(zone,y,left,right,w,label){if(!zone)return;const a=y(zone.high),b=y(zone.low);ctx.fillStyle='rgba(115,126,140,.12)';ctx.fillRect(left,Math.min(a,b),w-left-right,Math.abs(b-a));ctx.strokeStyle='#6b7480';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(left,a);ctx.lineTo(w-right,a);ctx.moveTo(left,b);ctx.lineTo(w-right,b);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#9ba4af';ctx.textAlign='left';ctx.fillText(`${label} ${formatPrice(zone.low)}–${formatPrice(zone.high)} · ${zone.touches} touches`,left+4,Math.max(22,a-5))}
+    function drawCrosshair(data,left,right,top,bottom,w,h,y,cw){if(!state.crosshair||!data.length)return;const x=Math.max(left,Math.min(w-right,state.crosshair.x)),idx=Math.max(0,Math.min(data.length-1,Math.floor((x-left)/Math.max(cw,1)))),c=data[idx],cx=left+(idx+.5)*cw,cy=Math.max(top,Math.min(h-bottom,state.crosshair.y)),prices=data.flatMap(q=>[q.low,q.high]),hi=Math.max(...prices,Number(state.livePrice||-Infinity)),lo=Math.min(...prices,Number(state.livePrice||Infinity)),pad=Math.max((hi-lo)*.08,hi*.0002),crossPrice=lo-pad+(h-bottom-cy)/Math.max(1,h-top-bottom)*(hi-lo+2*pad);ctx.setLineDash([3,3]);ctx.strokeStyle='#646e79';ctx.beginPath();ctx.moveTo(cx,top);ctx.lineTo(cx,h-bottom);ctx.moveTo(left,cy);ctx.lineTo(w-right,cy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#181d23';ctx.fillRect(left,cy-10,67,20);ctx.fillStyle='#d9dde3';ctx.textAlign='left';ctx.fillText(formatPrice(crossPrice),left+7,cy+4);const d=new Date(c.datetime);ctx.fillStyle='#181d23';ctx.fillRect(Math.max(left,cx-48),h-bottom,96,20);ctx.fillStyle='#d9dde3';ctx.textAlign='center';ctx.fillText(Number.isNaN(d.getTime())?String(idx+1):d.toLocaleString([],{hour:'2-digit',minute:'2-digit',month:'short',day:'numeric'}),cx,h-bottom+11);const bx=Math.min(cx+9,w-right-180),by=Math.max(top+8,cy-62);ctx.fillStyle='rgba(11,14,17,.9)';ctx.fillRect(bx,by,171,52);ctx.fillStyle='#c6ccd4';ctx.textAlign='left';ctx.fillText(`O ${formatPrice(c.open)}  H ${formatPrice(c.high)}`,bx+8,by+17);ctx.fillText(`L ${formatPrice(c.low)}  C ${formatPrice(c.close)}`,bx+8,by+34)}
+    function draw(){const r=wrap.getBoundingClientRect(),w=r.width,h=r.height,left=12,right=270,top=12,bottom=28;drawGrid(w,h,left,right,top,bottom);if(!state.candles.length){renderPaper();return}const data=visibleSlice(),cw=Math.max(1,(w-left-right)/data.length),prices=data.flatMap(c=>[c.low,c.high]);if(Number.isFinite(state.livePrice))prices.push(state.livePrice);if(state.analysis?.zone)prices.push(state.analysis.zone.low,state.analysis.zone.high);if(Number.isFinite(state.analysis?.entry_reference))prices.push(state.analysis.entry_reference);if(Number.isFinite(state.analysis?.stop_reference))prices.push(state.analysis.stop_reference);if(state.paper.position)prices.push(state.paper.position.entry);const lo0=Math.min(...prices),hi0=Math.max(...prices),pad=Math.max((hi0-lo0)*.08,hi0*.0002),lo=lo0-pad,hi=hi0+pad,ph=h-top-bottom,y=p=>top+(hi-p)/(hi-lo)*ph;ctx.font='11px Arial';ctx.fillStyle='#69727e';ctx.textAlign='left';const step=niceStep(hi-lo),first=Math.ceil(lo/step)*step;for(let p=first;p<=hi;p+=step){const yy=y(p);ctx.strokeStyle='#1c2229';ctx.beginPath();ctx.moveTo(left,yy);ctx.lineTo(w-right,yy);ctx.stroke();ctx.fillText(formatPrice(p),w-right+7,yy+4)}if(state.analysis?.zone)drawZone(state.analysis.zone,y,left,right,w,state.analysis.zone.kind);data.forEach((c,i)=>{const x=left+(i+.5)*cw,oy=y(c.open),cy=y(c.close),up=c.close>=c.open;ctx.strokeStyle=up?'#52c48d':'#e06b75';ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.moveTo(x,y(c.high));ctx.lineTo(x,y(c.low));ctx.stroke();ctx.fillRect(x-Math.max(1,cw*.32),Math.min(oy,cy),Math.max(1,cw*.64),Math.max(1,Math.abs(oy-cy)))});if(state.paper.position)drawPriceLine(state.paper.position.entry,y,left,right,w,'Entry',[2,3]);if(state.analysis?.stop_reference!=null)drawPriceLine(state.analysis.stop_reference,y,left,right,w,'Stop',[7,4]);if(state.analysis?.entry_reference!=null&&!state.paper.position)drawPriceLine(state.analysis.entry_reference,y,left,right,w,'Signal',[2,3]);if(Number.isFinite(state.livePrice))drawPriceLine(state.livePrice,y,left,right,w,'Live',[6,3]);ctx.textAlign='center';ctx.fillStyle='#69727e';const labels=Math.max(2,Math.floor((w-left-right)/105));for(let i=0;i<labels;i++){const idx=Math.min(data.length-1,Math.floor(i*(data.length-1)/Math.max(1,labels-1))),d=new Date(data[idx].datetime);if(!Number.isNaN(d.getTime()))ctx.fillText(d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),left+(idx+.5)*cw,h-9)}drawCrosshair(data,left,right,top,bottom,w,h,y,cw);renderPaper()}
+    function showCenter(message,visible=true){centerMessageEl.textContent=message;centerCopyEl.style.display=visible?'grid':'none'}
+    function updateHud(payload){state.analysis=payload;const score=Number.isFinite(payload.score?.total)?` · score ${payload.score.total}/100`:'';const zone=payload.zone?`${payload.zone.kind} ${formatPrice(payload.zone.center)}`:'no zone';hudEl.className='hud';hudEl.innerHTML=`<strong>${payload.symbol||symbolEl.value}</strong><br>${payload.timeframe||timeframeEl.value} · ${payload.signal||'WAIT'}${score}<br>${payload.state||''} · ${zone}`}
+    async function loadHistory(){if(state.loading)return;state.loading=true;statusEl.textContent='Updating candles…';try{const params=new URLSearchParams({symbol:symbolEl.value,timeframe:timeframeEl.value}),res=await fetch(`/api/signal?${params}`,{cache:'no-store'}),payload=await res.json();if(!res.ok)throw new Error(payload.message||payload.error||`HTTP ${res.status}`);if(!Array.isArray(payload.candles)||!payload.candles.length)throw new Error('API returned no completed candles');state.candles=payload.candles;updateHud(payload);state.offset=Math.max(0,Math.min(state.offset,Math.max(0,state.candles.length-visibleCount())));showCenter('',false);statusEl.textContent='Candles updated';draw()}catch(e){showCenter(`Market data unavailable: ${e.message}`,true);hudEl.className='hud error';hudEl.textContent=`Market data unavailable: ${e.message}`;statusEl.textContent='Offline / error';draw()}finally{state.loading=false}}
+    async function loadLivePrice(){try{const params=new URLSearchParams({symbol:symbolEl.value}),res=await fetch(`/api/price?${params}`,{cache:'no-store'}),payload=await res.json();if(!res.ok)throw new Error(payload.message||payload.error||`HTTP ${res.status}`);const price=Number(payload.price);if(!Number.isFinite(price))throw new Error('API returned an invalid live price');state.livePrice=price;statusEl.textContent=`Live ${new Date(payload.generated_at).toLocaleTimeString()}`;draw()}catch(e){if(!state.candles.length)showCenter(`Live price unavailable: ${e.message}`,true);statusEl.textContent='Live price error'}}
+    function restartPolling(){clearInterval(historyTimer);clearInterval(priceTimer);historyTimer=setInterval(loadHistory,60000);priceTimer=setInterval(loadLivePrice,5000)}
+    symbolEl.addEventListener('change',()=>{state.offset=0;state.livePrice=null;state.analysis=null;loadHistory();loadLivePrice()});timeframeEl.addEventListener('change',()=>{state.offset=0;state.analysis=null;loadHistory()});document.getElementById('refresh').addEventListener('click',()=>{loadHistory();loadLivePrice()});buyEl.addEventListener('click',()=>openPaper('LONG'));sellEl.addEventListener('click',()=>openPaper('SHORT'));closeEl.addEventListener('click',closePaper);window.addEventListener('resize',resize);
+    canvas.addEventListener('pointerdown',e=>{state.dragging=true;state.lastX=e.clientX;state.crosshair={x:e.offsetX,y:e.offsetY};canvas.setPointerCapture(e.pointerId);draw()});canvas.addEventListener('pointermove',e=>{state.crosshair={x:e.offsetX,y:e.offsetY};if(state.dragging){const dx=e.clientX-state.lastX;state.lastX=e.clientX;const count=visibleCount();state.offset=Math.max(0,Math.min(Math.max(0,state.candles.length-count),state.offset+dx/Math.max(1,wrap.clientWidth/count)))}draw()});canvas.addEventListener('pointerup',e=>{state.dragging=false;canvas.releasePointerCapture(e.pointerId)});canvas.addEventListener('pointercancel',()=>{state.dragging=false});canvas.addEventListener('pointerleave',()=>{if(!state.dragging){state.crosshair=null;draw()}});canvas.addEventListener('wheel',e=>{e.preventDefault();state.zoom=Math.max(.5,Math.min(6,state.zoom*(e.deltaY<0?1.15:.87)));state.offset=Math.min(state.offset,Math.max(0,state.candles.length-visibleCount()));draw()},{passive:false});
+    loadPaper();resize();loadHistory();loadLivePrice();restartPolling();
   </script>
 </body>
 </html>
