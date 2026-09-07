@@ -124,13 +124,7 @@ class PaperAutomationRuntime:
             self._state = RuntimeState.STOPPED
 
     def step(self, now: datetime | None = None) -> PaperSessionResult | None:
-        """Process exactly one closed-bar opportunity.
-
-        Unexpected failures halt the runtime by default and are re-raised so an
-        external process supervisor can observe the fault. In explicit research
-        mode (``fail_closed=False``), the failure is recorded and this cycle is
-        skipped; it is never reported as a successful session result.
-        """
+        """Process exactly one closed-bar opportunity."""
         if self._state is RuntimeState.HALTED:
             raise RuntimeError(self._last_error or "paper runtime is halted")
         if self._stop_requested:
