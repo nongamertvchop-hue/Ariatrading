@@ -54,5 +54,21 @@ def test_sequence_builder_requires_enough_context():
         build_causal_sequences([_sample(0)], [_sample(1)], sequence_length=3)
 
 
+def test_transformer_supports_odd_hidden_size_without_shape_failure():
+    torch = pytest.importorskip("torch")
+    from strategy.deep_learning import _make_model
+
+    model = _make_model(
+        "transformer",
+        feature_count=2,
+        sequence_length=3,
+        hidden_size=5,
+        layers=1,
+        heads=1,
+    )
+    output = model(torch.zeros((2, 3, 2)))
+    assert output.shape == (2,)
+
+
 def test_deep_learning_training_is_optional():
     pytest.importorskip("torch")
