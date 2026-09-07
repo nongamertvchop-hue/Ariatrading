@@ -14,6 +14,7 @@ from typing import Protocol, Sequence
 
 from .candles import Candle
 from .engine import EngineSignal, WAIT, evaluate_long, evaluate_short
+from .feed_integrity import validate_feed_batch
 from .forecast import ForecastResult, forecast
 from .levels_v2 import PriceZone, find_resistance_zones, find_support_zones
 from .market_snapshot import MarketSnapshot
@@ -96,6 +97,11 @@ class RealtimeMonitor:
         bars = list(self.feed.closed_bars(self.symbol, self.timeframe, self.lookback))
         if len(bars) < 5:
             raise ValueError("not enough closed bars for evaluation")
+
+        integrity = validate_feed_batch(bars, self.timeframe)
+        if not integrity.ok:
+            raise RuntimeError(f"realtime feed integrity rejected: {integrity.reason}")
+
         quality = self.guard.validate(bars, now=now)
         if not quality.ok:
             if quality.reason == "duplicate or old closed bar":
