@@ -125,13 +125,14 @@ def _aggregate(
     output: list[SignalQualityRow] = []
     for value in sorted(grouped):
         members = grouped[value]
-        closed = [outcome for _, outcome in members if outcome.outcome in {"WIN", "LOSS"}]
+        member_outcomes = [outcome for _, outcome in members]
+        closed = [outcome for outcome in member_outcomes if outcome.outcome in {"WIN", "LOSS"}]
         r_values = [float(outcome.r_multiple) for outcome in closed if outcome.r_multiple is not None]
-        wins = sum(outcome.outcome == "WIN" for outcome in members)
-        losses = sum(outcome.outcome == "LOSS" for outcome in members)
-        opened = sum(outcome.trade_id is not None for _, outcome in members)
-        skipped = sum(outcome.outcome == "SKIPPED" for _, outcome in members)
-        unresolved = sum(outcome.outcome == "UNRESOLVED" for _, outcome in members)
+        wins = sum(outcome.outcome == "WIN" for outcome in member_outcomes)
+        losses = sum(outcome.outcome == "LOSS" for outcome in member_outcomes)
+        opened = sum(outcome.trade_id is not None for outcome in member_outcomes)
+        skipped = sum(outcome.outcome == "SKIPPED" for outcome in member_outcomes)
+        unresolved = sum(outcome.outcome == "UNRESOLVED" for outcome in member_outcomes)
         output.append(
             SignalQualityRow(
                 dimension=dimension,
