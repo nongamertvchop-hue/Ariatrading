@@ -26,12 +26,7 @@ def test_timeout_after_accept_recovers_without_duplicate_submission():
     broker.configure_next_timeout_after_accept()
     orders = OrderStateMachine()
 
-    result = submit_with_recovery(
-        broker,
-        orders,
-        make_request(),
-        idempotency_key="idem-1",
-    )
+    result = submit_with_recovery(broker, orders, make_request(), idempotency_key="idem-1")
 
     assert result.state is OrderState.FILLED
     assert result.filled_quantity == 1.0
@@ -40,16 +35,25 @@ def test_timeout_after_accept_recovers_without_duplicate_submission():
     assert len(broker.positions()) == 1
 
 
+def test_repeated_recovery_call_is_idempotent():
+    broker = PaperBrokerSimulator()
+    broker.configure_next_timeout_after_accept()
+    orders = OrderStateMachine()
+    request = make_request()
+
+    first = submit_with_recovery(broker, orders, request, idempotency_key="idem-1")
+    second = submit_with_recovery(broker, orders, request, idempotency_key="idem-1")
+
+    assert first == second
+    assert len(broker.list_orders()) == 1
+    assert len(broker.positions()) == 1
+
+
 def test_partial_fill_is_preserved_by_conformance_boundary():
     broker = PaperBrokerSimulator(fill_fraction=0.5)
     orders = OrderStateMachine()
 
-    result = submit_with_recovery(
-        broker,
-        orders,
-        make_request(),
-        idempotency_key="idem-1",
-    )
+    result = submit_with_recovery(broker, orders, make_request(), idempotency_key="idem-1")
 
     assert result.state is OrderState.PARTIALLY_FILLED
     assert result.filled_quantity == pytest.approx(0.5)
@@ -57,18 +61,13 @@ def test_partial_fill_is_preserved_by_conformance_boundary():
     assert orders.get("ord-1").filled_quantity == pytest.approx(0.5)
 
 
-def test_disconnect_blocks_submission_and_does_not_create_local_order():
+def test_disconnect_fails_closed_and_marks_local_order_unknown():
     broker = PaperBrokerSimulator()
     broker.disconnect()
     orders = OrderStateMachine()
 
     with pytest.raises(ConnectionError):
-        submit_with_recovery(
-            broker,
-            orders,
-            make_request(),
-            idempotency_key="idem-1",
-        )
+        submit_with_recovery(broker, orders, make_request(), idempotency_key="idem-1")
 
     assert broker.list_orders() == ()
-    assert orders.get("ord-1").state is OrderState.SUBMITTING
+    assert orders.get("ord-1").state is OrderState.UNKNOWN
