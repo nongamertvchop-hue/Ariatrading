@@ -6,6 +6,9 @@ have closed, so a live/backtest engine does not accidentally use future data.
 """
 
 from dataclasses import dataclass
+from math import isfinite
+
+from .candles import Candle
 
 
 SUPPORT = "SUPPORT"
@@ -21,16 +24,41 @@ class PriceZone:
     kind: str
     touches: int
 
+    def __post_init__(self):
+        values = (self.low, self.high)
+        if any(not isfinite(float(value)) for value in values):
+            raise ValueError("zone prices must be finite")
+        if self.low > self.high:
+            raise ValueError("zone low must be <= high")
+        if self.kind not in {SUPPORT, RESISTANCE}:
+            raise ValueError("zone kind must be SUPPORT or RESISTANCE")
+        if self.touches < 1:
+            raise ValueError("zone touches must be >= 1")
+
     @property
     def center(self) -> float:
         return (self.low + self.high) / 2
+
+
+def _validated_candles(candles: list[dict]) -> list[Candle]:
+    """Validate the complete OHLC record before extracting swing prices."""
+    return [
+        Candle(
+            float(raw["open"]),
+            float(raw["high"]),
+            float(raw["low"]),
+            float(raw["close"]),
+        )
+        for raw in candles
+    ]
 
 
 def confirmed_swing_lows(candles: list[dict], strength: int = 2) -> list[tuple[int, float]]:
     """Return (swing_index, low) after the swing has been confirmed."""
     if strength < 1:
         raise ValueError("strength must be >= 1")
-    lows = [float(c["low"]) for c in candles]
+    validated = _validated_candles(candles)
+    lows = [candle.low for candle in validated]
     result: list[tuple[int, float]] = []
     for i in range(strength, len(lows) - strength):
         window = lows[i - strength : i + strength + 1]
@@ -43,7 +71,8 @@ def confirmed_swing_highs(candles: list[dict], strength: int = 2) -> list[tuple[
     """Return (swing_index, high) after the swing has been confirmed."""
     if strength < 1:
         raise ValueError("strength must be >= 1")
-    highs = [float(c["high"]) for c in candles]
+    validated = _validated_candles(candles)
+    highs = [candle.high for candle in validated]
     result: list[tuple[int, float]] = []
     for i in range(strength, len(highs) - strength):
         window = highs[i - strength : i + strength + 1]
@@ -54,10 +83,13 @@ def confirmed_swing_highs(candles: list[dict], strength: int = 2) -> list[tuple[
 
 def _cluster(prices: list[float], tolerance: float) -> list[list[float]]:
     """Cluster nearby prices without allowing a chain to grow indefinitely."""
-    if tolerance <= 0:
-        raise ValueError("tolerance must be > 0")
+    if tolerance <= 0 or not isfinite(float(tolerance)):
+        raise ValueError("tolerance must be finite and > 0")
+    validated_prices = [float(price) for price in prices]
+    if any(not isfinite(price) for price in validated_prices):
+        raise ValueError("prices must be finite")
     clusters: list[list[float]] = []
-    for price in sorted(prices):
+    for price in sorted(validated_prices):
         if not clusters:
             clusters.append([price])
             continue
