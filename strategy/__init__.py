@@ -8,8 +8,8 @@ meta-filter research, experiment registry, regime diagnostics, ML feature
 drift diagnostics, ML OOS behavior diagnostics, ML model health diagnostics,
 deep-learning challenger models, deep-learning walk-forward research,
 aggregated research evidence, research-gate completeness checks, execution
-recovery, paper execution conformance, end-to-end paper recovery, broker
-symbol-contract validation, research provenance, feed integrity, and the final system readiness gate.
+recovery, paper execution conformance, broker symbol-contract validation,
+research provenance, feed integrity, and the final system readiness gate.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
@@ -39,7 +39,6 @@ from .order_persistence import OrderPersistenceError, load_order_state, save_ord
 from .order_state import OrderRecord, OrderState, OrderStateMachine, OrderTransition
 from .paper import CLOSED, OPEN, PaperAccount, PaperPosition, PaperTradingEngine
 from .paper_execution_conformance import RecoveryResult, submit_with_recovery
-from .paper_execution_e2e import PaperExecutionCoordinator, PaperRecoveryDecision, PaperRecoveryResult
 from .paper_session import PaperSessionResult, PaperSessionRunner
 from .pipeline import ResearchReport, run_research
 from .portfolio_risk import ALLOW as PORTFOLIO_ALLOW, HALT, PortfolioRiskController, PortfolioRiskDecision, PortfolioRiskLimits, PortfolioRiskState
@@ -72,7 +71,7 @@ __all__ = [
     "SystemGateDecision", "evaluate_system_readiness",
     "OrderState", "OrderRecord", "OrderTransition", "OrderStateMachine", "OrderPersistenceError", "save_order_state", "load_order_state",
     "AuditEvent", "AuditJournal", "AuditJournalError", "ExecutionRecoveryDecision", "ExecutionRecoveryReport", "verify_execution_recovery",
-    "RecoveryResult", "submit_with_recovery", "PaperExecutionCoordinator", "PaperRecoveryDecision", "PaperRecoveryResult",
+    "RecoveryResult", "submit_with_recovery",
     "SymbolContract", "ContractValidation", "validate_order_contract",
     "FeedIntegrityReport", "validate_feed_batch",
     "PROVENANCE_SCHEMA_VERSION", "ResearchProvenance", "build_research_provenance", "fingerprint_payload", "save_research_provenance", "load_research_provenance", "provenance_compatible",
