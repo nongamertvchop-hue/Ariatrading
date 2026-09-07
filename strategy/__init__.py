@@ -18,6 +18,7 @@ from .backtest import (
 )
 from .engine import EngineSignal, LONG, SHORT, WAIT, evaluate_long, evaluate_short
 from .execution import ExecutionModel, entry_price, exit_price
+from .execution_audit import AuditEvent, AuditJournal, AuditJournalError
 from .experiment_registry import ExperimentRecord, build_experiment_record
 from .forecast import ForecastResult, HorizonForecast, ScenarioForecast, forecast
 from .journal import JournalEvent, PaperTradeJournal
@@ -60,6 +61,7 @@ from .research_runner import ControlledResearchResult, run_controlled_research
 from .research_validation import ValidationEvidence, build_validation_evidence
 from .regime import REGIMES, RegimeStats, classify_regime, stratify_samples
 from .risk_engine import RiskDecision, RiskLimits, evaluate_risk, position_size
+from .robustness import RobustnessCase, RobustnessReport, RobustnessScenario, run_robustness_analysis
 from .trade_guard import TradeGuardDecision, evaluate_trade_guard
 from .two_setups import TwoSetupResult, evaluate_two_setups
 from .walk_forward import WalkForwardFold, WalkForwardResult, walk_forward_backtest
@@ -75,6 +77,7 @@ __all__ = [
     "TradeGuardDecision", "evaluate_trade_guard",
     "OrderState", "OrderRecord", "OrderTransition", "OrderStateMachine",
     "OrderPersistenceError", "save_order_state", "load_order_state",
+    "AuditEvent", "AuditJournal", "AuditJournalError",
     "ExecutionModel", "entry_price", "exit_price",
     "ExperimentRecord", "build_experiment_record",
     "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
