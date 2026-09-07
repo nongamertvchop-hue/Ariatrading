@@ -48,10 +48,15 @@ def test_build_signal_sample_uses_future_only_for_label():
 
 def test_ml_training_is_chronological_and_deterministic():
     candles = make_candles(80)
-    samples = []
-    for index in range(5, 70):
-        action = LONG if index % 2 == 0 else SHORT
-        samples.append(build_signal_sample(candles, index, EngineSignal(action, "test", "15m"), horizon_bars=3))
+    samples = [
+        build_signal_sample(
+            candles,
+            index,
+            EngineSignal(LONG, "test", "15m"),
+            horizon_bars=3,
+        )
+        for index in range(5, 70)
+    ]
 
     first = chronological_train_test(samples, train_ratio=0.7)
     second = chronological_train_test(samples, train_ratio=0.7)
@@ -74,7 +79,12 @@ def test_meta_filter_requires_both_training_classes():
 def test_meta_filter_threshold_and_feature_length_validation():
     candles = make_candles(80)
     samples = [
-        build_signal_sample(candles, i, EngineSignal(LONG if i % 2 == 0 else SHORT, "test", "15m"), horizon_bars=3)
+        build_signal_sample(
+            candles,
+            i,
+            EngineSignal(LONG, "test", "15m"),
+            horizon_bars=3,
+        )
         for i in range(5, 60)
     ]
     model = MetaFilterModel()
