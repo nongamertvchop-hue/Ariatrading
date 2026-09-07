@@ -1,6 +1,6 @@
 name = "ariatrading"
 compatibility_date = "2026-09-07"
-main = "./worker/index.js"
+main = "./worker/entry.js"
 
 [assets]
 directory = "./Webaria"
