@@ -2,7 +2,7 @@ from datetime import datetime, time, timedelta, timezone
 
 import pytest
 
-from strategy.execution import ExecutionModel, simulate_realistic_exit
+from strategy.execution import ExecutionModel, entry_price, exit_price, simulate_realistic_exit
 from strategy.levels_v2 import PriceZone, SUPPORT
 from strategy.risk import WIN, build_risk_plan
 
@@ -21,6 +21,18 @@ def candle(ts, high, low):
     return {"time": ts, "open": low, "high": high, "low": low, "close": high}
 
 
+def test_entry_and_exit_helpers_match_long_cost_direction():
+    model = ExecutionModel(spread=0.0002, slippage=0.0001)
+    assert entry_price(1.1010, "LONG", model) == pytest.approx(1.1012)
+    assert exit_price(1.1050, "LONG", model) == pytest.approx(1.1048)
+
+
+def test_entry_and_exit_helpers_match_short_cost_direction():
+    model = ExecutionModel(spread=0.0002, slippage=0.0001)
+    assert entry_price(1.0990, "SHORT", model) == pytest.approx(1.0988)
+    assert exit_price(1.0950, "SHORT", model) == pytest.approx(1.0952)
+
+
 def test_execution_model_applies_spread_and_slippage_to_realized_r():
     p = plan()
     bars = [candle(datetime(2026, 1, 1, 1, tzinfo=timezone.utc), 1.1060, 1.1010)]
@@ -34,6 +46,14 @@ def test_execution_model_applies_spread_and_slippage_to_realized_r():
     assert result.outcome == WIN
     assert result.entry > p.entry
     assert result.r_multiple < p.rr
+
+
+def test_higher_friction_does_not_improve_realized_r():
+    p = plan()
+    bars = [candle(datetime(2026, 1, 1, 1, tzinfo=timezone.utc), 1.1060, 1.1010)]
+    low_cost = simulate_realistic_exit(p, bars, ExecutionModel(spread=0.0001, slippage=0.00005, commission=0.0))
+    high_cost = simulate_realistic_exit(p, bars, ExecutionModel(spread=0.0004, slippage=0.0002, commission=0.0002))
+    assert high_cost.r_multiple <= low_cost.r_multiple
 
 
 def test_latency_can_delay_exit_detection():
