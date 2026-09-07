@@ -38,9 +38,22 @@ class EngineSignal:
     score: SetupScore | None = None
 
 
-def _evaluate(candles: list[dict], zone: PriceZone, timeframe: str, direction: str, mtf: MultiTimeframeContext | None) -> EngineSignal:
+def _evaluate(
+    candles: list[dict],
+    zone: PriceZone,
+    timeframe: str,
+    direction: str,
+    mtf: MultiTimeframeContext | None,
+    max_test_age: int,
+) -> EngineSignal:
     get_timeframe_config(timeframe)
-    result = evaluate_sequence(candles, zone, timeframe, direction)
+    result = evaluate_sequence(
+        candles,
+        zone,
+        timeframe,
+        direction,
+        max_test_age=max_test_age,
+    )
     structure = analyze_market_structure(candles[:-1]) if len(candles) > 1 else analyze_market_structure([])
     setup_score = None
     if result.action == direction:
@@ -73,10 +86,11 @@ def evaluate_long(
     support: PriceZone,
     timeframe: str,
     mtf: MultiTimeframeContext | None = None,
+    max_test_age: int = 3,
 ) -> EngineSignal:
     if support.kind != SUPPORT:
         raise ValueError("zone must be SUPPORT")
-    return _evaluate(candles, support, timeframe, LONG, mtf)
+    return _evaluate(candles, support, timeframe, LONG, mtf, max_test_age)
 
 
 def evaluate_short(
@@ -84,7 +98,8 @@ def evaluate_short(
     resistance: PriceZone,
     timeframe: str,
     mtf: MultiTimeframeContext | None = None,
+    max_test_age: int = 3,
 ) -> EngineSignal:
     if resistance.kind != RESISTANCE:
         raise ValueError("zone must be RESISTANCE")
-    return _evaluate(candles, resistance, timeframe, SHORT, mtf)
+    return _evaluate(candles, resistance, timeframe, SHORT, mtf, max_test_age)
