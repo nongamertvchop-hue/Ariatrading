@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from strategy.backtest import ENTRY_TIMING_NEXT_BAR_OPEN
 from strategy.walk_forward import walk_forward_backtest
 
 
@@ -78,6 +79,19 @@ def test_walk_forward_is_deterministic():
     second = walk_forward_backtest(candles, "15m", history_bars=20, test_bars=10)
 
     assert first == second
+
+
+def test_walk_forward_propagates_next_bar_open_entry_timing():
+    result = walk_forward_backtest(
+        make_candles(50),
+        "15m",
+        history_bars=20,
+        test_bars=10,
+        entry_timing=ENTRY_TIMING_NEXT_BAR_OPEN,
+    )
+
+    assert result.fold_count == 3
+    assert all(f.backtest.timeframe == "15m" for f in result.folds)
 
 
 def test_walk_forward_rejects_invalid_window_configuration():
