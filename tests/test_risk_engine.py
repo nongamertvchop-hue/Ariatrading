@@ -58,3 +58,39 @@ def test_max_positions_blocks_new_trade():
 def test_invalid_entry_stop_is_rejected():
     with pytest.raises(ValueError):
         position_size(10_000, 100.0, 100.0, 0.01)
+
+
+def test_min_quantity_is_a_hard_limit():
+    decision = evaluate_risk(
+        equity=1000.0,
+        entry=100.0,
+        stop=99.0,
+        limits=RiskLimits(min_quantity=11.0),
+        quantity_step=2.0,
+    )
+    assert not decision.allowed
+    assert "minimum quantity" in decision.reason
+
+
+def test_minimum_quantity_survives_max_quantity_cap():
+    decision = evaluate_risk(
+        equity=1000.0,
+        entry=100.0,
+        stop=99.0,
+        limits=RiskLimits(min_quantity=2.0, max_quantity=2.5),
+        quantity_step=1.0,
+    )
+    assert decision.allowed
+    assert decision.quantity == pytest.approx(2.0)
+
+
+def test_max_quantity_cap_can_become_below_minimum_after_step_floor():
+    decision = evaluate_risk(
+        equity=1000.0,
+        entry=100.0,
+        stop=99.0,
+        limits=RiskLimits(min_quantity=2.0, max_quantity=2.5),
+        quantity_step=3.0,
+    )
+    assert not decision.allowed
+    assert "minimum quantity" in decision.reason or "minimum step" in decision.reason
