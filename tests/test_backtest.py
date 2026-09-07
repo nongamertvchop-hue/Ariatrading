@@ -10,6 +10,7 @@ from strategy.backtest import (
     run_backtest,
 )
 from strategy.engine import EngineSignal, LONG
+from strategy.execution import ExecutionModel, entry_price
 from strategy.levels_v2 import PriceZone, SUPPORT
 
 
@@ -73,33 +74,32 @@ def test_backtest_accepts_timestamped_mtf_data():
     assert result.candles_tested == len(result.signals)
 
 
-def test_backtest_entry_timing_next_bar_open_matches_paper_lifecycle(monkeypatch):
+def _patch_simple_long(monkeypatch):
     zone = PriceZone(99.0, 100.0, SUPPORT, 2)
 
-    def fake_zones(history, timeframe):
-        return [zone], []
-
-    def fake_long(candles, support, timeframe, mtf=None):
-        return EngineSignal(
+    monkeypatch.setattr(backtest_module, "_latest_zones", lambda history, timeframe: ([zone], []))
+    monkeypatch.setattr(
+        backtest_module,
+        "evaluate_long",
+        lambda candles, support, timeframe, mtf=None: EngineSignal(
             LONG,
             "test signal",
             timeframe,
             support,
             entry_reference=100.0,
-        )
+        ),
+    )
+    return zone
 
-    monkeypatch.setattr(backtest_module, "_latest_zones", fake_zones)
-    monkeypatch.setattr(backtest_module, "evaluate_long", fake_long)
 
+def test_backtest_entry_timing_next_bar_open_matches_paper_lifecycle(monkeypatch):
+    _patch_simple_long(monkeypatch)
     candles = make_candles(40)
     for candle in candles:
         candle["open"] = 100.0
         candle["high"] = 100.5
         candle["low"] = 99.5
         candle["close"] = 100.0
-    # First decision occurs at the normal 15m warmup boundary. Its next-bar
-    # fill is deliberately different from the signal reference, then the
-    # following bar reaches the adaptive-buffer-adjusted TP.
     decision_index = 32
     candles[decision_index + 1]["open"] = 101.0
     candles[decision_index + 2]["high"] = 106.0
@@ -119,21 +119,7 @@ def test_backtest_entry_timing_next_bar_open_matches_paper_lifecycle(monkeypatch
 
 
 def test_backtest_default_entry_timing_remains_signal_reference(monkeypatch):
-    zone = PriceZone(99.0, 100.0, SUPPORT, 2)
-
-    monkeypatch.setattr(backtest_module, "_latest_zones", lambda history, timeframe: ([zone], []))
-    monkeypatch.setattr(
-        backtest_module,
-        "evaluate_long",
-        lambda candles, support, timeframe, mtf=None: EngineSignal(
-            LONG,
-            "test signal",
-            timeframe,
-            support,
-            entry_reference=100.0,
-        ),
-    )
-
+    _patch_simple_long(monkeypatch)
     candles = make_candles(40)
     for candle in candles:
         candle["open"] = 101.0
@@ -145,6 +131,33 @@ def test_backtest_default_entry_timing_remains_signal_reference(monkeypatch):
 
     assert result.trades
     assert result.trades[0].entry == 100.0
+
+
+def test_backtest_execution_cost_is_applied_once_before_risk_geometry(monkeypatch):
+    zone = _patch_simple_long(monkeypatch)
+    candles = make_candles(40)
+    for candle in candles:
+        candle["open"] = 100.0
+        candle["high"] = 100.5
+        candle["low"] = 99.5
+        candle["close"] = 100.0
+    candles[33]["high"] = 106.0
+    model = ExecutionModel(spread=0.2, slippage=0.1, commission=0.0, price_digits=2)
+
+    result = run_backtest(
+        candles,
+        "15m",
+        execution_model=model,
+        reward_risk=1.0,
+        max_hold_bars=5,
+    )
+
+    assert result.trades
+    trade = result.trades[0]
+    expected_entry = entry_price(100.0, LONG, model)
+    assert trade.entry == expected_entry
+    assert trade.stop == zone.low
+    assert trade.target == pytest.approx(expected_entry + (expected_entry - zone.low))
 
 
 def test_backtest_rejects_unknown_entry_timing():
