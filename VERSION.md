@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.13.3**
+Current version: **0.13.4**
 
 ## Versioning rule
 
@@ -15,7 +15,7 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.13.3
+## Current milestone — 0.13.4
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
@@ -32,15 +32,17 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - Research provenance can now be persisted and loaded atomically with schema validation.
 - Feed integrity validation now runs directly at the realtime boundary, rejecting malformed OHLC, duplicate/out-of-order timestamps, non-UTC timestamps by default, and timestamps misaligned to the configured timeframe grid. It intentionally does not treat FX session/weekend gaps as automatically invalid.
 - Deep-learning walk-forward research can persist a deterministic provenance artifact describing its dataset and full model/research configuration, without forcing provenance writes when the feature is unused.
+- Position reconciliation now optionally tracks average entry price and enforces normalized broker symbol/volume contract consistency, while remaining backward compatible with older snapshots.
+- Average-entry and broker-contract mismatches fail closed before a reconciled position can be considered safe.
 - MT5 integration remains read-only; no order execution is implemented.
 
 ## Next milestones
 
 ### 0.13.x — production-boundary hardening
-- Extend paper-position reconciliation to include explicit average-entry and position-contract checks.
 - Complete identical-window classical ML/LSTM/Transformer comparison and strict final-OOS separation.
 - Add execution-friction sensitivity reports and deterministic realtime/replay parity checks.
 - Audit all research artifact persistence for atomicity, schema evolution, and corruption handling.
+- Integrate reconciled average-entry/contract state into the end-to-end paper recovery assertions where applicable.
 
 ### 1.0.0 — Only after validation
 - Freeze a documented strategy specification only after out-of-sample and robustness checks.
