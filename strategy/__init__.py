@@ -10,8 +10,8 @@ diagnostics, deep-learning challenger models, deep-learning walk-forward
 research, aggregated research evidence, research-gate completeness checks,
 execution recovery, paper execution conformance, broker symbol-contract
 validation, research provenance, feed integrity, the final system readiness
-gate, deterministic historical paper replay, leakage-safe paper outcomes, and
-paired baseline-vs-MTF paper comparison.
+gate, deterministic historical paper replay, leakage-safe paper outcomes,
+paired baseline-vs-MTF paper comparison, and signal-quality diagnostics.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
@@ -61,6 +61,7 @@ from .research_validation import ValidationEvidence, build_validation_evidence
 from .regime import REGIMES, RegimeStats, classify_regime, stratify_samples
 from .risk_engine import RiskDecision, RiskLimits, evaluate_risk, position_size
 from .robustness import RobustnessCase, RobustnessReport, RobustnessScenario, run_robustness_analysis
+from .signal_quality import DEFAULT_SCORE_BUCKETS, SignalQualityReport, SignalQualityRow, build_signal_quality_report
 from .system_gate import SystemGateDecision, evaluate_system_readiness
 from .trade_guard import TradeGuardDecision, evaluate_trade_guard
 from .two_setups import TwoSetupResult, evaluate_two_setups
@@ -88,6 +89,7 @@ __all__ = [
     "PaperReplayResult", "replay_paper_session",
     "PaperSignalOutcome", "label_paper_signals", "PAPER_WIN", "PAPER_LOSS", "SKIPPED", "UNRESOLVED",
     "PaperComparisonMetrics", "MtfPaperComparison", "compare_mtf_paper_sessions",
+    "DEFAULT_SCORE_BUCKETS", "SignalQualityRow", "SignalQualityReport", "build_signal_quality_report",
     "ALLOW", "SupervisorDecision", "supervise", "ResearchReport", "run_research",
     "BacktestResult", "run_backtest", "run_all_timeframes", "ENTRY_TIMING_SIGNAL_REFERENCE", "ENTRY_TIMING_NEXT_BAR_OPEN",
     "CLOSED", "OPEN", "PaperAccount", "PaperPosition", "PaperTradingEngine", "PaperSessionResult", "PaperSessionRunner",
