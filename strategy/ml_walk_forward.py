@@ -55,8 +55,8 @@ class MLWalkForwardResult:
         return sum(fold.model_trained for fold in self.folds)
 
     @property
-    def filtered_directional_signals(self) -> int:
-        return sum(fold.filtered.total_directional_signals for fold in self.folds)
+    def filtered_trade_count(self) -> int:
+        return len(self.filtered_trades)
 
 
 def _directional_training_samples(
