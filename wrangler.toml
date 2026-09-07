@@ -6,3 +6,11 @@ main = "./worker/entry.js"
 directory = "./Webaria"
 binding = "ASSETS"
 run_worker_first = ["/api/*"]
+
+[[durable_objects.bindings]]
+name = "AUTO_TRADING_CONTROL"
+class_name = "AutoTradingControl"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AutoTradingControl"]
