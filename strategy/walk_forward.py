@@ -8,7 +8,7 @@ later observations.
 
 from dataclasses import dataclass
 
-from .backtest import BacktestResult, run_backtest
+from .backtest import BacktestResult, ENTRY_TIMING_SIGNAL_REFERENCE, run_backtest
 from .execution import ExecutionModel
 from .risk import TradeResult
 from .validation import ResearchMetrics, evaluate_trades
@@ -58,6 +58,7 @@ def walk_forward_backtest(
     max_hold_bars: int = 20,
     mtf_candles_by_timeframe: dict[str, list[dict]] | None = None,
     execution_model: ExecutionModel | None = None,
+    entry_timing: str = ENTRY_TIMING_SIGNAL_REFERENCE,
 ) -> WalkForwardResult:
     """Run expanding-history, non-overlapping out-of-sample backtests.
 
@@ -94,6 +95,7 @@ def walk_forward_backtest(
             execution_model=execution_model,
             start_index=test_start,
             end_index=test_end,
+            entry_timing=entry_timing,
         )
         metrics = evaluate_trades(result.trades)
         fold = WalkForwardFold(
