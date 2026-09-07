@@ -61,7 +61,7 @@ def compare_ml_results(
         trade_reduction_ratio=reduction,
         net_r_delta=filtered_metrics.net_r - baseline_metrics.net_r,
         expectancy_r_delta=filtered_metrics.expectancy_r - baseline_metrics.expectancy_r,
-        win_rate_delta=filtered_metrics.win_rate - baseline_metrics.win_rate,
+        win_rate_delta=round(filtered_metrics.win_rate - baseline_metrics.win_rate, 12),
         drawdown_r_delta=filtered_metrics.max_drawdown_r - baseline_metrics.max_drawdown_r,
     )
 
