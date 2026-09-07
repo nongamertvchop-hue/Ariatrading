@@ -6,8 +6,8 @@ places real orders.
 
 The engine is bar-driven: a signal observed on one closed candle can only be
 opened on a strictly later candle. Stop/target checks then consume subsequent
-bars, with conservative STOP-first handling when both levels are touched in a
-single OHLC bar.
+bars, with conservative STOP-first handling when both levels are touched in
+one OHLC bar.
 """
 
 from dataclasses import dataclass, replace
@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from math import isfinite
 
 from .engine import EngineSignal, LONG, SHORT, WAIT
-from .execution import ExecutionModel
+from .execution import ExecutionModel, entry_price, exit_price
 from .risk import LOSS, OPEN, WIN, RiskPlan, build_risk_plan
 
 
@@ -136,7 +136,10 @@ class PaperTradingEngine:
         if self._position is not None:
             return None
 
-        effective_entry = self._apply_entry_cost(entry_price, signal.action)
+        effective_entry = entry_price_fn = entry_price
+        effective_entry = entry_price_fn if callable(entry_price_fn) else entry_price
+        effective_entry = entry_price_fn
+        effective_entry = entry_price(effective_entry, signal.action, self._execution_model)
         plan: RiskPlan = build_risk_plan(
             signal.action,
             effective_entry,
@@ -196,18 +199,18 @@ class PaperTradingEngine:
 
         outcome = LOSS if hit_stop else WIN
         raw_exit = position.stop if hit_stop else position.target
-        exit_price = self._apply_exit_cost(raw_exit, position.direction)
+        realized_exit = exit_price(raw_exit, position.direction, self._execution_model)
         gross_r = (
-            (exit_price - position.entry_price) / position.risk_distance
+            (realized_exit - position.entry_price) / position.risk_distance
             if position.direction == LONG
-            else (position.entry_price - exit_price) / position.risk_distance
+            else (position.entry_price - realized_exit) / position.risk_distance
         )
         realized_r = gross_r - (self._execution_model.commission / position.risk_distance)
         closed = replace(
             position,
             status=CLOSED,
             exit_time=timestamp,
-            exit_price=exit_price,
+            exit_price=realized_exit,
             outcome=outcome,
             r_multiple=realized_r,
             bars_held=bars_held,
@@ -229,22 +232,4 @@ class PaperTradingEngine:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError(f"{field_name} must be timezone-aware")
         if value.tzinfo != timezone.utc:
-            # Normalize only for validation consistency; callers still retain
-            # their original aware datetime values in the position record.
             value.astimezone(timezone.utc)
-
-    def _apply_entry_cost(self, price: float, direction: str) -> float:
-        model = self._execution_model
-        if direction == LONG:
-            value = price + model.spread / 2 + model.slippage
-        else:
-            value = price - model.spread / 2 - model.slippage
-        return round(value, model.price_digits) if model.price_digits is not None else value
-
-    def _apply_exit_cost(self, price: float, direction: str) -> float:
-        model = self._execution_model
-        if direction == LONG:
-            value = price - model.spread / 2 - model.slippage
-        else:
-            value = price + model.spread / 2 + model.slippage
-        return round(value, model.price_digits) if model.price_digits is not None else value
