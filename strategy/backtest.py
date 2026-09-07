@@ -12,6 +12,10 @@ from .timeframe import adaptive_confirmation_buffer, adaptive_zone_tolerance, ge
 from .validation import ResearchMetrics, evaluate_trades
 
 
+ENTRY_TIMING_SIGNAL_REFERENCE = "signal_reference"
+ENTRY_TIMING_NEXT_BAR_OPEN = "next_bar_open"
+
+
 @dataclass(frozen=True)
 class BacktestResult:
     timeframe: str
@@ -96,6 +100,7 @@ def run_backtest(
     execution_model: ExecutionModel | None = None,
     start_index: int | None = None,
     end_index: int | None = None,
+    entry_timing: str = ENTRY_TIMING_SIGNAL_REFERENCE,
 ) -> BacktestResult:
     """Run strategy/risk sequentially over a bounded research window.
 
@@ -103,10 +108,19 @@ def run_backtest(
     as the decision/test window. History before ``start_index`` remains visible
     to the strategy, while exit simulation is capped at ``end_index`` so a trade
     cannot consume observations from a later out-of-sample window.
+
+    ``entry_timing`` controls the historical fill assumption:
+
+    - ``signal_reference`` uses the strategy confirmation reference on the
+      signal candle. This preserves the original backtest behavior.
+    - ``next_bar_open`` opens at the next candle's open, matching the paper
+      session lifecycle and avoiding same-candle execution assumptions.
     """
     config = get_timeframe_config(timeframe)
     if reward_risk <= 0 or max_hold_bars < 1:
         raise ValueError("reward_risk must be > 0 and max_hold_bars must be >= 1")
+    if entry_timing not in {ENTRY_TIMING_SIGNAL_REFERENCE, ENTRY_TIMING_NEXT_BAR_OPEN}:
+        raise ValueError("entry_timing must be 'signal_reference' or 'next_bar_open'")
     if not candles:
         return BacktestResult(timeframe, 0, 0, 0, 0, (), ())
 
@@ -148,14 +162,26 @@ def run_backtest(
         signals.append(signal)
 
         if signal.action in {LONG, SHORT} and signal.entry_reference is not None and signal.zone is not None:
+            if entry_timing == ENTRY_TIMING_NEXT_BAR_OPEN:
+                fill_index = i + 1
+                if fill_index >= end_index:
+                    i += 1
+                    continue
+                entry_price = float(candles[fill_index]["open"])
+                future_start = fill_index + 1
+            else:
+                fill_index = i
+                entry_price = float(signal.entry_reference)
+                future_start = i + 1
+
             plan: RiskPlan = build_risk_plan(
                 signal.action,
-                signal.entry_reference,
+                entry_price,
                 signal.zone,
                 adaptive_confirmation_buffer(prior, timeframe),
                 reward_risk,
             )
-            future = candles[i + 1:min(end_index, i + 1 + max_hold_bars)]
+            future = candles[future_start:min(end_index, future_start + max_hold_bars)]
             trade = (
                 simulate_exit(plan, future, max_hold_bars)
                 if execution_model is None
@@ -163,7 +189,7 @@ def run_backtest(
             )
             trades.append(trade)
             if trade.bars_held > 0 and trade.outcome in {WIN, LOSS}:
-                i += trade.bars_held + 1
+                i = future_start + trade.bars_held
                 continue
         i += 1
 
@@ -183,6 +209,7 @@ def run_all_timeframes(
     reward_risk: float = 2.0,
     max_hold_bars: int = 20,
     execution_model: ExecutionModel | None = None,
+    entry_timing: str = ENTRY_TIMING_SIGNAL_REFERENCE,
 ):
     return {
         tf: run_backtest(
@@ -191,6 +218,7 @@ def run_all_timeframes(
             reward_risk=reward_risk,
             max_hold_bars=max_hold_bars,
             execution_model=execution_model,
+            entry_timing=entry_timing,
         )
         for tf, c in candles_by_timeframe.items()
     }
