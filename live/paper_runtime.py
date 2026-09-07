@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from math import isfinite
 from time import sleep
 from typing import Callable
 
@@ -41,8 +42,8 @@ class PaperRuntimeConfig:
     fail_closed: bool = True
 
     def __post_init__(self) -> None:
-        if self.poll_seconds <= 0:
-            raise ValueError("poll_seconds must be > 0")
+        if not isfinite(self.poll_seconds) or self.poll_seconds <= 0:
+            raise ValueError("poll_seconds must be finite and > 0")
 
 
 @dataclass(frozen=True)
