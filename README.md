@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.13.3**
+**Current version: 0.13.4**
 
 ## Core idea
 
@@ -41,9 +41,10 @@ The project is layered so every stage can be used together without duplicating s
 21. **Paper session** — next-bar paper entry, lifecycle management, and append-only event journaling.
 22. **Execution recovery safety** — persistent order state, append-only audit chain, fail-closed recovery consistency checks, and durable multi-order restart recovery.
 23. **Broker contract safety** — normalized symbol identity, price precision, and volume min/max/step validation before the execution boundary.
-24. **System readiness gate** — final fail-closed pre-execution contract across strategy, data, portfolio risk, trade risk, broker contract, reconciliation, execution recovery, and optional ML evidence.
-25. **Paper broker simulator** — deterministic full/partial fill, rejection, disconnect/reconnect, timeout-after-accept ambiguity, idempotency and position-snapshot semantics for execution/recovery testing.
-26. **Integration facade** — `strategy.pipeline.run_research()` connects the core research stages into one consistent API.
+24. **Position reconciliation safety** — optional average-entry tracking plus broker symbol/volume contract validation; mismatches fail closed.
+25. **System readiness gate** — final fail-closed pre-execution contract across strategy, data, portfolio risk, trade risk, broker contract, reconciliation, execution recovery, and optional ML evidence.
+26. **Paper broker simulator** — deterministic full/partial fill, rejection, disconnect/reconnect, timeout-after-accept ambiguity, idempotency and position-snapshot semantics for execution/recovery testing.
+27. **Integration facade** — `strategy.pipeline.run_research()` connects the core research stages into one consistent API.
 
 ## Key modules
 
@@ -91,6 +92,7 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/execution_audit.py` — append-only hash-chain execution audit journal.
 - `strategy/execution_recovery.py` — fail-closed post-restart execution consistency gate.
 - `strategy/paper_execution_e2e.py` — end-to-end paper submission/recovery coordinator.
+- `strategy/position_reconciliation.py` — normalized local/broker position reconciliation with average-entry and contract checks.
 - `strategy/system_gate.py` — final fail-closed pre-execution readiness contract.
 - `strategy/broker_contract.py` — normalized broker-symbol contract checks.
 - `adapters/mt5_feed.py` — read-only MT5 market-data adapter.
@@ -153,17 +155,17 @@ The MT5 adapter remains read-only. There is no live order-sending implementation
 
 ## Validation principles
 
-Research is descriptive evidence, not a profitability guarantee. Features at a decision index use only information available at or before that index. Future candles are used for labels only. Training boundaries, normalization, model challengers and final OOS evaluation remain chronologically separated. Any ambiguous execution or corrupted recovery state fails closed rather than being retried blindly.
+Research is descriptive evidence, not a profitability guarantee. Features at a decision index use only information available at or before that index. Future candles are used for labels only. Training boundaries, normalization, model challengers and final OOS evaluation remain chronologically separated. Any ambiguous execution, contract mismatch, or corrupted recovery state fails closed rather than being retried blindly.
 
 ## Testing
 
-The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk and quantity constraints, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML model health, ML evidence readiness, fixed-window ML challenger comparison, deep-learning sequence causality, deep-learning walk-forward contracts and provenance persistence, realtime state handling, feed-integrity boundary behavior, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, paper-broker failure semantics, paper-position reconciliation semantics, order persistence/recovery, execution audit integrity, broker contract validation, and the integrated research facade/system gate.
+The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk and quantity constraints, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML model health, ML evidence readiness, fixed-window ML challenger comparison, deep-learning sequence causality, deep-learning walk-forward contracts and provenance persistence, realtime state handling, feed-integrity boundary behavior, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, paper-broker failure semantics, paper-position reconciliation semantics including average-entry and broker-contract mismatches, order persistence/recovery, execution audit integrity, broker contract validation, and the integrated research facade/system gate.
 
 The deep-learning implementation is optional in the default CI path because PyTorch is a large dependency. `requirements-ml.txt` provides the explicit ML environment for LSTM/Transformer experiments.
 
 ## Version / continuation protocol
 
-Current version: **0.13.3**.
+Current version: **0.13.4**.
 
 At the start of a new chat:
 
