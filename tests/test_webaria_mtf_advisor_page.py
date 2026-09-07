@@ -25,9 +25,10 @@ def test_mtf_advisor_page_is_filter_not_new_strategy():
     assert "MTF alignment เป็นตัวกรองของ setup เดิม ไม่ใช่ setup ใหม่" in html
 
 
-def test_mtf_advisor_page_is_paper_only_and_local_journaled():
+def test_mtf_advisor_page_is_simulation_only_and_local_journaled():
     html = PAGE.read_text(encoding="utf-8")
-    assert "Paper Trading เท่านั้น" in html
+    assert "Paper Risk Planner" in html
+    assert "Paper" in html
     assert "ไม่มีการส่งคำสั่งไป broker" in html
     assert "localStorage" in html
     assert "aria-signal-journal-v1" in html
