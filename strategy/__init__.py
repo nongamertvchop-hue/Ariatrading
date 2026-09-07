@@ -14,7 +14,7 @@ from .backtest import (
     run_backtest,
 )
 from .engine import EngineSignal, LONG, SHORT, WAIT, evaluate_long, evaluate_short
-from .execution import ExecutionModel
+from .execution import ExecutionModel, entry_price, exit_price
 from .forecast import ForecastResult, HorizonForecast, ScenarioForecast, forecast
 from .journal import JournalEvent, PaperTradeJournal
 from .market_snapshot import MarketSnapshot
@@ -28,7 +28,8 @@ from .walk_forward import WalkForwardFold, WalkForwardResult, walk_forward_backt
 
 __all__ = [
     "EngineSignal", "LONG", "SHORT", "WAIT", "evaluate_long", "evaluate_short",
-    "ExecutionModel", "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
+    "ExecutionModel", "entry_price", "exit_price",
+    "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
     "JournalEvent", "PaperTradeJournal",
     "MarketSnapshot", "ReplayPoint", "ReplayResult", "replay_forecasts",
     "DataQuality", "RealtimeGuard", "expected_closed_bar_open",
