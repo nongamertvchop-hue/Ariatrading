@@ -19,7 +19,8 @@ import json
 from .backtest import ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_backtest
 from .deep_learning import DeepLearningMetrics, ModelType, train_deep_sequence_model
 from .engine import LONG, SHORT
-from .ml_features import MLSample, build_signal_sample
+from .ml_features import MLSample, build_signal_sample, FEATURE_NAMES
+from .research_provenance import build_research_provenance, save_research_provenance
 from .risk import TradeResult
 from .validation import ResearchMetrics, evaluate_trades
 
@@ -126,8 +127,6 @@ def _test_samples(
     for index, signal in zip(result.signal_indices, result.signals):
         if signal.action not in {LONG, SHORT}:
             continue
-        # The test label must be fully observable inside this fold. A label
-        # reaching beyond test_end would contaminate the fold boundary.
         if index + horizon_bars >= test_end:
             continue
         samples.append(
@@ -162,10 +161,6 @@ def _train_one(
     if len(test_samples) < 1:
         return None
 
-    # Preflight checks above cover the expected "not enough data" cases.
-    # Remaining ValueError exceptions are configuration or data-contract
-    # violations and must surface instead of silently producing an incomplete
-    # research record.
     _, metrics = train_deep_sequence_model(
         train_samples,
         test_samples,
@@ -202,8 +197,15 @@ def deep_learning_walk_forward_backtest(
     epochs: int = 20,
     learning_rate: float = 1e-3,
     seed: int = 42,
+    provenance_path: str | None = None,
+    code_version: str = "0.13.3",
 ) -> DeepLearningWalkForwardResult:
-    """Run chronological OOS folds for both LSTM and Transformer challengers."""
+    """Run chronological OOS folds for both LSTM and Transformer challengers.
+
+    When ``provenance_path`` is supplied, a deterministic provenance record for
+    the complete walk-forward research configuration is persisted only after
+    the result has been built successfully.
+    """
     if history_bars < 1 or test_bars < 1:
         raise ValueError("history_bars and test_bars must be >= 1")
     if step_bars is None:
@@ -220,6 +222,8 @@ def deep_learning_walk_forward_backtest(
         raise ValueError("invalid deep-learning configuration")
     if len(candles) <= history_bars:
         raise ValueError("candles must contain data after the history window")
+    if not code_version:
+        raise ValueError("code_version must not be empty")
 
     folds: list[DeepLearningWalkForwardFold] = []
     baseline_trades: list[TradeResult] = []
@@ -304,7 +308,7 @@ def deep_learning_walk_forward_backtest(
         fold_index += 1
         test_start += step_bars
 
-    return DeepLearningWalkForwardResult(
+    result = DeepLearningWalkForwardResult(
         timeframe=timeframe,
         history_bars=history_bars,
         test_bars=test_bars,
@@ -315,6 +319,36 @@ def deep_learning_walk_forward_backtest(
         baseline_trades=tuple(baseline_trades),
         baseline_metrics=evaluate_trades(baseline_trades),
     )
+
+    if provenance_path is not None:
+        model_config = {
+            "timeframe": timeframe,
+            "history_bars": history_bars,
+            "test_bars": test_bars,
+            "step_bars": step_bars,
+            "reward_risk": reward_risk,
+            "max_hold_bars": max_hold_bars,
+            "entry_timing": entry_timing,
+            "sequence_length": sequence_length,
+            "horizon_bars": horizon_bars,
+            "favorable_move": favorable_move,
+            "hidden_size": hidden_size,
+            "layers": layers,
+            "heads": heads,
+            "epochs": epochs,
+            "learning_rate": learning_rate,
+            "seed": seed,
+        }
+        provenance = build_research_provenance(
+            dataset=candles,
+            feature_names=FEATURE_NAMES,
+            model_name="lstm+transformer_walk_forward",
+            model_config=model_config,
+            code_version=code_version,
+        )
+        save_research_provenance(provenance, provenance_path)
+
+    return result
 
 
 __all__ = [
