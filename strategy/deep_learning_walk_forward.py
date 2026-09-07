@@ -19,7 +19,7 @@ import json
 from .backtest import ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_backtest
 from .deep_learning import DeepLearningMetrics, ModelType, train_deep_sequence_model
 from .engine import LONG, SHORT
-from .ml_features import MLSample, build_signal_sample, extract_signal_features
+from .ml_features import MLSample, build_signal_sample
 from .risk import TradeResult
 from .validation import ResearchMetrics, evaluate_trades
 
@@ -160,23 +160,23 @@ def _train_one(
         return None
     if len(test_samples) < 1:
         return None
-    try:
-        _, metrics = train_deep_sequence_model(
-            train_samples,
-            # OOS labels are intentionally supplied only to evaluate metrics;
-            # train_deep_sequence_model never uses them to update model weights.
-            test_samples,
-            model_type=model_type,
-            sequence_length=sequence_length,
-            hidden_size=hidden_size,
-            layers=layers,
-            heads=heads,
-            epochs=epochs,
-            learning_rate=learning_rate,
-            seed=seed,
-        )
-    except ValueError:
-        return None
+
+    # Preflight checks above cover the expected "not enough data" cases.
+    # Remaining ValueError exceptions are configuration or data-contract
+    # violations and must surface instead of silently producing an incomplete
+    # research record.
+    _, metrics = train_deep_sequence_model(
+        train_samples,
+        test_samples,
+        model_type=model_type,
+        sequence_length=sequence_length,
+        hidden_size=hidden_size,
+        layers=layers,
+        heads=heads,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        seed=seed,
+    )
     return metrics
 
 
