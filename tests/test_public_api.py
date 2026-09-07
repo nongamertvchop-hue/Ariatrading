@@ -15,3 +15,9 @@ def test_public_api_exports_ml_drift():
     assert strategy.FeatureDrift
     assert strategy.MLDriftReport
     assert strategy.analyze_feature_drift
+
+
+def test_public_api_exports_execution_recovery():
+    assert strategy.ExecutionRecoveryDecision
+    assert strategy.ExecutionRecoveryReport
+    assert strategy.verify_execution_recovery
