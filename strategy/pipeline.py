@@ -2,7 +2,12 @@
 
 from dataclasses import dataclass
 
-from .backtest import BacktestResult, run_all_timeframes, run_backtest
+from .backtest import (
+    ENTRY_TIMING_SIGNAL_REFERENCE,
+    BacktestResult,
+    run_all_timeframes,
+    run_backtest,
+)
 from .execution import ExecutionModel
 from .validation import ChronologicalSplit, ResearchMetrics, bootstrap_expectancy_ci, chronological_split, evaluate_trades
 
@@ -30,6 +35,7 @@ def run_research(
     bootstrap_iterations: int = 2000,
     bootstrap_confidence: float = 0.95,
     bootstrap_seed: int = 42,
+    entry_timing: str = ENTRY_TIMING_SIGNAL_REFERENCE,
 ) -> ResearchReport:
     """Run strategy, risk, optional execution costs, and validation together."""
     result = run_backtest(
@@ -40,6 +46,7 @@ def run_research(
         max_hold_bars=max_hold_bars,
         mtf_candles_by_timeframe=mtf_candles_by_timeframe,
         execution_model=execution_model,
+        entry_timing=entry_timing,
     )
     metrics = evaluate_trades(result.trades)
     split = chronological_split(result.trades, train_ratio, validation_ratio)
