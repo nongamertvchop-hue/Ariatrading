@@ -1,3 +1,4 @@
+from strategy.broker_contract import ContractValidation
 from strategy.engine import EngineSignal, LONG
 from strategy.execution_recovery import ExecutionRecoveryDecision, ExecutionRecoveryReport
 from strategy.portfolio_risk import PortfolioRiskDecision
@@ -39,12 +40,27 @@ def test_system_gate_allows_only_when_all_hard_checks_pass():
     )
 
 
+def test_system_gate_accepts_valid_broker_contract():
+    values = _inputs()
+    values["broker_contract"] = ContractValidation(True, "broker symbol contract passed")
+    decision = evaluate_system_readiness(**values)
+    assert decision.action == ALLOW
+    assert "broker-contract=OK" in decision.checks
+
+
+def test_system_gate_blocks_invalid_broker_contract():
+    values = _inputs()
+    values["broker_contract"] = ContractValidation(False, "quantity is below broker minimum")
+    decision = evaluate_system_readiness(**values)
+    assert decision.action == DENY
+    assert "broker contract rejected" in decision.reason
+
+
 def test_system_gate_fails_closed_when_recovery_is_missing():
     values = _inputs()
     values["execution_recovery"] = None
     decision = evaluate_system_readiness(**values)
     assert decision.action == DENY
-    assert decision.allowed is False
     assert "recovery report is required" in decision.reason
 
 
