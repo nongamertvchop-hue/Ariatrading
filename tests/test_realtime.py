@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from strategy.realtime import LiveBar, RealtimeMonitor
 
 
@@ -111,3 +113,35 @@ def test_live_monitor_rejects_invalid_timeframe_early():
         assert "unsupported timeframe" in str(exc)
     else:
         raise AssertionError("expected unsupported timeframe error")
+
+
+def test_live_monitor_rejects_feed_timestamp_misalignment():
+    bars = make_bars()
+    bars[-1] = LiveBar(
+        bars[-1].time + timedelta(seconds=30),
+        bars[-1].open,
+        bars[-1].high,
+        bars[-1].low,
+        bars[-1].close,
+    )
+    monitor = RealtimeMonitor(FakeFeed(bars), "EURUSD", "1m", lookback=20)
+    now = bars[-1].time + timedelta(seconds=30)
+
+    with pytest.raises(RuntimeError, match="feed integrity rejected"):
+        monitor.evaluate_once(now=now)
+
+
+def test_live_monitor_rejects_non_finite_feed_value():
+    bars = make_bars()
+    bars[-1] = LiveBar(
+        bars[-1].time,
+        float("nan"),
+        bars[-1].high,
+        bars[-1].low,
+        bars[-1].close,
+    )
+    monitor = RealtimeMonitor(FakeFeed(bars), "EURUSD", "1m", lookback=20)
+    now = bars[-1].time + timedelta(seconds=30)
+
+    with pytest.raises(RuntimeError, match="feed integrity rejected"):
+        monitor.evaluate_once(now=now)
