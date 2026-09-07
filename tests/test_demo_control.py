@@ -1,12 +1,10 @@
-from io import BytesIO
-from types import SimpleNamespace
+import json
 
 from live.demo_control import DemoControlClient
 
 
 class FakeResponse:
     def __init__(self, payload):
-        import json
         self._payload = json.dumps(payload).encode("utf-8")
 
     def read(self):
@@ -64,3 +62,17 @@ def test_control_client_fails_closed_on_bad_mode():
 
     client = DemoControlClient("https://example.test", "secret", opener=opener)
     assert client.is_enabled() is False
+
+
+def test_runtime_online_is_false_for_stale_heartbeat():
+    def opener(request, timeout):
+        return FakeResponse({
+            "enabled": True,
+            "mode": "DEMO_ONLY",
+            "runtimeHeartbeatAt": "2020-01-01T00:00:00Z",
+            "runtimeId": "runtime-1",
+        })
+
+    client = DemoControlClient("https://example.test", "secret", opener=opener)
+    state = client.get_state()
+    assert state.runtime_online is False
