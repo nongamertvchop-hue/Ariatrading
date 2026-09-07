@@ -1,10 +1,4 @@
-"""Paired statistical analysis for baseline vs filtered paper opportunities.
-
-This module is post-replay only. It pairs the two arms by the same
-symbol/timeframe/signal-candle timestamp, so filtering an opportunity cannot
-silently change the comparison population. No future candle is inspected here;
-only already-recorded paper outcomes are consumed.
-"""
+"""Paired statistical analysis for baseline vs filtered paper opportunities."""
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,7 +8,6 @@ from typing import Sequence
 
 from .paper_outcomes import LOSS, SKIPPED, UNRESOLVED, WIN, PaperSignalOutcome, label_paper_signals
 from .paper_session import PaperSessionResult
-
 
 DEFAULT_BOOTSTRAP_SAMPLES = 5000
 DEFAULT_MIN_PAIRS_FOR_CI = 20
@@ -61,10 +54,9 @@ def analyze_paired_paper_outcomes(
 ) -> PairedStatisticalAnalysis:
     """Compare two chronological paper replays on identical opportunities.
 
-    Directional signals are paired by ``(symbol, timeframe, signal_time)``.
-    SKIPPED means no realized trade and contributes zero R. UNRESOLVED pairs are
-    excluded from the statistical sample because their eventual outcome is not
-    known. The bootstrap is deterministic when ``random_seed`` is fixed.
+    Baseline directional opportunities define the paired population. The MTF
+    result at the same candle is paired with it; a filtered WAIT is SKIPPED and
+    contributes zero realized R. UNRESOLVED pairs are excluded from CI/mean.
     """
     if bootstrap_samples < 0:
         raise ValueError("bootstrap_samples must be >= 0")
@@ -75,48 +67,53 @@ def analyze_paired_paper_outcomes(
     mtf_outcomes = label_paper_signals(mtf_results)
     baseline_map = _outcome_map(baseline_outcomes)
     mtf_map = _outcome_map(mtf_outcomes)
-    shared_keys = sorted(set(baseline_map) | set(mtf_map))
+    mtf_results_map = _result_map(mtf_results)
+    keys = sorted(baseline_map)
 
-    if not shared_keys:
-        return PairedStatisticalAnalysis(
-            0, 0, len(baseline_outcomes), len(mtf_outcomes),
-            len(mtf_outcomes) - len(baseline_outcomes),
-            _closed_count(baseline_outcomes), _closed_count(mtf_outcomes),
-            _closed_count(mtf_outcomes) - _closed_count(baseline_outcomes),
-            _realized_r(baseline_outcomes), _realized_r(mtf_outcomes),
-            None, None, None, bootstrap_samples, random_seed, False,
-        )
+    if not keys:
+        return _empty(baseline_outcomes, mtf_outcomes, bootstrap_samples, random_seed)
 
-    if set(baseline_map) != set(mtf_map):
-        raise ValueError("baseline and MTF outcomes must cover the same directional opportunity keys")
+    pairs: list[PairedRDelta] = []
+    for key in keys:
+        result = mtf_results_map.get(key)
+        if result is None:
+            raise ValueError("MTF replay is missing a result for a baseline opportunity")
+        if result.signal_event.action in {"LONG", "SHORT"}:
+            mtf = mtf_map.get(key)
+            if mtf is None:
+                raise ValueError("MTF directional result has no matching outcome")
+        else:
+            mtf = _skipped_outcome(result, key, baseline_map[key].action)
+        pairs.append(_pair(key, baseline_map[key], mtf))
 
-    pairs = [_pair(key, baseline_map[key], mtf_map[key]) for key in shared_keys]
-    resolved = [pair for pair in pairs if pair.baseline_outcome != UNRESOLVED and pair.mtf_outcome != UNRESOLVED]
-    deltas = [pair.delta_r for pair in resolved]
+    resolved = [p for p in pairs if p.baseline_outcome != UNRESOLVED and p.mtf_outcome != UNRESOLVED]
+    deltas = [p.delta_r for p in resolved]
     ci_available = len(deltas) >= min_pairs_for_ci and bootstrap_samples > 0
     ci_low = ci_high = None
     if ci_available:
         ci_low, ci_high = _bootstrap_mean_ci(deltas, bootstrap_samples, random_seed)
 
+    baseline_r = _realized_r(baseline_outcomes)
+    mtf_r = _realized_r(mtf_outcomes)
+    baseline_closed = _closed_count(baseline_outcomes)
+    mtf_closed = _closed_count(mtf_outcomes)
     return PairedStatisticalAnalysis(
-        paired_count=len(pairs),
-        resolved_pair_count=len(resolved),
-        baseline_signal_count=len(baseline_outcomes),
-        mtf_signal_count=len(mtf_outcomes),
-        signal_count_delta=len(mtf_outcomes) - len(baseline_outcomes),
-        baseline_closed_count=_closed_count(baseline_outcomes),
-        mtf_closed_count=_closed_count(mtf_outcomes),
-        closed_count_delta=_closed_count(mtf_outcomes) - _closed_count(baseline_outcomes),
-        baseline_realized_r=_realized_r(baseline_outcomes),
-        mtf_realized_r=_realized_r(mtf_outcomes),
-        realized_r_delta=_realized_r(mtf_outcomes) - _realized_r(baseline_outcomes),
-        mean_r_delta=mean(deltas) if deltas else None,
-        bootstrap_ci_low=ci_low,
-        bootstrap_ci_high=ci_high,
-        bootstrap_samples=bootstrap_samples,
-        random_seed=random_seed,
-        ci_available=ci_available,
+        len(pairs), len(resolved), len(baseline_outcomes), len(mtf_outcomes),
+        len(mtf_outcomes) - len(baseline_outcomes), baseline_closed, mtf_closed,
+        mtf_closed - baseline_closed, baseline_r, mtf_r, mtf_r - baseline_r,
+        mean(deltas) if deltas else None, ci_low, ci_high, bootstrap_samples,
+        random_seed, ci_available,
     )
+
+
+def _result_map(results: Sequence[PaperSessionResult]) -> dict[tuple[str, str, datetime], PaperSessionResult]:
+    mapping: dict[tuple[str, str, datetime], PaperSessionResult] = {}
+    for result in results:
+        key = (result.evaluation.symbol, result.evaluation.timeframe, _utc(result.evaluation.bar_time))
+        if key in mapping:
+            raise ValueError("duplicate paper opportunity key")
+        mapping[key] = result
+    return mapping
 
 
 def _outcome_map(outcomes: Sequence[PaperSignalOutcome]) -> dict[tuple[str, str, datetime], PaperSignalOutcome]:
@@ -129,42 +126,36 @@ def _outcome_map(outcomes: Sequence[PaperSignalOutcome]) -> dict[tuple[str, str,
     return mapping
 
 
+def _skipped_outcome(result: PaperSessionResult, key: tuple[str, str, datetime], action: str) -> PaperSignalOutcome:
+    return PaperSignalOutcome(result.signal_event.event_id, key[0], key[1], key[2], action, SKIPPED)
+
+
 def _pair(key: tuple[str, str, datetime], baseline: PaperSignalOutcome, mtf: PaperSignalOutcome) -> PairedRDelta:
     if baseline.action != mtf.action:
         raise ValueError(f"paired opportunity direction mismatch at {key}")
-    return PairedRDelta(
-        key=key,
-        baseline_r=_outcome_r(baseline),
-        mtf_r=_outcome_r(mtf),
-        delta_r=_outcome_r(mtf) - _outcome_r(baseline),
-        baseline_outcome=baseline.outcome,
-        mtf_outcome=mtf.outcome,
-    )
+    baseline_r = _outcome_r(baseline)
+    mtf_r = _outcome_r(mtf)
+    return PairedRDelta(key, baseline_r, mtf_r, mtf_r - baseline_r, baseline.outcome, mtf.outcome)
 
 
 def _outcome_r(outcome: PaperSignalOutcome) -> float:
-    if outcome.outcome in {SKIPPED}:
+    if outcome.outcome in {SKIPPED, UNRESOLVED}:
         return 0.0
     if outcome.outcome in {WIN, LOSS}:
         if outcome.r_multiple is None:
             raise ValueError("closed paper outcome must contain r_multiple")
         return float(outcome.r_multiple)
-    if outcome.outcome == UNRESOLVED:
-        return 0.0
     raise ValueError(f"unsupported paper outcome: {outcome.outcome}")
 
 
 def _bootstrap_mean_ci(values: Sequence[float], samples: int, seed: int) -> tuple[float, float]:
     rng = Random(seed)
     n = len(values)
-    estimates = [mean(values[rng.randrange(n)] for _ in range(n)) for _ in range(samples)]
-    estimates.sort()
+    estimates = sorted(mean(values[rng.randrange(n)] for _ in range(n)) for _ in range(samples))
     return _percentile(estimates, 0.025), _percentile(estimates, 0.975)
 
 
 def _percentile(values: Sequence[float], fraction: float) -> float:
-    if not values:
-        raise ValueError("percentile requires at least one value")
     position = (len(values) - 1) * fraction
     lower = int(position)
     upper = min(lower + 1, len(values) - 1)
@@ -173,23 +164,23 @@ def _percentile(values: Sequence[float], fraction: float) -> float:
 
 
 def _closed_count(outcomes: Sequence[PaperSignalOutcome]) -> int:
-    return sum(outcome.outcome in {WIN, LOSS} for outcome in outcomes)
+    return sum(o.outcome in {WIN, LOSS} for o in outcomes)
 
 
 def _realized_r(outcomes: Sequence[PaperSignalOutcome]) -> float:
-    return sum(_outcome_r(outcome) for outcome in outcomes if outcome.outcome in {WIN, LOSS})
+    return sum(_outcome_r(o) for o in outcomes if o.outcome in {WIN, LOSS})
+
+
+def _empty(baseline, mtf, samples: int, seed: int) -> PairedStatisticalAnalysis:
+    br, mr = _realized_r(baseline), _realized_r(mtf)
+    bc, mc = _closed_count(baseline), _closed_count(mtf)
+    return PairedStatisticalAnalysis(0, 0, len(baseline), len(mtf), len(mtf) - len(baseline), bc, mc, mc - bc, br, mr, mr - br, None, None, None, samples, seed, False)
 
 
 def _utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("signal_time must be timezone-aware")
+        raise ValueError("timestamp must be timezone-aware")
     return value.astimezone(timezone.utc)
 
 
-__all__ = [
-    "DEFAULT_BOOTSTRAP_SAMPLES",
-    "DEFAULT_MIN_PAIRS_FOR_CI",
-    "PairedRDelta",
-    "PairedStatisticalAnalysis",
-    "analyze_paired_paper_outcomes",
-]
+__all__ = ["DEFAULT_BOOTSTRAP_SAMPLES", "DEFAULT_MIN_PAIRS_FOR_CI", "PairedRDelta", "PairedStatisticalAnalysis", "analyze_paired_paper_outcomes"]
