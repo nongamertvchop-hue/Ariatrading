@@ -30,6 +30,17 @@ def test_adaptive_distances_are_positive():
         assert adaptive_confirmation_buffer(data, timeframe) > 0
 
 
+def test_15m_zone_tolerance_remains_tighter_than_30m():
+    data = candles()
+    tolerance_15m = adaptive_zone_tolerance(data, "15m")
+    tolerance_30m = adaptive_zone_tolerance(data, "30m")
+
+    # 15m was deliberately calibrated tighter to avoid swallowing normal
+    # reaction candles into the zone. Keep this invariant explicit so a later
+    # timeframe refactor cannot silently widen it again.
+    assert tolerance_15m < tolerance_30m
+
+
 def test_unknown_timeframe_is_rejected():
     with pytest.raises(ValueError):
         get_timeframe_config("2m")
