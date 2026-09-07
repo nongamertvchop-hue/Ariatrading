@@ -16,7 +16,7 @@ from .market_structure import MarketStructure, analyze_market_structure
 from .mtf import MultiTimeframeContext
 from .scoring import SetupScore, score_setup
 from .sequence import evaluate_sequence
-from .timeframe import get_timeframe_config
+from .timeframe import adaptive_confirmation_buffer, get_timeframe_config
 
 LONG = "LONG"
 SHORT = "SHORT"
@@ -32,10 +32,30 @@ class EngineSignal:
     protection: str = "SAFE"
     breakout_state: str = "NO_BREAKOUT"
     entry_reference: float | None = None
+    stop_reference: float | None = None
     test_index: int | None = None
     confirmation_index: int | None = None
     structure_bias: str = "UNKNOWN"
     score: SetupScore | None = None
+
+
+def _protective_stop(
+    zone: PriceZone,
+    direction: str,
+    candles: list[dict],
+    timeframe: str,
+) -> float:
+    """Place the strategy's protective stop beyond the reaction zone.
+
+    The distance adapts to recent candle ranges, so the same price-action rule
+    can operate across 1m through 1D without introducing an indicator.
+    """
+    buffer = adaptive_confirmation_buffer(candles, timeframe)
+    if direction == LONG:
+        return zone.low - buffer
+    if direction == SHORT:
+        return zone.high + buffer
+    raise ValueError("direction must be LONG or SHORT")
 
 
 def _evaluate(
@@ -56,6 +76,7 @@ def _evaluate(
     )
     structure = analyze_market_structure(candles[:-1]) if len(candles) > 1 else analyze_market_structure([])
     setup_score = None
+    stop_reference = None
     if result.action == direction:
         setup_score = score_setup(
             direction=direction,
@@ -65,6 +86,7 @@ def _evaluate(
             confirmation_strength=20,
             mtf=mtf,
         )
+        stop_reference = _protective_stop(zone, direction, candles[:-1], timeframe)
 
     return EngineSignal(
         result.action,
@@ -74,6 +96,7 @@ def _evaluate(
         protection="SAFE" if result.action == direction else "BLOCKED" if result.state == "BROKEN" else "SAFE",
         breakout_state=result.breakout_state,
         entry_reference=result.entry_reference,
+        stop_reference=stop_reference,
         test_index=result.test_index,
         confirmation_index=result.confirmation_index,
         structure_bias=structure.bias,
