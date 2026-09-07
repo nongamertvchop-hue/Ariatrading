@@ -84,22 +84,20 @@ def evaluate_two_setups(
     ranked_supports = _rank_zones(supports, current_close)
     ranked_resistances = _rank_zones(resistances, current_close)
 
-    # A deterministic tie-break gives LONG precedence only when the two
-    # independently evaluated setups happen to confirm on the same candle.
-    candidates: list[tuple[int, EngineSignal]] = []
+    candidates: list[tuple[float, int, EngineSignal]] = []
     for zone in ranked_supports:
-        result = evaluate_long(candles, zone, timeframe)
+        result = evaluate_long(candles, zone, timeframe, max_test_age=max_test_age)
         if result.action == LONG:
-            candidates.append((_zone_distance(zone, current_close), result))
+            candidates.append((_zone_distance(zone, current_close), 0, result))
             break
     for zone in ranked_resistances:
-        result = evaluate_short(candles, zone, timeframe)
+        result = evaluate_short(candles, zone, timeframe, max_test_age=max_test_age)
         if result.action == SHORT:
-            candidates.append((_zone_distance(zone, current_close), result))
+            candidates.append((_zone_distance(zone, current_close), 1, result))
             break
 
     if candidates:
-        _, signal = min(candidates, key=lambda item: item[0])
+        _, _, signal = min(candidates, key=lambda item: (item[0], item[1]))
         return TwoSetupResult(signal, tuple(supports), tuple(resistances))
 
     return TwoSetupResult(
