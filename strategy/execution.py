@@ -37,6 +37,28 @@ def _round(value: float, digits: int | None) -> float:
     return round(value, digits) if digits is not None else value
 
 
+def entry_price(price: float, direction: str, model: ExecutionModel) -> float:
+    """Return the research fill price after spread and slippage."""
+    if direction == "LONG":
+        value = price + model.spread / 2 + model.slippage
+    elif direction == "SHORT":
+        value = price - model.spread / 2 - model.slippage
+    else:
+        raise ValueError("direction must be LONG or SHORT")
+    return _round(value, model.price_digits)
+
+
+def exit_price(price: float, direction: str, model: ExecutionModel) -> float:
+    """Return the research exit price after spread and slippage."""
+    if direction == "LONG":
+        value = price - model.spread / 2 - model.slippage
+    elif direction == "SHORT":
+        value = price + model.spread / 2 + model.slippage
+    else:
+        raise ValueError("direction must be LONG or SHORT")
+    return _round(value, model.price_digits)
+
+
 def _in_session(raw: dict, model: ExecutionModel) -> bool:
     if model.session_start is None:
         return True
@@ -73,12 +95,7 @@ def simulate_realistic_exit(
     if risk <= 0:
         raise ValueError("risk distance must be > 0")
 
-    effective_entry = (
-        plan.entry + model.spread / 2 + model.slippage
-        if plan.direction == "LONG"
-        else plan.entry - model.spread / 2 - model.slippage
-    )
-    effective_entry = _round(effective_entry, model.price_digits)
+    effective_entry = entry_price(plan.entry, plan.direction, model)
 
     for i, raw in enumerate(sample[model.latency_bars:], start=model.latency_bars + 1):
         if not _in_session(raw, model):
@@ -92,23 +109,23 @@ def simulate_realistic_exit(
             bid_high = _round(high - model.spread / 2 - model.slippage, model.price_digits)
             bid_low = _round(low - model.spread / 2 - model.slippage, model.price_digits)
             if bid_low <= plan.stop:
-                exit_price = _round(plan.stop, model.price_digits)
-                pnl = (exit_price - effective_entry) - model.commission
-                return TradeResult("LONG", effective_entry, plan.stop, plan.target, exit_price, LOSS, i, pnl / risk)
+                realized_exit = exit_price(plan.stop, plan.direction, model)
+                pnl = (realized_exit - effective_entry) - model.commission
+                return TradeResult("LONG", effective_entry, plan.stop, plan.target, realized_exit, LOSS, i, pnl / risk)
             if bid_high >= plan.target:
-                exit_price = _round(plan.target, model.price_digits)
-                pnl = (exit_price - effective_entry) - model.commission
-                return TradeResult("LONG", effective_entry, plan.stop, plan.target, exit_price, WIN, i, pnl / risk)
+                realized_exit = exit_price(plan.target, plan.direction, model)
+                pnl = (realized_exit - effective_entry) - model.commission
+                return TradeResult("LONG", effective_entry, plan.stop, plan.target, realized_exit, WIN, i, pnl / risk)
         else:
             ask_high = _round(high + model.spread / 2 + model.slippage, model.price_digits)
             ask_low = _round(low + model.spread / 2 + model.slippage, model.price_digits)
             if ask_high >= plan.stop:
-                exit_price = _round(plan.stop, model.price_digits)
-                pnl = (effective_entry - exit_price) - model.commission
-                return TradeResult("SHORT", effective_entry, plan.stop, plan.target, exit_price, LOSS, i, pnl / risk)
+                realized_exit = exit_price(plan.stop, plan.direction, model)
+                pnl = (effective_entry - realized_exit) - model.commission
+                return TradeResult("SHORT", effective_entry, plan.stop, plan.target, realized_exit, LOSS, i, pnl / risk)
             if ask_low <= plan.target:
-                exit_price = _round(plan.target, model.price_digits)
-                pnl = (effective_entry - exit_price) - model.commission
-                return TradeResult("SHORT", effective_entry, plan.stop, plan.target, exit_price, WIN, i, pnl / risk)
+                realized_exit = exit_price(plan.target, plan.direction, model)
+                pnl = (effective_entry - realized_exit) - model.commission
+                return TradeResult("SHORT", effective_entry, plan.stop, plan.target, realized_exit, WIN, i, pnl / risk)
 
     return TradeResult(plan.direction, effective_entry, plan.stop, plan.target, None, OPEN, len(sample), 0.0)
