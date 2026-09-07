@@ -66,9 +66,9 @@ def test_out_of_order_candles_are_rejected_by_feed_integrity():
     assert report.out_of_order_count == 1
 
 
-def test_temporary_missing_candle_is_not_silently_called_out_of_order():
+def test_temporary_missing_candle_is_detected_in_strict_feed_mode():
     broker = PaperBroker()
     distorted = broker.distort_candles(_bars(), ChaosScenario.TEMPORARY_MISSING_CANDLES)
-    report = validate_feed_batch(distorted, "1m")
-    assert report.ok
-    assert len(distorted) == 5
+    report = validate_feed_batch(distorted, "1m", require_contiguous=True)
+    assert not report.ok
+    assert report.missing_count == 1
