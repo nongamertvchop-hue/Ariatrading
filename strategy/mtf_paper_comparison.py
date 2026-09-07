@@ -13,7 +13,7 @@ from typing import Sequence
 from .mtf import build_timestamp_aligned_mtf_context
 from .paper_session import PaperSessionResult, PaperSessionRunner
 from .realtime import LiveBar, LiveEvaluation, RealtimeMonitor
-from .timeframe import get_timeframe_config
+from .timeframe import bar_duration, get_timeframe_config
 
 
 @dataclass(frozen=True)
@@ -72,7 +72,6 @@ def compare_mtf_paper_sessions(
         raise ValueError("candles_by_timeframe must contain the entry timeframe")
     entry_candles = list(candles_by_timeframe[entry_timeframe])
     if not entry_candles:
-        empty = PaperSessionRunner(_EmptyMonitor())
         return MtfPaperComparison(symbol, entry_timeframe, (), (), _metrics(()), _metrics(()))
     if lookback < 10:
         raise ValueError("lookback must be at least 10")
@@ -123,7 +122,8 @@ def _replay_arm(
         if len(window) < 5:
             continue
         feed.bars = [_to_live_bar(candle) for candle in window]
-        result = session.process_once()
+        now = window[-1]["time"] + bar_duration(timeframe) + timedelta(seconds=1)
+        result = session.process_once(now=now)
         if result is None:
             raise RuntimeError("paper comparison unexpectedly skipped a chronological candle")
         results.append(result)
@@ -166,7 +166,6 @@ class _MtfFilterMonitor:
 
     @staticmethod
     def _duration(timeframe: str) -> timedelta:
-        from .mtf import bar_duration
         return bar_duration(timeframe)
 
 
@@ -176,11 +175,6 @@ class _ReplayFeed:
 
     def closed_bars(self, symbol: str, timeframe: str, count: int) -> Sequence[LiveBar]:
         return self.bars[-count:]
-
-
-class _EmptyMonitor:
-    def evaluate_once(self, now=None):
-        raise RuntimeError("empty paper comparison has no monitor evaluations")
 
 
 def _to_live_bar(raw: dict) -> LiveBar:
