@@ -6,6 +6,13 @@ replay, realtime monitoring, paper simulation, journaling, walk-forward
 validation, and research metrics.
 """
 
+from .backtest import (
+    ENTRY_TIMING_NEXT_BAR_OPEN,
+    ENTRY_TIMING_SIGNAL_REFERENCE,
+    BacktestResult,
+    run_all_timeframes,
+    run_backtest,
+)
 from .engine import EngineSignal, LONG, SHORT, WAIT, evaluate_long, evaluate_short
 from .execution import ExecutionModel
 from .forecast import ForecastResult, HorizonForecast, ScenarioForecast, forecast
@@ -26,6 +33,8 @@ __all__ = [
     "MarketSnapshot", "ReplayPoint", "ReplayResult", "replay_forecasts",
     "DataQuality", "RealtimeGuard", "expected_closed_bar_open",
     "ALLOW", "SupervisorDecision", "supervise", "ResearchReport", "run_research",
+    "BacktestResult", "run_backtest", "run_all_timeframes",
+    "ENTRY_TIMING_SIGNAL_REFERENCE", "ENTRY_TIMING_NEXT_BAR_OPEN",
     "CLOSED", "OPEN", "PaperAccount", "PaperPosition", "PaperTradingEngine",
     "PaperSessionResult", "PaperSessionRunner",
     "WalkForwardFold", "WalkForwardResult", "walk_forward_backtest",
