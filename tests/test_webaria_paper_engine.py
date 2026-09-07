@@ -29,7 +29,9 @@ def test_webaria_paper_engine_loads_and_validates_core_risk_rules():
         const E = context.WebariaPaperEngine;
         if (!E) throw new Error('engine export missing');
         const stops = E.validateStops('LONG', 101, 99, 105);
-        if (stops.stop !== 99 || stops.target !== 105) throw new Error('stop validation failed');
+        if (stops.stop !== 99 || stops.target !== 105) throw new Error('LONG stop validation failed');
+        const shortStops = E.validateStops('SHORT', 101, 103, 99);
+        if (shortStops.stop !== 103 || shortStops.target !== 99) throw new Error('SHORT stop validation failed');
         const risk = E.positionSize(10000, 100, 99, 0.01, {{ quantityStep: 3 }});
         if (risk !== 99) throw new Error('quantity step must floor');
         const pnl = E.unrealizedPnl({{ side: 'SHORT', quantity: 10, entry: 100 }}, 98);
@@ -69,7 +71,7 @@ def test_webaria_paper_engine_blocks_wrong_side_stops():
         vm.runInContext(source, context);
         const E = context.WebariaPaperEngine;
         let blocked = false;
-        try {{ E.validateStops('SHORT', 100, 101, 95); }} catch (error) {{ blocked = /wrong side/.test(error.message); }}
+        try {{ E.validateStops('SHORT', 100, 99, 95); }} catch (error) {{ blocked = /wrong side/.test(error.message); }}
         if (!blocked) throw new Error('invalid SHORT stop was accepted');
         console.log('ok');
         """
