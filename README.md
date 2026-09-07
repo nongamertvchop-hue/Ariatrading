@@ -124,10 +124,23 @@ Higher-timeframe candles are eligible only when their full candle interval has c
 
 The comparison reports signal count, opened/closed trades, WIN/LOSS, unresolved/skipped signals, realized R, win rate, mean/median R and signal-to-trade conversion. These are descriptive evidence, not proof that MTF will improve future performance.
 
+## Signal-quality diagnostics
+
+`strategy.signal_quality.build_signal_quality_report()` is another post-replay research layer. It groups the same recorded directional signals by:
+
+- **timeframe**
+- **market regime** from the decision-time candle prefix
+- **breakout state** such as `NO_BREAKOUT` or `FAKE_BREAKOUT`
+- **setup-score bucket** using the existing 0-100 heuristic score
+
+For each group it reports signal count, opened/closed trades, WIN/LOSS, skipped/unresolved signals, win rate, mean R and realized R. The score is treated only as a ranking/diagnostic value, never as a probability of winning.
+
+The regime classifier is explicitly prefix-based: changing candles after the signal bar must not change the regime assigned to that signal. Missing outcomes or decision candles cause the report to fail closed rather than silently biasing the sample.
+
 ## Safety rules
 
 - Closed-candle decisions only.
-- A signal from bar N can only fill on a later bar, never on bar N itself.
+- A signal from bar N can only fill on a later bar, never on the candle that generated the signal.
 - Duplicate or old candles are ignored before mutating paper state.
 - Unexpected runtime errors fail closed by default.
 - Checkpoint persistence errors are not swallowed.
