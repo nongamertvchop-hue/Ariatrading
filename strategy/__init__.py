@@ -30,6 +30,14 @@ from .paper import CLOSED, OPEN, PaperAccount, PaperPosition, PaperTradingEngine
 from .paper_session import PaperSessionResult, PaperSessionRunner
 from .pipeline import ResearchReport, run_research
 from .portfolio_risk import ALLOW as PORTFOLIO_ALLOW, HALT, PortfolioRiskController, PortfolioRiskDecision, PortfolioRiskLimits, PortfolioRiskState
+from .position_reconciliation import (
+    FLAT,
+    LocalPositionState,
+    PositionSnapshot,
+    ReconciliationDecision,
+    new_entry_allowed,
+    reconcile_position,
+)
 from .realtime_guard import DataQuality, RealtimeGuard, expected_closed_bar_open
 from .realtime_replay import RealtimeReplayResult, replay_realtime_monitor
 from .realtime_supervisor import ALLOW, SupervisorDecision, supervise
@@ -58,6 +66,8 @@ __all__ = [
     "RiskLimits", "RiskDecision", "position_size", "evaluate_risk",
     "PortfolioRiskLimits", "PortfolioRiskState", "PortfolioRiskDecision",
     "PortfolioRiskController", "PORTFOLIO_ALLOW", "HALT",
+    "PositionSnapshot", "LocalPositionState", "ReconciliationDecision",
+    "reconcile_position", "new_entry_allowed", "FLAT",
     "TradeGuardDecision", "evaluate_trade_guard",
     "ExecutionModel", "entry_price", "exit_price",
     "ExperimentRecord", "build_experiment_record",
