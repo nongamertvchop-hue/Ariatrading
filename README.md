@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.13.2**
+**Current version: 0.13.3**
 
 ## Core idea
 
@@ -34,8 +34,8 @@ The project is layered so every stage can be used together without duplicating s
 14. **Deep-learning challengers** — optional causal LSTM and Transformer sequence models that score existing signals but cannot create direction.
 15. **Deep-learning walk-forward** — fold-by-fold expanding OOS evaluation for both LSTM and Transformer using the same signal/label chronology as classical ML.
 16. **ML evidence gate** — explicit readiness policy that can require regime, stability, robustness, behavior, drift, and both deep-learning challengers.
-17. **Research provenance** — deterministic dataset, feature-order, model-config, and code-version fingerprints for reproducible ML/DL experiments.
-18. **Realtime data integrity** — strict timestamped OHLC validation for duplicates, ordering, timeframe alignment, timezone normalization, and malformed values.
+17. **Research provenance** — deterministic dataset, feature-order, model-config, and code-version fingerprints for reproducible ML/DL experiments, with atomic persistence.
+18. **Realtime data integrity** — strict timestamped OHLC validation for duplicates, ordering, timeframe alignment, timezone normalization, and malformed values at the realtime boundary.
 19. **Realtime data** — closed-candle monitoring with duplicate suppression and nearest-zone selection.
 20. **Realtime replay** — historical harness that feeds the same realtime monitor path deterministically, without creating a second strategy.
 21. **Paper session** — next-bar paper entry, lifecycle management, and append-only event journaling.
@@ -75,13 +75,13 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/ml_evidence_gate.py` — explicit ML evidence completeness/readiness policy.
 - `strategy/ml_model_comparison.py` — fixed-window HGB/LSTM/Transformer challenger comparison without automatic model selection.
 - `strategy/deep_learning.py` — optional PyTorch LSTM and Transformer sequence challengers.
-- `strategy/deep_learning_walk_forward.py` — fold-by-fold chronological LSTM/Transformer research.
-- `strategy/research_provenance.py` — deterministic provenance fingerprints and strict comparability checks for ML/DL artifacts.
+- `strategy/deep_learning_walk_forward.py` — fold-by-fold chronological LSTM/Transformer research with optional provenance persistence.
+- `strategy/research_provenance.py` — deterministic provenance fingerprints, comparability checks, and atomic persistence.
 - `strategy/research_validation.py` — aggregated, fingerprinted research evidence.
 - `strategy/research_audit.py` — temporal and evidence consistency checks.
 - `strategy/research_gate.py` — baseline research evidence completeness gate.
 - `strategy/feed_integrity.py` — strict timestamped OHLC feed validation.
-- `strategy/realtime.py` — closed-candle realtime monitor.
+- `strategy/realtime.py` — closed-candle realtime monitor with feed-integrity gating.
 - `strategy/realtime_replay.py` — deterministic historical replay of the realtime monitor.
 - `strategy/paper.py` — deterministic single-position paper simulator.
 - `strategy/paper_session.py` — realtime-to-paper orchestration with next-bar entry and idempotency.
@@ -91,8 +91,8 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/execution_audit.py` — append-only hash-chain execution audit journal.
 - `strategy/execution_recovery.py` — fail-closed post-restart execution consistency gate.
 - `strategy/paper_execution_e2e.py` — end-to-end paper submission/recovery coordinator.
-- `strategy/broker_contract.py` — symbol/price/volume contract validation.
 - `strategy/system_gate.py` — final fail-closed pre-execution readiness contract.
+- `strategy/broker_contract.py` — normalized broker-symbol contract checks.
 - `adapters/mt5_feed.py` — read-only MT5 market-data adapter.
 - `adapters/paper_broker.py` — broker-like paper/demo simulator for deterministic execution tests.
 
@@ -124,9 +124,8 @@ LONG / SHORT / WAIT
         |                         +---- Classical ML meta-filter
         |                         +---- Drift / behavior / stability / health
         |                         +---- LSTM / Transformer challengers
-        |                         +---- DL walk-forward folds
+        |                         +---- DL walk-forward folds + provenance
         |                         +---- ML Evidence Gate
-        |                         +---- Research Provenance
         |
         +---- Realtime path -> Supervisor -> System Gate -> Paper Session
                                   |
@@ -138,13 +137,7 @@ System Gate -> Broker Contract -> Order State -> Persistence -> Audit
                                       v
                                Paper Broker Simulator
                                       |
-                         +------------+-------------+
-                         |                          |
-                   idempotency              fill/reject/timeout
-                         |                          |
-                         +------------+-------------+
-                                      v
-                         Position Reconciliation
+                             Position Reconciliation
                                       |
                                       v
                               Recovery verification
@@ -157,3 +150,31 @@ The realtime path uses the same strategy engine rather than a separate live stra
 `MT5 terminal -> MT5BarFeed -> feed integrity -> RealtimeMonitor -> engine -> LONG/SHORT/WAIT -> Supervisor -> SystemGate -> PaperSessionRunner`
 
 The MT5 adapter remains read-only. There is no live order-sending implementation in this repository.
+
+## Validation principles
+
+Research is descriptive evidence, not a profitability guarantee. Features at a decision index use only information available at or before that index. Future candles are used for labels only. Training boundaries, normalization, model challengers and final OOS evaluation remain chronologically separated. Any ambiguous execution or corrupted recovery state fails closed rather than being retried blindly.
+
+## Testing
+
+The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk and quantity constraints, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML model health, ML evidence readiness, fixed-window ML challenger comparison, deep-learning sequence causality, deep-learning walk-forward contracts and provenance persistence, realtime state handling, feed-integrity boundary behavior, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, paper-broker failure semantics, paper-position reconciliation semantics, order persistence/recovery, execution audit integrity, broker contract validation, and the integrated research facade/system gate.
+
+The deep-learning implementation is optional in the default CI path because PyTorch is a large dependency. `requirements-ml.txt` provides the explicit ML environment for LSTM/Transformer experiments.
+
+## Version / continuation protocol
+
+Current version: **0.13.3**.
+
+At the start of a new chat:
+
+1. Read `VERSION.md` and this README.
+2. Inspect latest Git history and GitHub Actions status.
+3. Identify the current milestone and unfinished work.
+4. Inspect newly added files before making changes.
+5. Continue existing modules instead of recreating them.
+6. Any behavior change gets a test or an explicit reason why a test is impractical.
+7. Update the version only when the change matches semantic-versioning rules.
+
+## Important
+
+This repository is for programming practice and historical/realtime market-data research. It does not establish that a strategy is profitable. It is intentionally read-only with respect to MT5 trading actions. Any future execution architecture must remain isolated from the research engine and should only be considered after robust out-of-sample validation.
