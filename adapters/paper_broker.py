@@ -16,10 +16,8 @@ from enum import Enum
 from math import isfinite
 from typing import Iterable
 
-
 LONG = "LONG"
 SHORT = "SHORT"
-
 FILLED = "FILLED"
 PARTIALLY_FILLED = "PARTIALLY_FILLED"
 REJECTED = "REJECTED"
@@ -86,6 +84,7 @@ class PaperBrokerSimulator:
         self._fill_price_offset = fill_price_offset
         self._reject_next = bool(reject_next)
         self._reject_remaining = 0
+        self._scenario_rejections_remaining: dict[str, int] = {}
         self._timeout_after_accept_next = bool(timeout_after_accept_next)
         self._volume_noise = 0.0
         self._connected = True
@@ -106,7 +105,7 @@ class PaperBrokerSimulator:
         self._reject_next = True
 
     def configure_rejections(self, count: int = 3) -> None:
-        """Reject the next ``count`` distinct submissions for a client order."""
+        """Reject the next ``count`` distinct submissions globally."""
         if count < 1:
             raise ValueError("count must be >= 1")
         self._reject_remaining = count
@@ -128,9 +127,9 @@ class PaperBrokerSimulator:
     ) -> PaperOrderSnapshot:
         """Submit one request with deterministic broker-like semantics.
 
-        ``REJECT_THREE_TIMES`` models repeated broker rejection without ever
-        fabricating a successful fill. The caller decides whether and when to
-        retry; the simulator itself does not implement a retry loop.
+        ``REJECT_THREE_TIMES`` rejects exactly three submissions for the same
+        client order and then permits the fourth. The caller decides whether
+        and when to retry; the simulator itself does not implement a retry loop.
 
         A timeout-after-accept records the order as FILLED and then raises
         ``TimeoutError`` so recovery must reconcile before any retry.
@@ -145,14 +144,17 @@ class PaperBrokerSimulator:
 
         reject = self._reject_next
         if scenario is ChaosScenario.REJECT_THREE_TIMES:
-            if self._reject_remaining == 0:
-                self._reject_remaining = 3
+            remaining = self._scenario_rejections_remaining.setdefault(request.client_order_id, 3)
+            reject = remaining > 0
+            if reject:
+                self._scenario_rejections_remaining[request.client_order_id] = remaining - 1
+
+        if self._reject_remaining > 0:
             reject = True
+            self._reject_remaining -= 1
 
         if reject:
             self._reject_next = False
-            if self._reject_remaining > 0:
-                self._reject_remaining -= 1
             rejected = PaperOrderSnapshot(
                 client_order_id=request.client_order_id,
                 symbol=request.symbol,
@@ -163,8 +165,6 @@ class PaperBrokerSimulator:
                 status=REJECTED,
                 updated_at=request.submitted_at,
             )
-            # A rejection is intentionally not terminal simulator state: a
-            # new client request with a new id may still be tested independently.
             return rejected
 
         filled_quantity = request.quantity * self._fill_fraction
