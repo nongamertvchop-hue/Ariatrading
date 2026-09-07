@@ -53,6 +53,12 @@ def confirmed_swing_highs(candles: list[dict], strength: int = 2) -> list[tuple[
 
 
 def _cluster(prices: list[float], tolerance: float) -> list[list[float]]:
+    """Cluster nearby prices without allowing a chain to grow indefinitely.
+
+    A cluster is anchored to its first (lowest) price. This prevents
+    transitive clustering such as A≈B and B≈C from turning widely separated
+    A and C reactions into one oversized support/resistance zone.
+    """
     if tolerance <= 0:
         raise ValueError("tolerance must be > 0")
     clusters: list[list[float]] = []
@@ -60,8 +66,8 @@ def _cluster(prices: list[float], tolerance: float) -> list[list[float]]:
         if not clusters:
             clusters.append([price])
             continue
-        center = sum(clusters[-1]) / len(clusters[-1])
-        if abs(price - center) <= tolerance:
+        anchor = clusters[-1][0]
+        if price - anchor <= tolerance:
             clusters[-1].append(price)
         else:
             clusters.append([price])
