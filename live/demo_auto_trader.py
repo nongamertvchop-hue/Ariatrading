@@ -29,6 +29,7 @@ class _Monitor(Protocol):
 
 RiskPlanResolver = Callable[[LiveEvaluation, float], tuple[float, float]]
 GateResolver = Callable[[LiveEvaluation], SystemGateDecision]
+ExecutionEnabled = Callable[[], bool]
 
 
 @dataclass(frozen=True)
@@ -50,12 +51,22 @@ class DemoAutoTrader:
         *,
         gate_resolver: GateResolver,
         risk_plan_resolver: RiskPlanResolver,
+        execution_enabled: ExecutionEnabled | None = None,
     ) -> None:
         self.monitor = monitor
         self.executor = executor
         self.gate_resolver = gate_resolver
         self.risk_plan_resolver = risk_plan_resolver
+        self.execution_enabled = execution_enabled
         self._last_signal_event: tuple[str, str, datetime] | None = None
+
+    def _control_allows_execution(self) -> bool:
+        if self.execution_enabled is None:
+            return True
+        try:
+            return bool(self.execution_enabled())
+        except Exception:
+            return False
 
     def process_once(self, now: datetime | None = None) -> DemoAutoTradeResult | None:
         """Evaluate one newly closed bar and optionally submit one demo order."""
@@ -100,6 +111,15 @@ class DemoAutoTrader:
                 reason="approved signal is missing a protective stop plan",
             )
 
+        if not self._control_allows_execution():
+            return DemoAutoTradeResult(
+                evaluation=evaluation,
+                gate=None,
+                order=None,
+                action="SKIP",
+                reason="demo auto trading is OFF or control plane is unavailable",
+            )
+
         gate = self.gate_resolver(evaluation)
         if not gate.allowed:
             return DemoAutoTradeResult(
@@ -136,6 +156,16 @@ class DemoAutoTrader:
         entry_price = float(tick.ask if signal.action == LONG else tick.bid)
         stop_loss, take_profit = self.risk_plan_resolver(evaluation, entry_price)
 
+        # Re-read the control plane immediately before the irreversible broker call.
+        if not self._control_allows_execution():
+            return DemoAutoTradeResult(
+                evaluation=evaluation,
+                gate=gate,
+                order=None,
+                action="SKIP",
+                reason="demo auto trading was switched OFF before execution",
+            )
+
         client_order_id = self._client_order_id(evaluation)
         order = self.executor.open_market(
             client_order_id=client_order_id,
@@ -160,4 +190,4 @@ class DemoAutoTrader:
         return f"ARIA-{evaluation.symbol}-{evaluation.timeframe}-{timestamp}-{action}"
 
 
-__all__ = ["DemoAutoTradeResult", "DemoAutoTrader", "GateResolver", "RiskPlanResolver"]
+__all__ = ["DemoAutoTradeResult", "DemoAutoTrader", "ExecutionEnabled", "GateResolver", "RiskPlanResolver"]
