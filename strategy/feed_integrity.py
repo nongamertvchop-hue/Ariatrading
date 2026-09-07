@@ -5,9 +5,9 @@ cannot be interpreted safely: malformed OHLC geometry, mixed timestamp
 normalization, duplicate/out-of-order bars, and timestamps that are not aligned
 to the configured timeframe grid.
 
-It intentionally does not require every expected bar to exist because FX feeds
-can legitimately have session/weekend gaps. Missing-bar policy belongs to the
-feed/session adapter, not the price-action strategy.
+Missing-bar detection is opt-in because FX feeds can legitimately have
+session/weekend gaps. Callers that require a contiguous research/live stream
+can enable ``require_contiguous`` at the feed boundary.
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ class FeedIntegrityReport:
     duplicate_count: int = 0
     out_of_order_count: int = 0
     misaligned_count: int = 0
+    missing_count: int = 0
 
 
 def validate_feed_batch(
@@ -45,6 +46,7 @@ def validate_feed_batch(
     timeframe: str,
     *,
     require_utc: bool = True,
+    require_contiguous: bool = False,
 ) -> FeedIntegrityReport:
     """Validate a timestamped OHLC batch without making trading decisions."""
     get_timeframe_config(timeframe)
@@ -58,6 +60,7 @@ def validate_feed_batch(
     duplicate_count = 0
     out_of_order_count = 0
     misaligned_count = 0
+    missing_count = 0
     previous_time: datetime | None = None
 
     for bar in bars:
@@ -76,18 +79,23 @@ def validate_feed_batch(
         if epoch_seconds % duration_seconds != 0:
             misaligned_count += 1
         if previous_time is not None:
-            if normalized == previous_time:
+            delta = int((normalized - previous_time).total_seconds())
+            if delta == 0:
                 duplicate_count += 1
-            elif normalized < previous_time:
+            elif delta < 0:
                 out_of_order_count += 1
+            elif require_contiguous and delta != duration_seconds:
+                missing_count += max(0, delta // duration_seconds - 1)
         previous_time = normalized
 
     if duplicate_count:
-        return FeedIntegrityReport(False, "duplicate bar timestamps", len(bars), duplicate_count, out_of_order_count, misaligned_count)
+        return FeedIntegrityReport(False, "duplicate bar timestamps", len(bars), duplicate_count, out_of_order_count, misaligned_count, missing_count)
     if out_of_order_count:
-        return FeedIntegrityReport(False, "bars must be strictly chronological", len(bars), duplicate_count, out_of_order_count, misaligned_count)
+        return FeedIntegrityReport(False, "bars must be strictly chronological", len(bars), duplicate_count, out_of_order_count, misaligned_count, missing_count)
     if misaligned_count:
-        return FeedIntegrityReport(False, "bar timestamp is not aligned to timeframe grid", len(bars), duplicate_count, out_of_order_count, misaligned_count)
+        return FeedIntegrityReport(False, "bar timestamp is not aligned to timeframe grid", len(bars), duplicate_count, out_of_order_count, misaligned_count, missing_count)
+    if missing_count:
+        return FeedIntegrityReport(False, "missing candle interval detected", len(bars), duplicate_count, out_of_order_count, misaligned_count, missing_count)
 
     return FeedIntegrityReport(True, "feed integrity passed", len(bars))
 
