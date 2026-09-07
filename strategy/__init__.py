@@ -5,8 +5,8 @@ interfaces across strategy, forecast, backtest, execution-cost simulation,
 replay, realtime monitoring, paper simulation, journaling, walk-forward
 validation, robustness analysis, reproducible research control, ML
 meta-filter research, experiment registry, regime diagnostics, ML feature
-drift diagnostics, ML OOS behavior diagnostics, deep-learning challenger
-models, aggregated research evidence, research-gate completeness checks, and
+drift diagnostics, ML OOS behavior diagnostics, ML model health diagnostics,
+deep-learning challenger models, aggregated research evidence, research-gate completeness checks, and
 audit diagnostics.
 """
 
@@ -26,6 +26,7 @@ from .ml_evaluation import MLComparison, compare_ml_results
 from .ml_evidence_gate import MLEvidenceDecision, MLEvidencePolicy, evaluate_ml_evidence_gate
 from .ml_features import FEATURE_NAMES, MLSample, build_signal_sample, extract_signal_features
 from .ml_meta import MLResearchMetrics, MetaFilterModel, MetaFilterResult, chronological_train_test
+from .ml_model_health import CalibrationBin, MLModelHealth, MLModelHealthReport, analyze_model_health
 from .ml_stability import FeatureImportance, MLStabilityReport, permutation_feature_importance
 from .ml_walk_forward import MLWalkForwardFold, MLWalkForwardResult, ml_walk_forward_backtest
 from .order_persistence import OrderPersistenceError, load_order_state, save_order_state
@@ -79,5 +80,6 @@ __all__ = [
     "REGIMES", "RegimeStats", "classify_regime", "stratify_samples", "FeatureDrift", "MLDriftReport", "analyze_feature_drift",
     "MLBehaviorFold", "MLBehaviorReport", "analyze_ml_behavior",
     "MLEvidencePolicy", "MLEvidenceDecision", "evaluate_ml_evidence_gate",
+    "CalibrationBin", "MLModelHealth", "MLModelHealthReport", "analyze_model_health",
     "ModelType", "DeepLearningMetrics", "build_causal_sequences", "train_deep_sequence_model",
 ]
