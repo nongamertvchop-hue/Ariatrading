@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from math import isfinite
 
 from .engine import EngineSignal, LONG, SHORT, WAIT
-from .execution import ExecutionModel, entry_price, exit_price
+from .execution import ExecutionModel, entry_price as apply_entry_price, exit_price
 from .risk import LOSS, OPEN, WIN, RiskPlan, build_risk_plan
 
 
@@ -136,7 +136,7 @@ class PaperTradingEngine:
         if self._position is not None:
             return None
 
-        effective_entry = entry_price_fn(entry_price, signal.action, self._execution_model)
+        effective_entry = apply_entry_price(entry_price, signal.action, self._execution_model)
         plan: RiskPlan = build_risk_plan(
             signal.action,
             effective_entry,
