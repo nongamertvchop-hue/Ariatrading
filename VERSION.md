@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.17.0**
+Current version: **0.18.0**
 
 ## Versioning rule
 
@@ -15,7 +15,7 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.17.0
+## Current milestone — 0.18.0
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
@@ -44,13 +44,18 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - Historical paper replay has dedicated deterministic, no-lookahead, entry-boundary, and input-contract tests.
 - `strategy/paper_outcomes.py` labels historical directional paper signals only from later lifecycle events, separating WIN/LOSS, SKIPPED, and UNRESOLVED without changing the original signal.
 - Outcome labeling has dedicated tests for future-close labeling, final-candle unresolved state, and skipped signals.
+- `strategy/mtf_paper_comparison.py` runs baseline and MTF-filtered paper sessions on the same chronological entry-timeframe window and the same paper execution lifecycle.
+- MTF filtering uses only higher-timeframe candles whose full intervals closed by the entry candle close, preventing future higher-timeframe information from entering the decision.
+- Comparison metrics include directional signals, opened/closed trades, WIN/LOSS counts, unresolved/skipped signals, realized R, win rate, mean/median R, and signal-to-trade conversion.
+- MTF comparison has dedicated tests for conflict blocking, supportive alignment preservation, no-new-setup behavior, timestamp alignment, and closed-trade metrics.
 
 ## Next milestones
 
-### 0.17.x — paper validation evidence
-- Compare MTF filtered vs unfiltered paper signals on identical chronological windows.
+### 0.18.x — evidence hardening
 - Add signal-quality reports by timeframe, regime, breakout state, and setup score bucket.
+- Add paired statistical analysis for MTF filtering, including confidence intervals only after sufficient sample sizes.
 - Continue auditing execution-friction sensitivity and realtime/replay parity.
+- Add stronger checkpoint lifecycle invariants, including account win/loss consistency and trade-id monotonicity.
 - Add a broker-neutral execution interface and a separate MT5 demo adapter only after the paper/runtime contracts remain green.
 
 ### 1.0.0 — Only after validation
