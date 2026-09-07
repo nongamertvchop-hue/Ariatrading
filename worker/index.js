@@ -311,7 +311,7 @@ async function handleLivePrice(request, env) {
   if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
   const url = new URL(request.url);
   const symbol = (url.searchParams.get("symbol") || "EUR/USD").trim().toUpperCase();
-  if (!/^[A-Z]{3}\/\[A-Z]{3}$/.test(symbol)) throw new BadRequest("symbol must look like EUR/USD");
+  if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)) throw new BadRequest("symbol must look like EUR/USD");
   if (!env.TWELVE_DATA_API_KEY) return json({ error: "server_not_configured", message: "TWELVE_DATA_API_KEY secret is not configured" }, 503);
   const price = await fetchLivePrice(symbol, env.TWELVE_DATA_API_KEY);
   return json({ symbol, price, generated_at: new Date().toISOString(), execution: "NONE" });
