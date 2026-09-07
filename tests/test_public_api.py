@@ -34,3 +34,11 @@ def test_public_api_exports_ml_evidence_and_deep_learning():
     assert strategy.ModelType
     assert strategy.build_causal_sequences
     assert strategy.train_deep_sequence_model
+
+
+def test_public_api_exports_system_readiness_and_dl_walk_forward():
+    assert strategy.SystemGateDecision
+    assert strategy.evaluate_system_readiness
+    assert strategy.DeepLearningWalkForwardFold
+    assert strategy.DeepLearningWalkForwardResult
+    assert strategy.deep_learning_walk_forward_backtest
