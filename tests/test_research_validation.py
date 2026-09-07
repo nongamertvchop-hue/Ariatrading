@@ -5,10 +5,11 @@ import pytest
 from strategy.ml_stability import FeatureImportance, MLStabilityReport
 from strategy.research_validation import build_validation_evidence
 from strategy.regime import RegimeStats
+from strategy.validation import ResearchMetrics
 
 
 def _metrics():
-    return SimpleNamespace(
+    return ResearchMetrics(
         trade_count=2,
         closed_trades=2,
         wins=1,
