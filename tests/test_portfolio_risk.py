@@ -14,6 +14,29 @@ def test_daily_loss_latches_halt():
     assert not decision.allowed
 
 
+def test_realized_loss_is_effective_before_next_equity_snapshot():
+    controller = PortfolioRiskController(
+        10_000,
+        PortfolioRiskLimits(max_daily_loss_fraction=0.03),
+    )
+    controller.record_closed_trade(-300)
+    decision = controller.evaluate()
+    assert decision.action == HALT
+    assert not decision.allowed
+    assert decision.daily_loss_fraction == pytest.approx(0.03)
+
+
+def test_realized_and_equity_loss_are_not_double_counted():
+    controller = PortfolioRiskController(
+        10_000,
+        PortfolioRiskLimits(max_daily_loss_fraction=0.05),
+    )
+    controller.record_closed_trade(-200)
+    controller.update_equity(9_850)
+    assert controller.state.daily_realized_loss == pytest.approx(200)
+    assert controller.evaluate().daily_loss_fraction == pytest.approx(0.02)
+
+
 def test_drawdown_uses_peak_equity():
     controller = PortfolioRiskController(
         10_000,
