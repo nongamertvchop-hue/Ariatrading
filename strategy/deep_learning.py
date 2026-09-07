@@ -13,7 +13,7 @@ suite remain lightweight. Install ``requirements-ml.txt`` to use this module.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import isfinite
+from math import isfinite, log
 from typing import Literal
 
 from .ml_features import MLSample
@@ -35,15 +35,7 @@ class DeepLearningMetrics:
 
     @property
     def valid(self) -> bool:
-        return all(
-            isfinite(float(value))
-            for value in (
-                self.accuracy,
-                self.positive_precision,
-                self.positive_recall,
-                self.final_train_loss,
-            )
-        )
+        return all(isfinite(float(value)) for value in (self.accuracy, self.positive_precision, self.positive_recall, self.final_train_loss))
 
 
 def _torch():
@@ -51,9 +43,7 @@ def _torch():
         import torch
         from torch import nn
     except ImportError as exc:
-        raise RuntimeError(
-            "PyTorch is required for LSTM/Transformer research; install requirements-ml.txt"
-        ) from exc
+        raise RuntimeError("PyTorch is required for LSTM/Transformer research; install requirements-ml.txt") from exc
     return torch, nn
 
 
@@ -129,13 +119,8 @@ def _make_model(model_type: ModelType, feature_count: int, sequence_length: int,
         class LSTMClassifier(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.encoder = nn.LSTM(
-                    input_size=feature_count,
-                    hidden_size=hidden_size,
-                    num_layers=layers,
-                    batch_first=True,
-                    dropout=0.0 if layers == 1 else 0.1,
-                )
+                self.encoder = nn.LSTM(input_size=feature_count, hidden_size=hidden_size, num_layers=layers,
+                                       batch_first=True, dropout=0.0 if layers == 1 else 0.1)
                 self.head = nn.Linear(hidden_size, 1)
 
             def forward(self, x):
@@ -152,7 +137,7 @@ def _make_model(model_type: ModelType, feature_count: int, sequence_length: int,
             def __init__(self):
                 super().__init__()
                 position = torch.arange(sequence_length, dtype=torch.float32).unsqueeze(1)
-                div = torch.exp(torch.arange(0, hidden_size, 2, dtype=torch.float32) * (-__import__("math").log(10000.0) / hidden_size))
+                div = torch.exp(torch.arange(0, hidden_size, 2, dtype=torch.float32) * (-log(10000.0) / hidden_size))
                 encoding = torch.zeros(sequence_length, hidden_size)
                 encoding[:, 0::2] = torch.sin(position * div)
                 encoding[:, 1::2] = torch.cos(position * div)
@@ -166,20 +151,14 @@ def _make_model(model_type: ModelType, feature_count: int, sequence_length: int,
                 super().__init__()
                 self.input_projection = nn.Linear(feature_count, hidden_size)
                 self.position = PositionalEncoding()
-                layer = nn.TransformerEncoderLayer(
-                    d_model=hidden_size,
-                    nhead=heads,
-                    dim_feedforward=hidden_size * 4,
-                    dropout=0.1,
-                    batch_first=True,
-                    activation="gelu",
-                )
+                layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=heads,
+                                                   dim_feedforward=hidden_size * 4, dropout=0.1,
+                                                   batch_first=True, activation="gelu")
                 self.encoder = nn.TransformerEncoder(layer, num_layers=layers)
                 self.head = nn.Linear(hidden_size, 1)
 
             def forward(self, x):
-                encoded = self.position(self.input_projection(x))
-                encoded = self.encoder(encoded)
+                encoded = self.encoder(self.position(self.input_projection(x)))
                 return self.head(encoded[:, -1, :]).squeeze(-1)
 
         return TransformerClassifier()
@@ -224,9 +203,7 @@ def train_deep_sequence_model(
     if not train_sequences:
         raise ValueError("not enough training samples for sequence_length")
 
-    test_sequences, test_labels = build_causal_sequences(
-        train[-(sequence_length - 1):], test, sequence_length=sequence_length
-    )
+    test_sequences, test_labels = build_causal_sequences(train[-(sequence_length - 1):], test, sequence_length=sequence_length)
     if not test_sequences:
         raise ValueError("not enough test samples for sequence_length")
 
@@ -267,11 +244,8 @@ def train_deep_sequence_model(
     predicted_positive = int((predictions == 1).sum().item())
     actual_positive = int((labels_int == 1).sum().item())
     metrics = DeepLearningMetrics(
-        model_type=model_type,
-        train_samples=len(train_sequences),
-        test_samples=len(test_sequences),
-        sequence_length=sequence_length,
-        feature_count=len(train[0].features),
+        model_type=model_type, train_samples=len(train_sequences), test_samples=len(test_sequences),
+        sequence_length=sequence_length, feature_count=len(train[0].features),
         accuracy=correct / len(test_labels),
         positive_precision=true_positive / predicted_positive if predicted_positive else 0.0,
         positive_recall=true_positive / actual_positive if actual_positive else 0.0,
@@ -299,9 +273,4 @@ def train_deep_sequence_model(
     return ScoredModel(model, mean, std), metrics
 
 
-__all__ = [
-    "ModelType",
-    "DeepLearningMetrics",
-    "build_causal_sequences",
-    "train_deep_sequence_model",
-]
+__all__ = ["ModelType", "DeepLearningMetrics", "build_causal_sequences", "train_deep_sequence_model"]
