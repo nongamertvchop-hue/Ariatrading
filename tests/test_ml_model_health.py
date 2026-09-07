@@ -11,11 +11,12 @@ class FakeModel:
         return float(features[0])
 
 
-def _sample(index, score, label):
+def _sample(index, score, label, width=2):
+    features = (float(score), 0.0) if width == 2 else (float(score),)
     return MLSample(
         index=index,
         timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        features=(float(score), 0.0),
+        features=features,
         label=label,
     )
 
@@ -57,7 +58,7 @@ def test_health_rejects_invalid_scores_and_feature_width():
         analyze_model_health(BadModel(), samples, samples)
 
     with pytest.raises(ValueError, match="feature widths"):
-        analyze_model_health(FakeModel(), samples, [MLSsample for MLSsample in ()])
+        analyze_model_health(FakeModel(), samples, [_sample(2, 0.5, 0, width=1)])
 
 
 def test_health_rejects_invalid_bin_count():
