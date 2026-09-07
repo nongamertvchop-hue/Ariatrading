@@ -51,7 +51,7 @@ from .replay import ReplayPoint, ReplayResult, replay_forecasts
 from .research_audit import ResearchAuditReport, audit_validation_evidence
 from .research_control import DatasetFingerprint, ResearchConfig, ResearchRun, build_research_run, config_fingerprint, fingerprint_candles
 from .research_gate import INCOMPLETE, READY, ResearchGateDecision, evaluate_research_gate
-from .research_provenance import PROVENANCE_SCHEMA_VERSION, ResearchProvenance, build_research_provenance, fingerprint_payload, provenance_compatible
+from .research_provenance import PROVENANCE_SCHEMA_VERSION, ResearchProvenance, build_research_provenance, fingerprint_payload, load_research_provenance, provenance_compatible, save_research_provenance
 from .research_runner import ControlledResearchResult, run_controlled_research
 from .research_validation import ValidationEvidence, build_validation_evidence
 from .regime import REGIMES, RegimeStats, classify_regime, stratify_samples
@@ -75,7 +75,7 @@ __all__ = [
     "RecoveryResult", "submit_with_recovery", "PaperExecutionCoordinator", "PaperRecoveryDecision", "PaperRecoveryResult",
     "SymbolContract", "ContractValidation", "validate_order_contract",
     "FeedIntegrityReport", "validate_feed_batch",
-    "PROVENANCE_SCHEMA_VERSION", "ResearchProvenance", "build_research_provenance", "fingerprint_payload", "provenance_compatible",
+    "PROVENANCE_SCHEMA_VERSION", "ResearchProvenance", "build_research_provenance", "fingerprint_payload", "save_research_provenance", "load_research_provenance", "provenance_compatible",
     "ExecutionModel", "entry_price", "exit_price",
     "ExperimentRecord", "build_experiment_record",
     "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
