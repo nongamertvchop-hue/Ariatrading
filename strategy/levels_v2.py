@@ -53,12 +53,7 @@ def confirmed_swing_highs(candles: list[dict], strength: int = 2) -> list[tuple[
 
 
 def _cluster(prices: list[float], tolerance: float) -> list[list[float]]:
-    """Cluster nearby prices without allowing a chain to grow indefinitely.
-
-    A cluster is anchored to its first (lowest) price. This prevents
-    transitive clustering such as A≈B and B≈C from turning widely separated
-    A and C reactions into one oversized support/resistance zone.
-    """
+    """Cluster nearby prices without allowing a chain to grow indefinitely."""
     if tolerance <= 0:
         raise ValueError("tolerance must be > 0")
     clusters: list[list[float]] = []
@@ -80,7 +75,12 @@ def build_zones(
     tolerance: float = 0.0010,
     min_touches: int = 2,
 ) -> list[PriceZone]:
-    """Turn repeated reaction prices into zones."""
+    """Turn repeated reaction prices into zones.
+
+    This public helper accepts prices only, so every supplied price is treated
+    as an already-independent reaction. The candle-aware find_* functions
+    apply the temporal separation rule before calling it.
+    """
     if kind not in {SUPPORT, RESISTANCE}:
         raise ValueError("kind must be SUPPORT or RESISTANCE")
     if min_touches < 1:
@@ -101,14 +101,56 @@ def build_zones(
     return zones
 
 
+def _build_swing_zones(
+    swings: list[tuple[int, float]],
+    kind: str,
+    tolerance: float,
+    min_touches: int,
+    min_reaction_gap: int,
+) -> list[PriceZone]:
+    """Build zones while requiring touches to be separated in time."""
+    if min_reaction_gap < 1:
+        raise ValueError("min_reaction_gap must be >= 1")
+
+    zones: list[PriceZone] = []
+    for cluster in _cluster([price for _, price in swings], tolerance):
+        cluster_swings = [
+            swing for swing in swings
+            if any(price == swing[1] for price in cluster)
+        ]
+        cluster_swings.sort(key=lambda item: item[0])
+
+        selected: list[tuple[int, float]] = []
+        for swing in cluster_swings:
+            if not selected or swing[0] - selected[-1][0] >= min_reaction_gap:
+                selected.append(swing)
+
+        if len(selected) < min_touches:
+            continue
+
+        prices = [price for _, price in selected]
+        zones.append(
+            PriceZone(
+                low=min(prices) - tolerance,
+                high=max(prices) + tolerance,
+                kind=kind,
+                touches=len(selected),
+            )
+        )
+    return zones
+
+
 def find_support_zones(
     candles: list[dict],
     strength: int = 2,
     tolerance: float = 0.0010,
     min_touches: int = 2,
+    min_reaction_gap: int = 2,
 ) -> list[PriceZone]:
     swings = confirmed_swing_lows(candles, strength)
-    return build_zones([price for _, price in swings], SUPPORT, tolerance, min_touches)
+    return _build_swing_zones(
+        swings, SUPPORT, tolerance, min_touches, min_reaction_gap
+    )
 
 
 def find_resistance_zones(
@@ -116,6 +158,9 @@ def find_resistance_zones(
     strength: int = 2,
     tolerance: float = 0.0010,
     min_touches: int = 2,
+    min_reaction_gap: int = 2,
 ) -> list[PriceZone]:
     swings = confirmed_swing_highs(candles, strength)
-    return build_zones([price for _, price in swings], RESISTANCE, tolerance, min_touches)
+    return _build_swing_zones(
+        swings, RESISTANCE, tolerance, min_touches, min_reaction_gap
+    )
