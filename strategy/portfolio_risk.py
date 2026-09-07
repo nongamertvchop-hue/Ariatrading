@@ -45,6 +45,7 @@ class PortfolioRiskState:
     week_start_equity: float | None = None
     week_peak_equity: float | None = None
     week_key: str | None = None
+    weekly_realized_loss: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -102,18 +103,21 @@ class PortfolioRiskController:
         if state.week_key != current_week:
             week_start = equity
             week_peak = equity
+            weekly_realized_loss = 0.0
         else:
             week_start = state.week_start_equity or state.session_start_equity
             week_peak = max(state.week_peak_equity or week_start, equity)
+            weekly_realized_loss = state.weekly_realized_loss
 
         peak = max(state.peak_equity, equity)
         daily_mark_to_market_loss = max(0.0, state.session_start_equity - equity)
         daily_loss = max(daily_mark_to_market_loss, state.daily_realized_loss)
         drawdown = max(0.0, peak - equity)
-        weekly_drawdown = max(0.0, week_peak - equity)
+        weekly_mark_to_market_loss = max(0.0, week_peak - equity)
+        weekly_loss = max(weekly_mark_to_market_loss, weekly_realized_loss)
         daily_breached = daily_loss >= state.session_start_equity * self._limits.max_daily_loss_fraction
         drawdown_breached = drawdown >= peak * self._limits.max_drawdown_fraction
-        weekly_breached = weekly_drawdown >= week_peak * self._limits.max_weekly_drawdown_fraction
+        weekly_breached = weekly_loss >= week_peak * self._limits.max_weekly_drawdown_fraction
         halted = state.halted or daily_breached or drawdown_breached or weekly_breached
         self._state = PortfolioRiskState(
             state.session_start_equity,
@@ -125,6 +129,7 @@ class PortfolioRiskController:
             week_start,
             week_peak,
             current_week,
+            weekly_realized_loss,
         )
         return self._state
 
@@ -138,10 +143,12 @@ class PortfolioRiskController:
         if state.week_key != current_week:
             week_start = state.equity
             week_peak = state.equity
+            weekly_realized_loss = 0.0
             consecutive = 0
         else:
             week_start = state.week_start_equity or state.session_start_equity
             week_peak = state.week_peak_equity or week_start
+            weekly_realized_loss = state.weekly_realized_loss
             consecutive = state.consecutive_losses
 
         if realized_pnl < 0:
@@ -149,13 +156,15 @@ class PortfolioRiskController:
         elif realized_pnl > 0:
             consecutive = 0
 
-        daily_realized_loss = state.daily_realized_loss + max(0.0, -realized_pnl)
-        weekly_drawdown = max(0.0, week_peak - state.equity)
+        loss_amount = max(0.0, -realized_pnl)
+        daily_realized_loss = state.daily_realized_loss + loss_amount
+        weekly_realized_loss += loss_amount
+        weekly_loss = max(max(0.0, week_peak - state.equity), weekly_realized_loss)
         halted = (
             state.halted
             or consecutive >= self._limits.max_consecutive_losses
             or daily_realized_loss >= state.session_start_equity * self._limits.max_daily_loss_fraction
-            or weekly_drawdown >= week_peak * self._limits.max_weekly_drawdown_fraction
+            or weekly_loss >= week_peak * self._limits.max_weekly_drawdown_fraction
         )
         self._state = PortfolioRiskState(
             state.session_start_equity,
@@ -167,6 +176,7 @@ class PortfolioRiskController:
             week_start,
             week_peak,
             current_week,
+            weekly_realized_loss,
         )
         return self._state
 
@@ -179,7 +189,8 @@ class PortfolioRiskController:
         ) / state.session_start_equity
         drawdown_fraction = max(0.0, state.peak_equity - state.equity) / state.peak_equity
         week_peak = state.week_peak_equity or state.equity
-        weekly_drawdown_fraction = max(0.0, week_peak - state.equity) / week_peak
+        weekly_loss = max(max(0.0, week_peak - state.equity), state.weekly_realized_loss)
+        weekly_drawdown_fraction = weekly_loss / week_peak
         if state.halted:
             return PortfolioRiskDecision(
                 HALT,
@@ -216,5 +227,6 @@ class PortfolioRiskController:
             equity,
             equity,
             week_key,
+            0.0,
         )
         return self._state
