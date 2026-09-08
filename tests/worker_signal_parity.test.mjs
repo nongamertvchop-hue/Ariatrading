@@ -26,6 +26,7 @@ import {
 import { forecast, supervise } from "../worker/forecast_parity.js";
 import { evaluateRealtimeSignalParity } from "../worker/signal_parity_v2.js";
 import { validateRealtimeFeed, acceptRealtimeFeed, resetRealtimeFeedGuard } from "../worker/realtime_feed_guard.js";
+import { buildSignalEventId, canonicalSignalEvent } from "../worker/signal_event.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const golden = JSON.parse(fs.readFileSync(path.join(HERE, "fixtures", "parity_vectors.json"), "utf8"));
@@ -162,6 +163,49 @@ test("realtime feed guard rejects stale and duplicate observations", () => {
   const stale = validateRealtimeFeed(candles, "15m", "GBP/USD", new Date("2026-09-08T20:00:01Z"));
   assert.equal(stale.reason, "feed is stale");
   resetRealtimeFeedGuard();
+});
+
+test("signal event id is deterministic and independent of generated_at", async () => {
+  const base = {
+    symbol: "EUR/USD",
+    timeframe: "15m",
+    bar_time: "2026-09-08T19:15:00Z",
+    signal: WAIT,
+    state: "APPROACH",
+    breakout_state: NO_BREAKOUT,
+    price: 1.1025,
+    entry_reference: null,
+    stop_reference: null,
+    structure_bias: "RANGE",
+    score: null,
+    zone: null,
+    generated_at: "2026-09-08T19:16:00Z",
+  };
+  const a = await buildSignalEventId(base);
+  const b = await buildSignalEventId({ ...base, generated_at: "2026-09-08T19:17:00Z" });
+  assert.equal(a, b);
+  assert.match(a, /^sig_[0-9a-f]{32}$/);
+  assert.match(canonicalSignalEvent(base), /EUR\/USD/);
+});
+
+test("signal event id changes when the closed-candle decision identity changes", async () => {
+  const base = {
+    symbol: "EUR/USD",
+    timeframe: "15m",
+    bar_time: "2026-09-08T19:15:00Z",
+    signal: WAIT,
+    state: "APPROACH",
+    breakout_state: NO_BREAKOUT,
+    price: 1.1025,
+    entry_reference: null,
+    stop_reference: null,
+    structure_bias: "RANGE",
+    score: null,
+    zone: null,
+  };
+  const first = await buildSignalEventId(base);
+  const changed = await buildSignalEventId({ ...base, signal: LONG });
+  assert.notEqual(first, changed);
 });
 
 test("structure and score enums remain compatible with Python contract", () => {
