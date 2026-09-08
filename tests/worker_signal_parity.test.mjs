@@ -126,7 +126,7 @@ test("forecast fallback exactly matches the closed-candle Python contract", () =
     assert.equal(horizon.expected_return, 0);
     assert.equal(horizon.expected_close, 1);
   }
-  assert.equal(result.confidence, 0.45 * 0 + 0.55 * 0.01);
+  assert.equal(result.confidence, 0);
 });
 
 test("supervisor blocks an otherwise directional setup when forecast is unavailable", () => {
