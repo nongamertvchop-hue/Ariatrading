@@ -25,10 +25,11 @@ import {
 } from "../worker/signal_parity.js";
 import { forecast, supervise } from "../worker/forecast_parity.js";
 import { evaluateRealtimeSignalParity } from "../worker/signal_parity_v2.js";
+import { validateRealtimeFeed, acceptRealtimeFeed, resetRealtimeFeedGuard } from "../worker/realtime_feed_guard.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const golden = JSON.parse(fs.readFileSync(path.join(HERE, "fixtures", "parity_vectors.json"), "utf8"));
-const candle = (open, high, low, close) => ({ open, high, low, close });
+const candle = (open, high, low, close, datetime = undefined) => ({ open, high, low, close, ...(datetime ? { datetime } : {}) });
 
 function makeRangeFixture() {
   return [
@@ -116,6 +117,18 @@ test("forecast probabilities and confidence are deterministic and bounded", () =
   assert.ok(result.confidence >= 0 && result.confidence <= 1);
 });
 
+test("forecast fallback exactly matches the closed-candle Python contract", () => {
+  const result = forecast([candle(1.0, 1.0, 1.0, 1.0)]);
+  for (const horizon of result.horizons) {
+    assert.equal(horizon.up_probability, 1 / 3);
+    assert.equal(horizon.flat_probability, 1 / 3);
+    assert.equal(horizon.down_probability, 1 / 3);
+    assert.equal(horizon.expected_return, 0);
+    assert.equal(horizon.expected_close, 1);
+  }
+  assert.equal(result.confidence, 0.45 * 0 + 0.55 * 0.01);
+});
+
 test("supervisor blocks an otherwise directional setup when forecast is unavailable", () => {
   const decision = supervise({ action: LONG, protection: "SAFE", breakoutState: NO_BREAKOUT });
   assert.equal(decision.action, WAIT);
@@ -133,6 +146,22 @@ test("supervisor blocks low-confidence forecast and preserves fail-closed behavi
   assert.equal(decision.action, WAIT);
   assert.equal(decision.allowed, false);
   assert.ok(decision.reasons.includes("forecast confidence below threshold"));
+});
+
+test("realtime feed guard rejects stale and duplicate observations", () => {
+  resetRealtimeFeedGuard();
+  const candles = [
+    candle(1, 1.01, 0.99, 1, "2026-09-08T19:00:00Z"),
+    candle(1, 1.01, 0.99, 1, "2026-09-08T19:15:00Z"),
+  ];
+  const fresh = validateRealtimeFeed(candles, "15m", "EUR/USD", new Date("2026-09-08T19:16:00Z"));
+  assert.equal(fresh.ok, true);
+  acceptRealtimeFeed(candles, "15m", "EUR/USD");
+  const duplicate = validateRealtimeFeed(candles, "15m", "EUR/USD", new Date("2026-09-08T19:16:00Z"));
+  assert.equal(duplicate.reason, "duplicate or old closed bar");
+  const stale = validateRealtimeFeed(candles, "15m", "GBP/USD", new Date("2026-09-08T20:00:01Z"));
+  assert.equal(stale.reason, "feed is stale");
+  resetRealtimeFeedGuard();
 });
 
 test("structure and score enums remain compatible with Python contract", () => {
