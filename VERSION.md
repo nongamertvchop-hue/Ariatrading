@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.14.2**
+Current version: **0.14.3**
 
 ## Versioning rule
 
@@ -15,7 +15,7 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.14.2
+## Current milestone — 0.14.3
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
@@ -29,7 +29,7 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - Portfolio daily-loss accounting combines independently recorded realized loss with session-equity loss using the maximum rather than summing both sources, preventing double counting while preserving a fail-closed limit.
 - Broker-symbol contract validation now provides an explicit execution-boundary check for symbol identity, price precision, and volume min/max/step constraints.
 - Research provenance fingerprints dataset content, ordered feature definitions, model configuration, and code version so ML/DL artifacts can be compared reproducibly, with atomic persistence and schema validation.
-- Feed integrity validation now runs directly at the realtime boundary, rejecting malformed OHLC, duplicate/out-of-order timestamps, non-UTC timestamps by default, and timestamps misaligned to the configured timeframe grid. It intentionally does not treat FX session/weekend gaps as automatically invalid.
+- Feed integrity validation runs directly at the realtime boundary, rejecting malformed OHLC, duplicate/out-of-order timestamps, non-UTC timestamps by default, and timestamps misaligned to the configured timeframe grid. It intentionally does not treat FX session/weekend gaps as automatically invalid.
 - Deep-learning walk-forward research can persist a deterministic provenance artifact describing its dataset and full model/research configuration, without forcing provenance writes when the feature is unused.
 - Position reconciliation optionally tracks average entry price and enforces normalized broker symbol/volume contract consistency, while remaining backward compatible with older snapshots.
 - Average-entry and broker-contract mismatches fail closed before a reconciled position can be considered safe.
@@ -39,7 +39,8 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - The MTF Advisor records signal snapshots locally in the browser for research/journal review; the journal is not a broker execution log and is not shared between devices.
 - MTF and Webaria paper-engine page contracts are covered by automated tests.
 - Worker market-data traffic passes through a lightweight gateway that reduces duplicate upstream requests with short-lived fresh caching and serves recent successful snapshots as stale fallback during temporary provider/quota/network errors.
-- The Worker `/api/signal` path now uses a dedicated parity implementation that mirrors the Python realtime engine's candle pressure, confirmed zones, zone-center semantics, fake-breakout classification, sequence evaluation, structure bias, all-zone candidate selection, scoring, and nearest-zone semantics.
+- The Worker `/api/signal` path now uses a dedicated parity implementation that mirrors the Python realtime engine's candle pressure, confirmed zones, zone-center semantics, fake-breakout classification, sequence evaluation, structure bias, all-zone candidate selection, scoring, forecast context, realtime supervisor gate, and nearest-zone semantics.
+- Worker realtime input now has an explicit feed guard for OHLC geometry, chronological ordering, timeframe-grid alignment, stale/future data, and per-symbol/timeframe duplicate suppression.
 - Worker parity contracts are covered by a Node test suite in addition to Python tests and Worker syntax checks.
 
 ## Next milestones
