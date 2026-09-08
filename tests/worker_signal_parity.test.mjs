@@ -16,11 +16,11 @@ import {
   candlePressure,
   classifyResistanceBreakout,
   classifySupportBreakout,
-  evaluateRealtimeSignal,
   findResistanceZones,
   findSupportZones,
   scoreSetup,
 } from "../worker/signal_parity.js";
+import { evaluateRealtimeSignalParity } from "../worker/signal_parity_v2.js";
 
 const candle = (open, high, low, close) => ({ open, high, low, close });
 
@@ -75,13 +75,11 @@ test("Worker zone centers include the tolerance exactly like PriceZone.center", 
   ];
   const tolerance = adaptiveZoneTolerance(candles, "15m");
   const zones = findSupportZones(candles, tolerance);
-  for (const zone of zones) {
-    assert.equal(zone.center, (zone.low + zone.high) / 2);
-  }
+  for (const zone of zones) assert.equal(zone.center, (zone.low + zone.high) / 2);
 });
 
-test("realtime evaluator keeps WAIT semantics when no complete setup exists", () => {
-  const result = evaluateRealtimeSignal(makeRangeFixture(), "15m");
+test("realtime evaluator returns WAIT instead of error when no zones exist", () => {
+  const result = evaluateRealtimeSignalParity(makeRangeFixture(), "15m");
   assert.equal(result.signal, WAIT);
 });
 
