@@ -25,6 +25,7 @@ import {
 } from "./signal_parity.js";
 import { forecast, supervise } from "./forecast_parity.js";
 import { validateRealtimeFeed, acceptRealtimeFeed } from "./realtime_feed_guard.js";
+import { buildSignalEventId } from "./signal_event.js";
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -129,6 +130,7 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
     state: finalSignal.result?.state ?? "APPROACH",
     reason: finalSignal.reason,
     price: currentPrice,
+    bar_time: candles[candles.length - 1].datetime ?? candles[candles.length - 1].time ?? null,
     structure_bias: finalSignal.structureBias ?? structure.bias,
     zone: finalSignal.zone ?? null,
     entry_reference: finalSignal.result?.entryReference ?? null,
@@ -173,6 +175,8 @@ export async function handleSignalParityV2(request, env) {
   }
 
   const result = evaluateRealtimeSignalParity(candles, timeframe);
+  const response = { symbol, timeframe, ...result, data_quality: quality, generated_at: new Date().toISOString(), execution: "NONE" };
+  response.event_id = await buildSignalEventId(response);
   acceptRealtimeFeed(candles, timeframe, symbol);
-  return json({ symbol, timeframe, ...result, data_quality: quality, generated_at: new Date().toISOString(), execution: "NONE" });
+  return json(response);
 }
