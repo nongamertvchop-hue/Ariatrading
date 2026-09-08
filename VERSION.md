@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.14.1**
+Current version: **0.14.2**
 
 ## Versioning rule
 
@@ -15,7 +15,7 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.14.1
+## Current milestone — 0.14.2
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
@@ -28,19 +28,19 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - The deterministic paper broker and end-to-end paper recovery coordinator cover full/partial fills, rejection, disconnect/timeout ambiguity, idempotency, durable multi-order state, audit-chain verification, and restart recovery.
 - Portfolio daily-loss accounting combines independently recorded realized loss with session-equity loss using the maximum rather than summing both sources, preventing double counting while preserving a fail-closed limit.
 - Broker-symbol contract validation now provides an explicit execution-boundary check for symbol identity, price precision, and volume min/max/step constraints.
-- Research provenance now fingerprints dataset content, ordered feature definitions, model configuration, and code version so ML/DL artifacts can be compared reproducibly.
-- Research provenance can now be persisted and loaded atomically with schema validation.
+- Research provenance fingerprints dataset content, ordered feature definitions, model configuration, and code version so ML/DL artifacts can be compared reproducibly, with atomic persistence and schema validation.
 - Feed integrity validation now runs directly at the realtime boundary, rejecting malformed OHLC, duplicate/out-of-order timestamps, non-UTC timestamps by default, and timestamps misaligned to the configured timeframe grid. It intentionally does not treat FX session/weekend gaps as automatically invalid.
 - Deep-learning walk-forward research can persist a deterministic provenance artifact describing its dataset and full model/research configuration, without forcing provenance writes when the feature is unused.
-- Position reconciliation now optionally tracks average entry price and enforces normalized broker symbol/volume contract consistency, while remaining backward compatible with older snapshots.
+- Position reconciliation optionally tracks average entry price and enforces normalized broker symbol/volume contract consistency, while remaining backward compatible with older snapshots.
 - Average-entry and broker-contract mismatches fail closed before a reconciled position can be considered safe.
 - MT5 integration remains read-only; no order execution is implemented.
 - Webaria includes a realtime Signal Advisor backed by the Worker market-data API and a browser-safe Paper Risk Engine.
 - A dedicated MTF Signal Advisor evaluates 1D -> 4H -> 1H -> 15M using the existing `/api/signal` outputs. Higher timeframes filter an existing 15M setup and cannot create a third strategy.
 - The MTF Advisor records signal snapshots locally in the browser for research/journal review; the journal is not a broker execution log and is not shared between devices.
 - MTF and Webaria paper-engine page contracts are covered by automated tests.
-- Worker market-data traffic now passes through a lightweight gateway that reduces duplicate upstream requests with short-lived fresh caching and serves recent successful snapshots as stale fallback during temporary provider/quota/network errors.
-- The gateway does not change strategy semantics, does not expose secrets, and does not execute orders.
+- Worker market-data traffic passes through a lightweight gateway that reduces duplicate upstream requests with short-lived fresh caching and serves recent successful snapshots as stale fallback during temporary provider/quota/network errors.
+- The Worker `/api/signal` path now uses a dedicated parity implementation that mirrors the Python realtime engine's candle pressure, confirmed zones, zone-center semantics, fake-breakout classification, sequence evaluation, structure bias, all-zone candidate selection, scoring, and nearest-zone semantics.
+- Worker parity contracts are covered by a Node test suite in addition to Python tests and Worker syntax checks.
 
 ## Next milestones
 
@@ -51,6 +51,7 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - Compare MTF filtered vs unfiltered paper signals on identical chronological windows.
 - Add signal-quality reports by timeframe, regime, breakout state, and setup score bucket.
 - Continue auditing execution-friction sensitivity and realtime/replay parity.
+- Replace duplicated Worker/Python strategy code with a generated/shared parity contract once the cross-runtime fixtures are complete.
 
 ### 1.0.0 — Only after validation
 - Freeze a documented strategy specification only after out-of-sample and robustness checks.
