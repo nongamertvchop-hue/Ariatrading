@@ -11,8 +11,6 @@ import {
   LONG,
   SHORT,
   WAIT,
-  SUPPORT,
-  RESISTANCE,
   NO_BREAKOUT,
   TIMEFRAME_CONFIG,
   BadRequest,
@@ -25,6 +23,7 @@ import {
   fetchTwelveData,
   validateCandle,
 } from "./signal_parity.js";
+import { forecast, supervise } from "./forecast_parity.js";
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -55,7 +54,7 @@ function selectSignal(longSignal, shortSignal, timeframe) {
     const shortScore = shortSignal.score?.total ?? -1;
     if (longScore !== shortScore) return longScore > shortScore ? longSignal : shortSignal;
   }
-  return { action: WAIT, reason: "no unambiguous realtime setup", timeframe };
+  return { action: WAIT, reason: "no unambiguous realtime setup", timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT };
 }
 
 function nearestSupport(price, zones) {
@@ -78,12 +77,13 @@ function nearestResistance(price, zones) {
 
 function stopReference(zone, direction, history, timeframe) {
   const config = TIMEFRAME_CONFIG[timeframe];
-  const range = history.slice(-config.lookback).reduce((sum, candle) => sum + (candle.high - candle.low), 0) / Math.min(history.length, config.lookback);
+  const sample = history.slice(-config.lookback);
+  const range = sample.reduce((sum, candle) => sum + (candle.high - candle.low), 0) / Math.min(history.length, config.lookback);
   const buffer = Math.max(config.minZoneDistance * 0.5, range * config.confirmationMultiplier);
   return direction === LONG ? zone.low - buffer : zone.high + buffer;
 }
 
-export function evaluateRealtimeSignalParity(rawCandles, timeframe) {
+export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastConfidence = 0.45) {
   if (!TIMEFRAME_CONFIG[timeframe]) throw new BadRequest(`unsupported timeframe: ${timeframe}`);
   const candles = rawCandles.map(validateCandle);
   if (candles.length < 5) throw new BadRequest("not enough completed candles for evaluation");
@@ -105,23 +105,40 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe) {
 
   const longSignal = bestSignal(longCandidates, LONG, timeframe, "no support zone");
   const shortSignal = bestSignal(shortCandidates, SHORT, timeframe, "no resistance zone");
-  const selected = selectSignal(longSignal, shortSignal, timeframe);
+  const strategySignal = selectSignal(longSignal, shortSignal, timeframe);
   const currentPrice = candles[candles.length - 1].close;
-  const selectedScore = selected.action === LONG || selected.action === SHORT ? selected.score ?? null : null;
+  const support = nearestSupport(currentPrice, supports);
+  const resistance = nearestResistance(currentPrice, resistances);
+  const forecastResult = forecast(candles, [1, 3, 5], support, resistance);
+  const supervisor = supervise(strategySignal, forecastResult, null, minForecastConfidence);
 
+  let finalSignal = strategySignal;
+  if (supervisor.action !== "ALLOW") {
+    finalSignal = {
+      ...strategySignal,
+      action: WAIT,
+      reason: `realtime supervisor: ${supervisor.reasons.join("; ")}`,
+      protection: "BLOCKED",
+    };
+  }
+
+  const selectedScore = strategySignal.action === LONG || strategySignal.action === SHORT ? strategySignal.score ?? null : null;
   return {
-    signal: selected.action,
-    state: selected.result?.state ?? "APPROACH",
-    reason: selected.reason,
+    signal: finalSignal.action,
+    state: finalSignal.result?.state ?? "APPROACH",
+    reason: finalSignal.reason,
     price: currentPrice,
-    structure_bias: structure.bias,
-    zone: selected.zone ?? null,
-    entry_reference: selected.result?.entryReference ?? null,
-    stop_reference: selected.zone && selected.action !== WAIT ? stopReference(selected.zone, selected.action, history, timeframe) : null,
-    breakout_state: selected.result?.breakoutState ?? NO_BREAKOUT,
+    structure_bias: finalSignal.structureBias ?? structure.bias,
+    zone: finalSignal.zone ?? null,
+    entry_reference: finalSignal.result?.entryReference ?? null,
+    stop_reference: finalSignal.zone && finalSignal.action !== WAIT ? stopReference(finalSignal.zone, finalSignal.action, history, timeframe) : null,
+    breakout_state: finalSignal.result?.breakoutState ?? finalSignal.breakoutState ?? NO_BREAKOUT,
+    protection: finalSignal.protection ?? "SAFE",
     score: selectedScore,
-    support: nearestSupport(currentPrice, supports),
-    resistance: nearestResistance(currentPrice, resistances),
+    support,
+    resistance,
+    forecast: forecastResult,
+    supervisor,
     candles,
     candles_used: candles.length,
   };
