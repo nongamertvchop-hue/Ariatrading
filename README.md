@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.14.2**
+**Current version: 0.14.3**
 
 ## Core idea
 
@@ -29,7 +29,7 @@ The project is layered so every stage can be used together without duplicating s
 9. **Execution simulation** — optional spread, commission, slippage, latency, session and precision effects, isolated from strategy decisions.
 10. **Research validation** — chronological splits, R-based metrics, profit factor, drawdown and bootstrap expectancy uncertainty.
 11. **Walk-forward validation** — expanding-history, rolling out-of-sample windows with hard test boundaries.
-12. **ML meta-filter research** — chronological classical ML filtering of existing LONG/SHORT signals only.
+12. **ML meta-filter research** — chronological ML filtering of existing LONG/SHORT signals only.
 13. **ML diagnostics** — feature drift, fold-level behavior, model health/calibration, permutation stability, and evidence consistency checks.
 14. **Deep-learning challengers** — optional causal LSTM and Transformer sequence models that score existing signals but cannot create direction.
 15. **Deep-learning walk-forward** — fold-by-fold expanding OOS evaluation for both LSTM and Transformer using the same signal/label chronology as classical ML.
@@ -104,6 +104,10 @@ The project is layered so every stage can be used together without duplicating s
 - `Webaria/paper-engine.js` — browser-safe paper risk primitives; no broker calls.
 - `Webaria/signal-advisor.html` — single-timeframe realtime Signal Advisor.
 - `Webaria/mtf-advisor.html` — multi-timeframe Signal Advisor and local signal journal.
+- `worker/signal_parity.js` — Worker-side low-level strategy parity primitives.
+- `worker/signal_parity_v2.js` — Worker realtime orchestration aligned with Python sequence/score semantics.
+- `worker/forecast_parity.js` — Worker deterministic forecast and realtime-supervisor parity helpers.
+- `worker/realtime_feed_guard.js` — Worker realtime OHLC/timestamp/staleness/deduplication guard.
 
 ## System flow
 
@@ -148,6 +152,10 @@ LONG / SHORT / WAIT
                                   |
                                   +---- Webaria Paper Risk Engine
 
+Worker realtime path:
+Twelve Data -> closed-candle feed guard -> parity strategy -> forecast
+             -> realtime supervisor -> Webaria Signal Advisor
+
 Paper execution validation path:
 System Gate -> Broker Contract -> Order State -> Persistence -> Audit
                                       |
@@ -180,7 +188,7 @@ The MTF Advisor is deliberately conservative: it cannot invent LONG/SHORT direct
 
 Webaria Paper Trading is simulation-only. Browser-local state and signal journals are useful for testing the interface and research workflow but are not durable multi-device execution records.
 
-The browser-facing `/api/signal` path uses the parity adapter in `worker/signal_parity_v2.js` so its single-timeframe signal semantics follow the Python realtime engine for zone context, sequence evaluation, structure bias, candidate selection, scoring, and stop-reference calculation.
+The browser-facing `/api/signal` path uses the parity adapter in `worker/signal_parity_v2.js` so its single-timeframe signal semantics follow the Python realtime engine for zone context, sequence evaluation, structure bias, candidate selection, scoring, forecast context, supervisor gating, and stop-reference calculation. The Worker also rejects malformed, misaligned, future, stale, or duplicate closed-bar data before evaluation.
 
 ## Testing
 
@@ -190,7 +198,7 @@ The deep-learning implementation is optional in the default CI path because PyTo
 
 ## Version / continuation protocol
 
-Current version: **0.14.2**.
+Current version: **0.14.3**.
 
 At the start of a new chat:
 
