@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.14.0**
+**Current version: 0.14.2**
 
 ## Core idea
 
@@ -180,15 +180,17 @@ The MTF Advisor is deliberately conservative: it cannot invent LONG/SHORT direct
 
 Webaria Paper Trading is simulation-only. Browser-local state and signal journals are useful for testing the interface and research workflow but are not durable multi-device execution records.
 
+The browser-facing `/api/signal` path uses the parity adapter in `worker/signal_parity_v2.js` so its single-timeframe signal semantics follow the Python realtime engine for zone context, sequence evaluation, structure bias, candidate selection, scoring, and stop-reference calculation.
+
 ## Testing
 
-The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk and quantity constraints, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML model health, ML evidence readiness, fixed-window ML challenger comparison, deep-learning sequence causality, deep-learning walk-forward contracts and provenance persistence, realtime state handling, feed-integrity boundary behavior, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, paper-broker failure semantics, paper-position reconciliation semantics including average-entry and broker-contract mismatches, order persistence/recovery, execution audit integrity, broker contract validation, the integrated research facade/system gate, Webaria paper-risk behavior, the single-timeframe Signal Advisor contract, and the multi-timeframe Signal Advisor contract.
+The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk and quantity constraints, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML model health, ML evidence readiness, fixed-window ML challenger comparison, deep-learning sequence causality, deep-learning walk-forward contracts and provenance persistence, realtime state handling, feed-integrity boundary behavior, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, paper-broker failure semantics, paper-position reconciliation semantics including average-entry and broker-contract mismatches, order persistence/recovery, execution audit integrity, broker contract validation, the integrated research facade/system gate, Webaria paper-risk behavior, the single-timeframe Signal Advisor contract, the multi-timeframe Signal Advisor contract, and Worker signal parity contracts.
 
 The deep-learning implementation is optional in the default CI path because PyTorch is a large dependency. `requirements-ml.txt` provides the explicit ML environment for LSTM/Transformer experiments.
 
 ## Version / continuation protocol
 
-Current version: **0.14.0**.
+Current version: **0.14.2**.
 
 At the start of a new chat:
 
