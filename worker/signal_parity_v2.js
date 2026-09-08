@@ -24,6 +24,7 @@ import {
   validateCandle,
 } from "./signal_parity.js";
 import { forecast, supervise } from "./forecast_parity.js";
+import { validateRealtimeFeed, acceptRealtimeFeed } from "./realtime_feed_guard.js";
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -33,7 +34,7 @@ function json(data, status = 200) {
 }
 
 function bestSignal(candidates, direction, timeframe, emptyReason) {
-  if (!candidates.length) return { action: WAIT, reason: emptyReason, timeframe };
+  if (!candidates.length) return { action: WAIT, reason: emptyReason, timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT };
   return [...candidates].sort((a, b) => {
     const aKey = [a.result.action === direction ? 1 : 0, a.score?.total ?? -1, a.result.entryReference ?? 0];
     const bKey = [b.result.action === direction ? 1 : 0, b.score?.total ?? -1, b.result.entryReference ?? 0];
@@ -154,6 +155,24 @@ export async function handleSignalParityV2(request, env) {
   if (!env.TWELVE_DATA_API_KEY) return json({ error: "server_not_configured", message: "TWELVE_DATA_API_KEY secret is not configured" }, 503);
 
   const candles = await fetchTwelveData(symbol, timeframe, env.TWELVE_DATA_API_KEY);
+  const quality = validateRealtimeFeed(candles, timeframe, symbol);
+  if (!quality.ok) {
+    if (quality.reason === "duplicate or old closed bar") {
+      return json({
+        symbol,
+        timeframe,
+        signal: WAIT,
+        state: "NO_UPDATE",
+        reason: quality.reason,
+        data_quality: quality,
+        no_update: true,
+        execution: "NONE",
+      });
+    }
+    return json({ error: "realtime_data_rejected", message: quality.reason, data_quality: quality }, 503);
+  }
+
   const result = evaluateRealtimeSignalParity(candles, timeframe);
-  return json({ symbol, timeframe, ...result, generated_at: new Date().toISOString(), execution: "NONE" });
+  acceptRealtimeFeed(candles, timeframe, symbol);
+  return json({ symbol, timeframe, ...result, data_quality: quality, generated_at: new Date().toISOString(), execution: "NONE" });
 }
