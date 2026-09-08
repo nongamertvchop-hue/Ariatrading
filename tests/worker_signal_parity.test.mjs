@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   BEARISH,
@@ -22,6 +25,8 @@ import {
 } from "../worker/signal_parity.js";
 import { evaluateRealtimeSignalParity } from "../worker/signal_parity_v2.js";
 
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const golden = JSON.parse(fs.readFileSync(path.join(HERE, "fixtures", "parity_vectors.json"), "utf8"));
 const candle = (open, high, low, close) => ({ open, high, low, close });
 
 function makeRangeFixture() {
@@ -38,6 +43,21 @@ function makeRangeFixture() {
     candle(1.1010, 1.1015, 1.0990, 1.1000),
   ];
 }
+
+test("golden vectors: Worker breakout classification matches Python contract", () => {
+  for (const vector of golden.breakout) {
+    const result = vector.direction === LONG
+      ? classifySupportBreakout(vector.candle, vector.zone, vector.buffer)
+      : classifyResistanceBreakout(vector.candle, vector.zone, vector.buffer);
+    assert.equal(result.state, vector.expected_state, vector.name);
+  }
+});
+
+test("golden vectors: Worker zone centers match PriceZone.center", () => {
+  for (const vector of golden.zone_center) {
+    assert.equal((vector.low + vector.high) / 2, vector.expected_center);
+  }
+});
 
 test("support fake breakout matches Python contract", () => {
   const zone = { low: 1.0000, high: 1.0100, center: 1.0050, kind: SUPPORT, touches: 2 };
