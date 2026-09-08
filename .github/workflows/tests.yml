@@ -19,6 +19,16 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+  worker-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run Worker parity tests
+        run: node --test tests/worker_signal_parity.test.mjs
+
   worker-syntax:
     runs-on: ubuntu-latest
     steps:
@@ -27,4 +37,4 @@ jobs:
         with:
           node-version: "22"
       - name: Check Worker JavaScript syntax
-        run: node --check worker/index.js
+        run: node --check worker/index.js && node --check worker/entry.js && node --check worker/signal_parity.js
