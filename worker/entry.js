@@ -6,14 +6,13 @@
  * briefly, and a recent successful response is served as a stale snapshot when
  * Twelve Data temporarily returns a quota/network/provider error.
  *
- * The single-timeframe signal route uses signal_parity.js, which mirrors the
+ * The single-timeframe signal route uses the parity adapter, which mirrors the
  * Python realtime engine's zone, sequence, structure, and scoring semantics.
- * This prevents the browser-facing signal contract from silently drifting.
  * The gateway never places broker orders.
  */
 
 import app from "./index.js";
-import { handleSignalParity } from "./signal_parity.js";
+import { handleSignalParityV2 } from "./signal_parity_v2.js";
 
 const FRESH_TTL_MS = Object.freeze({
   "/api/price": 10_000,
@@ -74,7 +73,7 @@ export default {
 
     try {
       const response = url.pathname === "/api/signal"
-        ? await handleSignalParity(request, env)
+        ? await handleSignalParityV2(request, env)
         : await app.fetch(request, env, ctx);
       if (response.ok) {
         const record = await readResponse(response);
