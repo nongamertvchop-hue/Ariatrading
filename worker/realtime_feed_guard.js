@@ -52,7 +52,7 @@ function validateFeedBatch(candles, timeframe) {
   return { ok: true, reason: "feed integrity passed" };
 }
 
-export function validateRealtimeFeed(candles, timeframe, now = new Date(), maxStalenessBars = 2) {
+export function validateRealtimeFeed(candles, timeframe, symbol = "", now = new Date(), maxStalenessBars = 2) {
   const integrity = validateFeedBatch(candles, timeframe);
   if (!integrity.ok) return integrity;
   if (!Number.isInteger(maxStalenessBars) || maxStalenessBars < 1) throw new Error("maxStalenessBars must be >= 1");
@@ -64,7 +64,7 @@ export function validateRealtimeFeed(candles, timeframe, now = new Date(), maxSt
   if (ageSeconds < 0) return { ok: false, reason: "latest bar timestamp is in the future", latest_time: latest.toISOString(), age_seconds: ageSeconds };
   if (ageSeconds > maxAge) return { ok: false, reason: "feed is stale", latest_time: latest.toISOString(), age_seconds: ageSeconds };
 
-  const key = `${timeframe}`;
+  const key = `${symbol}:${timeframe}`;
   const previous = lastEvaluated.get(key);
   if (previous !== undefined && latest.getTime() <= previous) {
     return { ok: false, reason: "duplicate or old closed bar", latest_time: latest.toISOString(), age_seconds: ageSeconds };
@@ -72,9 +72,9 @@ export function validateRealtimeFeed(candles, timeframe, now = new Date(), maxSt
   return { ok: true, reason: "ok", latest_time: latest.toISOString(), age_seconds: ageSeconds };
 }
 
-export function acceptRealtimeFeed(candles, timeframe) {
+export function acceptRealtimeFeed(candles, timeframe, symbol = "") {
   const latest = parseTime(candles[candles.length - 1]?.datetime ?? candles[candles.length - 1]?.time);
-  if (latest) lastEvaluated.set(`${timeframe}`, latest.getTime());
+  if (latest) lastEvaluated.set(`${symbol}:${timeframe}`, latest.getTime());
 }
 
 export function resetRealtimeFeedGuard() {
