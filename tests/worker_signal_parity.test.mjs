@@ -23,6 +23,7 @@ import {
   findSupportZones,
   scoreSetup,
 } from "../worker/signal_parity.js";
+import { forecast, supervise } from "../worker/forecast_parity.js";
 import { evaluateRealtimeSignalParity } from "../worker/signal_parity_v2.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -101,6 +102,37 @@ test("Worker zone centers include the tolerance exactly like PriceZone.center", 
 test("realtime evaluator returns WAIT instead of error when no zones exist", () => {
   const result = evaluateRealtimeSignalParity(makeRangeFixture(), "15m");
   assert.equal(result.signal, WAIT);
+});
+
+test("forecast probabilities and confidence are deterministic and bounded", () => {
+  const result = forecast(makeRangeFixture());
+  assert.equal(result.horizons.length, 3);
+  for (const horizon of result.horizons) {
+    const total = horizon.up_probability + horizon.flat_probability + horizon.down_probability;
+    assert.ok(Math.abs(total - 1) < 1e-12);
+    assert.ok(horizon.expected_close > 0);
+    assert.ok(["UP", "FLAT", "DOWN"].includes(horizon.direction));
+  }
+  assert.ok(result.confidence >= 0 && result.confidence <= 1);
+});
+
+test("supervisor blocks an otherwise directional setup when forecast is unavailable", () => {
+  const decision = supervise({ action: LONG, protection: "SAFE", breakoutState: NO_BREAKOUT });
+  assert.equal(decision.action, WAIT);
+  assert.equal(decision.allowed, false);
+  assert.ok(decision.reasons.includes("forecast unavailable"));
+});
+
+test("supervisor blocks low-confidence forecast and preserves fail-closed behavior", () => {
+  const decision = supervise(
+    { action: SHORT, protection: "SAFE", breakoutState: NO_BREAKOUT },
+    { confidence: 0.1, horizons: [{ direction: "FLAT" }] },
+    null,
+    0.45,
+  );
+  assert.equal(decision.action, WAIT);
+  assert.equal(decision.allowed, false);
+  assert.ok(decision.reasons.includes("forecast confidence below threshold"));
 });
 
 test("structure and score enums remain compatible with Python contract", () => {
