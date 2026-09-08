@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "description": "Cross-runtime golden vectors. Expected values are derived from the Python strategy contracts and must remain runtime-independent.",
+  "breakout": [
+    {
+      "name": "support_fake_breakout",
+      "direction": "LONG",
+      "zone": {"low": 1.0, "high": 1.01, "kind": "SUPPORT", "touches": 2},
+      "candle": {"open": 1.004, "high": 1.006, "low": 0.9995, "close": 1.0045},
+      "buffer": 0.002,
+      "expected_state": "FAKE_BREAKOUT"
+    },
+    {
+      "name": "support_true_breakout",
+      "direction": "LONG",
+      "zone": {"low": 1.0, "high": 1.01, "kind": "SUPPORT", "touches": 2},
+      "candle": {"open": 1.002, "high": 1.003, "low": 0.997, "close": 0.9979},
+      "buffer": 0.002,
+      "expected_state": "TRUE_BREAKOUT"
+    },
+    {
+      "name": "resistance_fake_breakout",
+      "direction": "SHORT",
+      "zone": {"low": 1.0, "high": 1.01, "kind": "RESISTANCE", "touches": 2},
+      "candle": {"open": 1.006, "high": 1.0105, "low": 1.0045, "close": 1.0065},
+      "buffer": 0.002,
+      "expected_state": "FAKE_BREAKOUT"
+    },
+    {
+      "name": "resistance_true_breakout",
+      "direction": "SHORT",
+      "zone": {"low": 1.0, "high": 1.01, "kind": "RESISTANCE", "touches": 2},
+      "candle": {"open": 1.012, "high": 1.0135, "low": 1.011, "close": 1.0121},
+      "buffer": 0.002,
+      "expected_state": "TRUE_BREAKOUT"
+    }
+  ],
+  "zone_center": [
+    {"low": 1.0, "high": 1.01, "expected_center": 1.005},
+    {"low": 1.097, "high": 1.103, "expected_center": 1.1},
+    {"low": 1.2345, "high": 1.2365, "expected_center": 1.2355}
+  ]
+}
