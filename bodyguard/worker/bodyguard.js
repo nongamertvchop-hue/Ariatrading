@@ -1,8 +1,8 @@
 /**
- * Bodyguard(Aria) v0.04.0 — enforcement, audit counters, alert thresholds.
+ * Bodyguard(Aria) v0.05.0 — enforcement, audit counters, alert thresholds.
  */
 
-export const BODYGUARD_VERSION = "0.04.0";
+export const BODYGUARD_VERSION = "0.05.0";
 
 const DEFAULTS = Object.freeze({
   allowedMethods: ["GET", "HEAD", "OPTIONS"],

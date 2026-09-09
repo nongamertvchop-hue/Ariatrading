@@ -1,20 +1,14 @@
-# Bodyguard(Aria) v0.04.0
+# Bodyguard(Aria) v0.05.0
 
 Defensive security layer for Ariatrading / Webaria.
 
-## 0.04.0 highlights
-- Webaria page: `/bodyguard.html` — live status dashboard
-- Alert thresholds on status payload (`alerts[]`)
-- Still defensive only; no secrets or IPs exposed
+## 0.05.0 highlights
+- Navigation links to Guard from Terminal and Signal Advisor
+- Consistent cross-links on `/bodyguard.html`
+- Retains status API, alerts, probe detection, soft-ban, rate limits
 
-## Endpoints
-- `GET /api/bodyguard/status`
-- UI: `https://<worker>/bodyguard.html`
-
-## Version ladder
-| Version | Focus |
-|---------|--------|
-| 0.01.0 | enforce + rate limit |
-| 0.02.0 | probe + soft-ban |
-| 0.03.0 | status + counters |
-| **0.04.0** | **status UI + thresholds** |
+## Pages
+- Terminal: `/`
+- Advisor: `/signal-advisor.html`
+- Guard: `/bodyguard.html`
+- Status API: `/api/bodyguard/status`

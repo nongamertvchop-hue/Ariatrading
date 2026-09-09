@@ -7,18 +7,18 @@
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <title>Bodyguard(Aria) Status</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b0e11;color:#d9dde3;font:14px Arial,sans-serif}.wrap{max-width:900px;margin:0 auto;padding:20px}.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}.brand{font-weight:700;font-size:18px;margin-right:auto}button{background:#181d23;color:#d9dde3;border:1px solid #303640;border-radius:6px;padding:9px 12px;cursor:pointer}.card{border:1px solid #252a31;background:#11151a;border-radius:10px;padding:14px;margin-bottom:12px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.metric{border:1px solid #252a31;border-radius:8px;padding:12px}.metric span{display:block;color:#89929e;font-size:11px}.metric strong{display:block;font-size:24px;margin-top:6px}.ok{color:#52c48d}.warn{color:#e6c07b}.bad{color:#e06b75}.muted{color:#89929e}.row{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #1d2228}.row:last-child{border-bottom:0}code{background:#181d23;padding:2px 6px;border-radius:4px}@media(max-width:700px){.grid{grid-template-columns:1fr 1fr}}
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b0e11;color:#d9dde3;font:14px Arial,sans-serif}.wrap{max-width:900px;margin:0 auto;padding:20px}.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}.brand{font-weight:700;font-size:18px;margin-right:auto}a.nav{color:#89929e;text-decoration:none;padding:6px 8px;border:1px solid #303640;border-radius:6px}a.nav:hover{color:#d9dde3;border-color:#46515f}button{background:#181d23;color:#d9dde3;border:1px solid #303640;border-radius:6px;padding:9px 12px;cursor:pointer}.card{border:1px solid #252a31;background:#11151a;border-radius:10px;padding:14px;margin-bottom:12px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.metric{border:1px solid #252a31;border-radius:8px;padding:12px}.metric span{display:block;color:#89929e;font-size:11px}.metric strong{display:block;font-size:24px;margin-top:6px}.ok{color:#52c48d}.warn{color:#e6c07b}.bad{color:#e06b75}.muted{color:#89929e}.row{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #1d2228}.row:last-child{border-bottom:0}code{background:#181d23;padding:2px 6px;border-radius:4px}@media(max-width:700px){.grid{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="top">
     <div class="brand">Bodyguard(Aria)</div>
-    <a href="/" style="color:#89929e;text-decoration:none">Terminal</a>
-    <a href="/signal-advisor.html" style="color:#89929e;text-decoration:none">Advisor</a>
+    <a class="nav" href="/">Terminal</a>
+    <a class="nav" href="/signal-advisor.html">Advisor</a>
+    <a class="nav" href="/bodyguard.html">Guard</a>
     <button id="refresh" type="button">Refresh</button>
   </div>
-
   <div class="card">
     <div class="row"><span class="muted">Guard</span><strong id="guard">—</strong></div>
     <div class="row"><span class="muted">Version</span><strong id="version">—</strong></div>
@@ -26,7 +26,6 @@
     <div class="row"><span class="muted">Started</span><strong id="started">—</strong></div>
     <div class="row"><span class="muted">Health</span><strong id="health" class="ok">—</strong></div>
   </div>
-
   <div class="card">
     <h3 style="margin-top:0">Counters</h3>
     <div class="grid">
@@ -38,12 +37,10 @@
       <div class="metric"><span>Status calls</span><strong id="cStatus">0</strong></div>
     </div>
   </div>
-
   <div class="card">
     <h3 style="margin-top:0">Alerts</h3>
     <div id="alerts" class="muted">ไม่มี alert</div>
   </div>
-
   <div class="card muted" style="font-size:12px;line-height:1.5">
     หน้านี้แสดงเฉพาะตัวเลขรวมจาก isolate ปัจจุบัน ไม่มี IP / secret / ข้อมูลส่วนตัว<br>
     API: <code>/api/bodyguard/status</code> · execution: <code>NONE</code>
@@ -71,23 +68,18 @@ async function load(){
     const alerts=Array.isArray(p.alerts)?p.alerts:[];
     const health=$('health');
     if(alerts.length){
-      health.textContent='ATTENTION';
-      health.className='warn';
+      health.textContent='ATTENTION'; health.className='warn';
       $('alerts').innerHTML=alerts.map(a=>`<div class="row"><span class="warn">${a.code}</span><span>${a.message||''}</span></div>`).join('');
     }else{
-      health.textContent='OK';
-      health.className='ok';
+      health.textContent='OK'; health.className='ok';
       $('alerts').textContent='ไม่มี alert';
     }
   }catch(e){
-    setText('health','OFFLINE');
-    $('health').className='bad';
+    setText('health','OFFLINE'); $('health').className='bad';
     $('alerts').textContent='โหลดสถานะไม่สำเร็จ: '+e.message;
   }
 }
-$('refresh').onclick=load;
-load();
-setInterval(load,15000);
+$('refresh').onclick=load; load(); setInterval(load,15000);
 </script>
 </body>
 </html>
