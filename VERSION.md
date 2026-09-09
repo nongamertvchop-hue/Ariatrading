@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.14.3**
+Current version: **0.14.4**
 
 ## Versioning rule
 
@@ -15,7 +15,7 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.14.3
+## Current milestone — 0.14.4
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
@@ -42,13 +42,15 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - The Worker `/api/signal` path now uses a dedicated parity implementation that mirrors the Python realtime engine's candle pressure, confirmed zones, zone-center semantics, fake-breakout classification, sequence evaluation, structure bias, all-zone candidate selection, scoring, forecast context, realtime supervisor gate, and nearest-zone semantics.
 - Worker realtime input now has an explicit feed guard for OHLC geometry, chronological ordering, timeframe-grid alignment, stale/future data, and per-symbol/timeframe duplicate suppression.
 - Worker parity contracts are covered by a Node test suite in addition to Python tests and Worker syntax checks.
+- Signal events now have deterministic `sig_...` identities shared by the Python and Worker canonical payload contract, with browser journal deduplication using the event identity when available.
+- Realtime event timestamps are normalized to UTC `Z` form before event hashing so equivalent timezone-aware Python timestamps do not create a different research identity from Worker output.
+- Historical realtime replay can now attach causal paper-signal outcomes to each replayed event without changing the original signal decision.
+- Outcome labeling is research-only and supports `WIN`, `LOSS`, `TIMEOUT`, `AMBIGUOUS`, and `INVALID`; same-candle stop/target conflicts remain explicitly ambiguous because OHLC does not encode intrabar order.
 
 ## Next milestones
 
 ### 0.14.x — signal validation and paper research
-- Add signal-event IDs and deterministic deduplication so repeated polling cannot create duplicate research snapshots.
-- Add historical signal replay to the Webaria Advisor using the same realtime replay semantics as Python.
-- Add outcome labeling for paper signals only after the next completed bars are known, without changing the live signal itself.
+- Add historical outcome display to the Webaria Advisor using the same event IDs and replay semantics as Python.
 - Compare MTF filtered vs unfiltered paper signals on identical chronological windows.
 - Add signal-quality reports by timeframe, regime, breakout state, and setup score bucket.
 - Continue auditing execution-friction sensitivity and realtime/replay parity.
