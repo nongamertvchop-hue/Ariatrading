@@ -20,6 +20,7 @@ from .levels_v2 import PriceZone, find_resistance_zones, find_support_zones
 from .market_snapshot import MarketSnapshot
 from .realtime_guard import RealtimeGuard
 from .realtime_supervisor import ALLOW, SupervisorDecision, supervise
+from .signal_event import build_signal_event_id
 from .timeframe import adaptive_zone_tolerance, get_timeframe_config
 
 
@@ -69,6 +70,31 @@ class LiveEvaluation:
     data_quality: str = "ok"
     supervisor: SupervisorDecision | None = None
     snapshot: MarketSnapshot | None = None
+
+    @property
+    def event_id(self) -> str:
+        """Stable research identity for this closed-candle decision."""
+        score = None if self.signal.score is None else {"total": self.signal.score.total}
+        zone = None if self.signal.zone is None else {
+            "kind": self.signal.zone.kind,
+            "low": self.signal.zone.low,
+            "high": self.signal.zone.high,
+            "touches": self.signal.zone.touches,
+        }
+        return build_signal_event_id({
+            "symbol": self.symbol,
+            "timeframe": self.timeframe,
+            "bar_time": self.bar_time.isoformat(),
+            "signal": self.signal.action,
+            "state": self.signal.state,
+            "breakout_state": self.signal.breakout_state,
+            "price": self.snapshot.current_close if self.snapshot is not None else None,
+            "entry_reference": self.signal.entry_reference,
+            "stop_reference": self.signal.stop_reference if self.signal.action != WAIT else None,
+            "structure_bias": self.signal.structure_bias,
+            "score": score,
+            "zone": zone,
+        })
 
 
 class RealtimeMonitor:
@@ -145,6 +171,7 @@ class RealtimeMonitor:
                 confirmation_index=signal.confirmation_index,
                 structure_bias=signal.structure_bias,
                 score=signal.score,
+                state=signal.state,
             )
 
         snapshot = MarketSnapshot(
