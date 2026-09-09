@@ -17,15 +17,11 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 
 ## Active Roadmap — 0.15.0
 
-Target: complete the 10-item development plan while preserving the two-setup-only philosophy and fail-closed safety model.
-
 ### Phase 1 — Research Foundation (in progress)
-1. **Signal Event ID + Deduplication** ← largely complete
-   - Deterministic `signal_id` on every `EngineSignal`
-   - `SignalRegistry` for in-memory deduplication
-   - Journal and realtime paths updated to carry the ID
-   - RealtimeMonitor now registers signals and exposes `is_new_signal`
-2. Historical Signal Replay in Webaria
+1. **Signal Event ID + Deduplication** — largely complete (Python + Worker event_id already present)
+2. **Historical Signal Replay / History in Webaria** — started
+   - Signal Advisor now keeps browser-local signal history keyed by `event_id`
+   - Deduplicates repeated polls of the same closed-bar decision
 3. Outcome Labeling for Paper Signals
 4. Signal Quality Report Dashboard
 5. MTF Filtered vs Unfiltered comparison
@@ -41,13 +37,17 @@ Target: complete the 10-item development plan while preserving the two-setup-onl
 
 ## Changes in this branch so far
 
-- Added `strategy/signal_id.py` with `make_signal_id()` and `SignalRegistry`
-- Extended `EngineSignal` with optional `signal_id` field
-- `evaluate_long` / `evaluate_short` now accept `symbol` and attach a deterministic ID
-- `PaperTradeJournal` carries `signal_id` on SIGNAL events
-- `RealtimeMonitor` passes `symbol`, preserves `signal_id` through supervisor, and uses `SignalRegistry` to mark `is_new_signal`
-- Unit tests for signal ID stability and registry deduplication
+- `strategy/signal_id.py` + registry
+- `EngineSignal.signal_id`, journal + realtime integration
+- RealtimeMonitor registers signals and exposes `is_new_signal`
+- Webaria Signal Advisor:
+  - Signal History panel (localStorage, event_id dedupe)
+  - Live price polling every 8s
+  - Stronger chart (zone band, live price line, last-candle emphasis)
+  - Shows Event ID in UI
+- Unit tests for signal ID generation/registry
 
-## Previous milestone — 0.14.3
+## Note on live site
 
-(See git history for full 0.14.3 notes)
+Production Worker at `https://ariatrading.nongamertvchop.workers.dev` deploys from **main** only.
+This branch must be merged (or manually deployed) before UI changes appear on the public site.
