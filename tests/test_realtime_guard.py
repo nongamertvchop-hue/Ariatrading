@@ -56,6 +56,26 @@ def test_guard_rejects_future_timestamp():
     assert quality.reason == "latest bar timestamp is in the future"
 
 
+def test_guard_rejects_naive_bar_timestamp_without_type_error():
+    data = bars()
+    bad = list(data)
+    bad[-1] = LiveBar.__new__(LiveBar)
+    object.__setattr__(bad[-1], "time", data[-1].time.replace(tzinfo=None))
+    object.__setattr__(bad[-1], "open", data[-1].open)
+    object.__setattr__(bad[-1], "high", data[-1].high)
+    object.__setattr__(bad[-1], "low", data[-1].low)
+    object.__setattr__(bad[-1], "close", data[-1].close)
+    quality = RealtimeGuard("1m").validate(bad, now=data[-1].time + timedelta(seconds=30))
+    assert not quality.ok
+    assert quality.reason == "bar timestamp must be timezone-aware"
+
+
+def test_guard_rejects_naive_now_explicitly():
+    data = bars()
+    with pytest.raises(ValueError, match="now must be timezone-aware"):
+        RealtimeGuard("1m").validate(data, now=data[-1].time.replace(tzinfo=None))
+
+
 def test_guard_rejects_bad_ohlc_geometry():
     data = bars()
     bad = list(data)
