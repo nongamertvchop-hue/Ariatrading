@@ -1,38 +1,26 @@
-# Bodyguard(Aria) v0.01.0
+# Bodyguard(Aria) v0.02.0
 
 Defensive security layer for Ariatrading / Webaria.
 
-**Mission:** protect the system, secrets, and personal data from probing, abuse, and leakage.
+## Mission
+Protect the system, secrets, and personal data from probing, abuse, injection attempts, and leakage.
 
-## What changed in 0.01.0
-- Enforcement is **active** on the Worker gateway (`worker/entry.js`)
-- Public `/api/*` requests pass method, query, symbol/timeframe, and rate-limit checks
-- Security events are logged in structured JSON (no secrets)
-- Response header `x-bodyguard: 0.01.0` marks guarded responses
+## 0.02.0 highlights
+- Suspicious **probe pattern** detection in path/query (traversal, XSS/SQL shaped tokens)
+- **User-Agent risk signals** for empty/scanner-like clients
+- **Soft-ban** window after repeated blocks from the same client key
+- Stricter path allow behaviour for `/api/*`
+- Security headers retained from 0.01.0
 
-## Layout
-```text
-bodyguard/
-  VERSION
-  README.md
-  RULES.md
-  THREAT_MODEL.md
-  config/bodyguard.config.json
-  core/policy.py
-  core/sanitize.py
-  worker/bodyguard.js
-  docs/INCIDENT_RESPONSE.md
-```
-
-## Modes
-| Version | Mode | Behavior |
-|---------|------|----------|
-| 0.00.0 | monitor | helpers only |
-| **0.01.0** | **enforce** | blocks bad requests on Worker |
-| 0.02.x | harden | tighter limits, bot scores, audit sink |
+## Version ladder
+| Version | Focus |
+|---------|--------|
+| 0.00.0 | foundation / rules |
+| 0.01.0 | enforce validate + rate limit |
+| **0.02.0** | **probe detection + soft-ban** |
+| 0.03.x | optional audit sink / dashboard |
 
 ## Operator notes
-- Rate limit defaults: 60 requests / IP / path / 60 seconds on `/api/*`
-- Legitimate UI polling (signal ~45s, price ~8s) stays well under the limit
-- If you are blocked with HTTP 429, wait for the window to reset
-- Still no real order execution path
+- Soft-ban is in-memory per Worker isolate (resets on cold start)
+- Legitimate browsers with normal UAs are unaffected
+- UI polling rates remain under the API rate limit

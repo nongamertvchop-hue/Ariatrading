@@ -1,6 +1,6 @@
 {
   "name": "Bodyguard(Aria)",
-  "version": "0.01.0",
+  "version": "0.02.0",
   "enabled": true,
   "mode": "enforce",
   "http": {
@@ -17,6 +17,11 @@
       "windowSeconds": 60,
       "maxRequestsPerIp": 60,
       "burst": 20
+    },
+    "softBan": {
+      "blockThreshold": 8,
+      "windowSeconds": 300,
+      "banSeconds": 600
     }
   },
   "privacy": {
@@ -29,7 +34,7 @@
     "levels": ["info", "warn", "block"]
   },
   "headers": {
-    "x-bodyguard": "0.01.0",
+    "x-bodyguard": "0.02.0",
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
     "x-frame-options": "DENY"

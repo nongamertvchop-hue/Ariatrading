@@ -1,5 +1,5 @@
 Bodyguard(Aria)
-version: 0.01.0
-codename: active-shield
-status: enforced-on-worker
+version: 0.02.0
+codename: hard-shell
+status: enforced-hardened
 scope: defensive-only
