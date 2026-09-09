@@ -31,6 +31,7 @@
       const i=data.findIndex(c=>numTime(c.time??c.datetime)===t);if(i<0)continue;
       const base=+data[i].close;if(!Number.isFinite(base)||base===0)continue;
       const outcome=entry.outcome&&typeof entry.outcome==='object'?entry.outcome:{};
+      let entryChanged=false;
       for(const horizon of HORIZONS){
         const end=i+horizon;if(end>=data.length)continue;
         const window=data.slice(i+1,end+1);
@@ -39,19 +40,20 @@
         const mfe=Math.max(...window.map(c=>(((entry.signal==='LONG'?+c.high:+c.low)-base)/base)*100*direction));
         const mae=Math.min(...window.map(c=>(((entry.signal==='LONG'?+c.low:+c.high)-base)/base)*100*direction));
         const next={close_pct:Number(closePct.toFixed(5)),mfe_pct:Number(mfe.toFixed(5)),mae_pct:Number(mae.toFixed(5)),bars:horizon,completed:true};
-        if(JSON.stringify(outcome[horizon])!==JSON.stringify(next)){outcome[horizon]=next;changed=true}
+        if(JSON.stringify(outcome[horizon])!==JSON.stringify(next)){outcome[horizon]=next;entryChanged=true;}
       }
-      if(changed)entry.outcome=outcome;
+      if(entryChanged){entry.outcome=outcome;changed=true;}
     }
     if(changed)write(symbol,tf,list);
   }
   function statText(x){
-    const o=x.outcome||{};return HORIZONS.map(h=>o[h]?`${h}:+${o[h].close_pct.toFixed?o[h].close_pct.toFixed(2):o[h].close_pct}%`:`${h}:—`).join(' ');
+    const o=x.outcome||{};
+    return HORIZONS.map(h=>o[h]?`${h}:${o[h].close_pct>=0?'+':''}${o[h].close_pct.toFixed(2)}%`:`${h}:—`).join(' ');
   }
   function render(symbol,tf){
     const box=document.getElementById('journal');if(!box)return;
     const list=read(symbol,tf).slice().reverse().slice(0,12);
-    if(!list.length){box.innerHTML='<div class="journal-empty">No observations yet.</div>';return}
+    if(!list.length){box.innerHTML='<div class="journal-empty">No observations yet.</div>';return;}
     box.innerHTML=list.map(x=>{
       const sig=String(x.signal||'WAIT'),cls=sig==='LONG'?'up':sig==='SHORT'?'down':'';
       const raw=numTime(x.bar_time);const time=Number.isFinite(raw)?new Date(raw).toLocaleString():String(x.bar_time);
@@ -73,11 +75,7 @@
     render(document.getElementById('symbol')?.value||'EUR/USD',document.getElementById('tf')?.value||'15m');
   }
   const originalFetch=root.fetch.bind(root);
-  root.fetch=async function(input,init){
-    const meta=inspectRequest(input);const response=await originalFetch(input,init);
-    if(meta)response.clone().json().then(payload=>observe(payload,meta.symbol,meta.tf)).catch(()=>{});
-    return response;
-  };
+  root.fetch=async function(input,init){const meta=inspectRequest(input);const response=await originalFetch(input,init);if(meta)response.clone().json().then(payload=>observe(payload,meta.symbol,meta.tf)).catch(()=>{});return response;};
   root.WebariaObservedSignalJournalUI=Object.freeze({observe,render,bind,read,updateOutcomes});
   window.addEventListener('DOMContentLoaded',bind);
 })(typeof window!=='undefined'?window:globalThis);
