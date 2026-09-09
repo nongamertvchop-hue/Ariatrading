@@ -20,10 +20,11 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 Target: complete the 10-item development plan while preserving the two-setup-only philosophy and fail-closed safety model.
 
 ### Phase 1 — Research Foundation (in progress)
-1. **Signal Event ID + Deduplication** ← current focus
+1. **Signal Event ID + Deduplication** ← largely complete
    - Deterministic `signal_id` on every `EngineSignal`
    - `SignalRegistry` for in-memory deduplication
    - Journal and realtime paths updated to carry the ID
+   - RealtimeMonitor now registers signals and exposes `is_new_signal`
 2. Historical Signal Replay in Webaria
 3. Outcome Labeling for Paper Signals
 4. Signal Quality Report Dashboard
@@ -43,6 +44,9 @@ Target: complete the 10-item development plan while preserving the two-setup-onl
 - Added `strategy/signal_id.py` with `make_signal_id()` and `SignalRegistry`
 - Extended `EngineSignal` with optional `signal_id` field
 - `evaluate_long` / `evaluate_short` now accept `symbol` and attach a deterministic ID
+- `PaperTradeJournal` carries `signal_id` on SIGNAL events
+- `RealtimeMonitor` passes `symbol`, preserves `signal_id` through supervisor, and uses `SignalRegistry` to mark `is_new_signal`
+- Unit tests for signal ID stability and registry deduplication
 
 ## Previous milestone — 0.14.3
 
