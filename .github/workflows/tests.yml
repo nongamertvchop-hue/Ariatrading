@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: "22"
       - name: Run Worker parity tests
-        run: node --test tests/worker_signal_parity.test.mjs
+        run: node --test tests/worker_signal_parity.test.mjs tests/web_signal_journal.test.mjs
 
   worker-syntax:
     runs-on: ubuntu-latest
