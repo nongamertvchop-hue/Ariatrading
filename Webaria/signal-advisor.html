@@ -5,38 +5,318 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ariatrading Signal Advisor</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b0e11;color:#d9dde3;font:14px Arial,sans-serif}.wrap{max-width:1180px;margin:0 auto;padding:16px}.top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.brand{font-weight:700;font-size:18px;margin-right:auto}select,button,input{background:#181d23;color:#d9dde3;border:1px solid #303640;border-radius:6px;padding:9px 10px}button{cursor:pointer}.grid{display:grid;grid-template-columns:1.6fr .9fr;gap:12px;margin-top:12px}.card{border:1px solid #252a31;background:#11151a;border-radius:9px;padding:12px}.hero{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.metric{padding:10px;border:1px solid #252a31;border-radius:7px}.metric span{display:block;color:#89929e;font-size:11px}.metric strong{display:block;font-size:22px;margin-top:4px}.signal{font-size:30px;font-weight:800}.LONG{color:#52c48d}.SHORT{color:#e06b75}.WAIT{color:#d9dde3}.reason{color:#b8c0ca;line-height:1.5}.rows{display:grid;gap:7px}.row{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #1d2228;padding:6px 0}.row:last-child{border-bottom:0}.muted{color:#89929e}.small{font-size:11px}.chart{width:100%;height:420px;background:#0b0e11;border-radius:7px}.levels{display:flex;gap:8px;flex-wrap:wrap}.tag{padding:5px 7px;border:1px solid #303640;border-radius:5px}.trade{display:grid;gap:8px}.two{display:grid;grid-template-columns:1fr 1fr;gap:7px}.notice{padding:9px;border:1px dashed #46515f;border-radius:7px;color:#aab3bd}.good{color:#52c48d}.bad{color:#e06b75}@media(max-width:820px){.grid{grid-template-columns:1fr}.hero{grid-template-columns:1fr 1fr}.chart{height:320px}.brand{width:100%;margin:0}.top{align-items:stretch}.top select,.top button{flex:1}}@media(max-width:520px){.hero{grid-template-columns:1fr}.two{grid-template-columns:1fr}}
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b0e11;color:#d9dde3;font:14px Arial,sans-serif}.wrap{max-width:1280px;margin:0 auto;padding:16px}.top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.brand{font-weight:700;font-size:18px;margin-right:auto}select,button,input{background:#181d23;color:#d9dde3;border:1px solid #303640;border-radius:6px;padding:9px 10px}button{cursor:pointer}.grid{display:grid;grid-template-columns:1.7fr .95fr;gap:12px;margin-top:12px}.card{border:1px solid #252a31;background:#11151a;border-radius:9px;padding:12px}.hero{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px}.metric{padding:10px;border:1px solid #252a31;border-radius:7px}.metric span{display:block;color:#89929e;font-size:11px}.metric strong{display:block;font-size:20px;margin-top:4px}.signal{font-size:28px;font-weight:800}.LONG{color:#52c48d}.SHORT{color:#e06b75}.WAIT{color:#d9dde3}.reason{color:#b8c0ca;line-height:1.5}.rows{display:grid;gap:7px}.row{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #1d2228;padding:6px 0}.row:last-child{border-bottom:0}.muted{color:#89929e}.small{font-size:11px}.chart{width:100%;height:440px;background:#0b0e11;border-radius:7px;cursor:crosshair}.levels{display:flex;gap:8px;flex-wrap:wrap}.tag{padding:5px 7px;border:1px solid #303640;border-radius:5px}.trade{display:grid;gap:8px}.two{display:grid;grid-template-columns:1fr 1fr;gap:7px}.notice{padding:9px;border:1px dashed #46515f;border-radius:7px;color:#aab3bd}.history{max-height:260px;overflow:auto}.history-item{display:grid;grid-template-columns:70px 1fr auto;gap:8px;padding:7px 0;border-bottom:1px solid #1d2228;font-size:12px;cursor:pointer}.history-item:hover{background:#161b21}.history-item .sig{font-weight:700}.history-item .sig.LONG{color:#52c48d}.history-item .sig.SHORT{color:#e06b75}.history-item .time{color:#89929e}.empty{color:#69727e;padding:10px 0}.live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#52c48d;margin-right:6px;box-shadow:0 0 8px #52c48d;animation:pulse 1.4s infinite}@keyframes pulse{0%{opacity:1}50%{opacity:.35}100%{opacity:1}}@media(max-width:900px){.grid{grid-template-columns:1fr}.hero{grid-template-columns:1fr 1fr}.chart{height:320px}.brand{width:100%;margin:0}.top{align-items:stretch}.top select,.top button{flex:1}}@media(max-width:520px){.hero{grid-template-columns:1fr}.two{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="wrap">
-<div class="top"><div class="brand">ARIA Trading · Signal Advisor</div><select id="symbol"><option>EUR/USD</option><option>GBP/USD</option><option>USD/JPY</option><option>AUD/USD</option><option>USD/CAD</option></select><select id="tf"><option value="1m">1m</option><option value="5m">5m</option><option value="15m" selected>15m</option><option value="30m">30m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1D">1D</option></select><button id="refresh">วิเคราะห์ใหม่</button></div>
+<div class="top">
+  <div class="brand">ARIA Trading · Signal Advisor</div>
+  <select id="symbol"><option>EUR/USD</option><option>GBP/USD</option><option>USD/JPY</option><option>AUD/USD</option><option>USD/CAD</option></select>
+  <select id="tf"><option value="1m">1m</option><option value="5m">5m</option><option value="15m" selected>15m</option><option value="30m">30m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1D">1D</option></select>
+  <button id="refresh">วิเคราะห์ใหม่</button>
+  <span class="small muted" id="liveStatus"><span class="live-dot"></span>Realtime</span>
+</div>
+
 <div class="grid">
 <div>
-<div class="card"><div class="hero"><div class="metric"><span>Signal</span><strong id="signal" class="signal WAIT">WAIT</strong></div><div class="metric"><span>Score</span><strong id="score">—</strong></div><div class="metric"><span>Structure</span><strong id="structure">—</strong></div></div><div style="margin-top:10px" class="reason" id="reason">กำลังอ่านข้อมูลตลาดจริง…</div></div>
-<div class="card" style="margin-top:12px"><canvas id="chart" class="chart"></canvas></div>
-<div class="card" style="margin-top:12px"><div class="levels"><div class="tag">Zone: <b id="zone">—</b></div><div class="tag">Entry: <b id="entry">—</b></div><div class="tag">Stop: <b id="stop">—</b></div><div class="tag">R:R: <b id="rr">—</b></div><div class="tag">Breakout: <b id="breakout">—</b></div></div></div>
+  <div class="card">
+    <div class="hero">
+      <div class="metric"><span>Signal</span><strong id="signal" class="signal WAIT">WAIT</strong></div>
+      <div class="metric"><span>Score</span><strong id="score">—</strong></div>
+      <div class="metric"><span>Structure</span><strong id="structure">—</strong></div>
+      <div class="metric"><span>Event ID</span><strong id="eventId" class="small" style="font-size:12px;word-break:break-all">—</strong></div>
+    </div>
+    <div style="margin-top:10px" class="reason" id="reason">กำลังอ่านข้อมูลตลาดจริง…</div>
+  </div>
+
+  <div class="card" style="margin-top:12px"><canvas id="chart" class="chart"></canvas></div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="levels">
+      <div class="tag">Zone: <b id="zone">—</b></div>
+      <div class="tag">Entry: <b id="entry">—</b></div>
+      <div class="tag">Stop: <b id="stop">—</b></div>
+      <div class="tag">R:R: <b id="rr">—</b></div>
+      <div class="tag">Breakout: <b id="breakout">—</b></div>
+    </div>
+  </div>
 </div>
+
 <div>
-<div class="card"><h3 style="margin-top:0">จังหวะที่ระบบรอ</h3><div class="rows"><div class="row"><span class="muted">LONG</span><b id="longRule">รอ support test → bullish confirmation</b></div><div class="row"><span class="muted">SHORT</span><b id="shortRule">รอ resistance test → bearish confirmation</b></div><div class="row"><span class="muted">WAIT</span><b id="waitRule">sequence ยังไม่ครบ / breakout ไม่ปลอดภัย</b></div></div></div>
-<div class="card" style="margin-top:12px"><h3 style="margin-top:0">Paper Risk</h3><div class="trade"><label>Paper equity <input id="equity" type="number" min="1" step="100" value="10000" style="width:100%"></label><label>Risk / trade <input id="risk" type="number" min="0.001" max="0.02" step="0.001" value="0.01" style="width:100%"></label><div class="two"><div class="metric"><span>Suggested qty</span><strong id="qty">—</strong></div><div class="metric"><span>Risk amount</span><strong id="riskAmount">—</strong></div></div></div></div>
-<div class="card" style="margin-top:12px"><h3 style="margin-top:0">สถานะข้อมูล</h3><div class="rows"><div class="row"><span class="muted">Price</span><b id="price">—</b></div><div class="row"><span class="muted">Last update</span><b id="updated">—</b></div><div class="row"><span class="muted">Candles</span><b id="candles">—</b></div></div></div>
-<div class="card" style="margin-top:12px"><div class="notice">โหมดนี้ใช้ข้อมูลตลาดจริงเพื่อการวิเคราะห์ แต่การเปิด/ปิดสถานะเป็น <b>Paper Trading เท่านั้น</b> ไม่มีการส่งคำสั่งไป broker และ score ไม่ใช่ความน่าจะเป็นของกำไร</div></div>
+  <div class="card">
+    <h3 style="margin-top:0">จังหวะที่ระบบรอ</h3>
+    <div class="rows">
+      <div class="row"><span class="muted">LONG</span><b>รอ support test → bullish confirmation</b></div>
+      <div class="row"><span class="muted">SHORT</span><b>รอ resistance test → bearish confirmation</b></div>
+      <div class="row"><span class="muted">WAIT</span><b>sequence ยังไม่ครบ / breakout ไม่ปลอดภัย</b></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <h3 style="margin-top:0">Paper Risk</h3>
+    <div class="trade">
+      <label>Paper equity <input id="equity" type="number" min="1" step="100" value="10000" style="width:100%"></label>
+      <label>Risk / trade <input id="risk" type="number" min="0.001" max="0.02" step="0.001" value="0.01" style="width:100%"></label>
+      <div class="two">
+        <div class="metric"><span>Suggested qty</span><strong id="qty">—</strong></div>
+        <div class="metric"><span>Risk amount</span><strong id="riskAmount">—</strong></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <h3 style="margin-top:0">สถานะข้อมูล</h3>
+    <div class="rows">
+      <div class="row"><span class="muted">Price</span><b id="price">—</b></div>
+      <div class="row"><span class="muted">Last update</span><b id="updated">—</b></div>
+      <div class="row"><span class="muted">Candles</span><b id="candles">—</b></div>
+      <div class="row"><span class="muted">History</span><b id="histCount">0</b></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h3 style="margin:0">Signal History</h3>
+      <button id="clearHistory" class="small" style="padding:5px 8px">Clear</button>
+    </div>
+    <div id="history" class="history"><div class="empty">ยังไม่มีประวัติ signal</div></div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="notice">โหมดนี้ใช้ข้อมูลตลาดจริงเพื่อการวิเคราะห์ แต่การเปิด/ปิดสถานะเป็น <b>Paper Trading เท่านั้น</b> ไม่มีการส่งคำสั่งไป broker และ score ไม่ใช่ความน่าจะเป็นของกำไร</div>
+  </div>
 </div>
 </div>
 </div>
+
 <script src="/paper-engine.js"></script>
 <script>
-const $=id=>document.getElementById(id), symbolEl=$('symbol'), tfEl=$('tf');
-const state={payload:null};
-function digits(p){return Math.abs(Number(p))>=20?3:5}function price(p){const n=Number(p);return Number.isFinite(n)?n.toFixed(digits(n)):'—'}
+const $=id=>document.getElementById(id);
+const symbolEl=$('symbol'), tfEl=$('tf');
+const HISTORY_KEY='aria-signal-history-v1';
+const state={payload:null, history:[], livePrice:null};
+
+function digits(p){return Math.abs(Number(p))>=20?3:5}
+function price(p){const n=Number(p);return Number.isFinite(n)?n.toFixed(digits(n)):'—'}
 function money(v){const n=Number(v);return Number.isFinite(n)?n.toFixed(2):'—'}
-function signalClass(s){const el=$('signal');el.className='signal '+s;el.textContent=s}
-function draw(){const c=$('chart'),ctx=c.getContext('2d'),d=state.payload?.candles||[];const r=c.getBoundingClientRect(),ratio=devicePixelRatio||1;c.width=r.width*ratio;c.height=r.height*ratio;ctx.setTransform(ratio,0,0,ratio,0,0);ctx.fillStyle='#0b0e11';ctx.fillRect(0,0,r.width,r.height);if(!d.length)return;const pad={l:12,r:58,t:12,b:20},w=r.width-pad.l-pad.r,h=r.height-pad.t-pad.b,lo=Math.min(...d.map(x=>+x.low)),hi=Math.max(...d.map(x=>+x.high)),extra=(hi-lo)*.08||1e-4,min=lo-extra,max=hi+extra;const y=v=>pad.t+(max-v)/(max-min)*h,cw=Math.max(2,w/d.length);d.forEach((x,i)=>{const xx=pad.l+i*cw+cw/2,up=+x.close>=+x.open;ctx.strokeStyle=up?'#52c48d':'#e06b75';ctx.beginPath();ctx.moveTo(xx,y(+x.high));ctx.lineTo(xx,y(+x.low));ctx.stroke();ctx.fillRect(xx-Math.max(1,cw*.3),Math.min(y(+x.open),y(+x.close)),Math.max(1,cw*.6),Math.max(1,Math.abs(y(+x.open)-y(+x.close))))});const a=state.payload; if(a.zone){ctx.strokeStyle='#7b8490';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(pad.l,y(+a.zone.low));ctx.lineTo(pad.l+w,y(+a.zone.low));ctx.moveTo(pad.l,y(+a.zone.high));ctx.lineTo(pad.l+w,y(+a.zone.high));ctx.stroke();ctx.setLineDash([])}[['entry_reference','Entry'],['stop_reference','Stop']].forEach(([k,label])=>{if(a[k]==null)return;const yy=y(+a[k]);ctx.setLineDash([3,3]);ctx.strokeStyle='#69727e';ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(pad.l+w,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#d9dde3';ctx.fillText(label+' '+price(a[k]),pad.l+w+4,yy+4)})}
-function render(){const p=state.payload;if(!p)return;signalClass(p.signal||'WAIT');$('score').textContent=p.score?.total!=null?`${p.score.total}/100`:'—';$('structure').textContent=p.structure_bias||'—';$('reason').textContent=p.reason||'—';$('zone').textContent=p.zone?`${p.zone.kind} ${price(p.zone.low)}–${price(p.zone.high)} (${p.zone.touches})`:'—';$('entry').textContent=price(p.entry_reference);$('stop').textContent=price(p.stop_reference);$('breakout').textContent=p.breakout_state||'—';$('price').textContent=price(p.price);$('candles').textContent=String(p.candles_used||p.candles?.length||0);$('updated').textContent=p.generated_at?new Date(p.generated_at).toLocaleTimeString():'—';let rr='—';if(p.entry_reference!=null&&p.stop_reference!=null&&p.zone){const e=+p.entry_reference,s=+p.stop_reference;const reward=Math.abs(p.zone.kind==='SUPPORT'?(+p.zone.high-e):(+p.zone.low-e));const risk=Math.abs(e-s);if(risk>0)rr=(reward/risk).toFixed(2)+'R'}$('rr').textContent=rr;updateRisk();draw()}
-function updateRisk(){const p=state.payload;if(!p||p.signal==='WAIT'||p.entry_reference==null||p.stop_reference==null){$('qty').textContent='—';$('riskAmount').textContent='—';return}try{const equity=+$('equity').value,risk=+$('risk').value,r=WebariaPaperEngine.evaluateRisk({equity,entry:+p.entry_reference,stop:+p.stop_reference,limits:{riskPerTrade:risk,maxDailyLoss:.03,maxOpenRisk:.02,maxPositions:1}});$('qty').textContent=r.allowed?r.quantity.toFixed(2):'BLOCKED';$('riskAmount').textContent=r.allowed?money(r.riskAmount):r.reason}catch(e){$('qty').textContent='BLOCKED';$('riskAmount').textContent=e.message}}
-async function analyze(){const q=new URLSearchParams({symbol:symbolEl.value,timeframe:tfEl.value});$('reason').textContent='กำลังวิเคราะห์แท่งที่ปิดแล้ว…';try{const res=await fetch('/api/signal?'+q,{cache:'no-store'}),p=await res.json();if(!res.ok)throw new Error(p.message||p.error||('HTTP '+res.status));state.payload=p;render()}catch(e){state.payload=null;signalClass('WAIT');$('reason').textContent='ไม่สามารถอ่านข้อมูลตลาดได้: '+e.message}}
-$('refresh').onclick=analyze;symbolEl.onchange=analyze;tfEl.onchange=analyze;$('equity').oninput=updateRisk;$('risk').oninput=updateRisk;window.onresize=draw;analyze();setInterval(analyze,60000);
+function signalClass(s){const el=$('signal');el.className='signal '+(s||'WAIT');el.textContent=s||'WAIT'}
+
+function loadHistory(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');
+    state.history=Array.isArray(raw)?raw.slice(-80):[];
+  }catch(_){state.history=[]}
+  renderHistory();
+}
+
+function saveHistory(){
+  try{localStorage.setItem(HISTORY_KEY, JSON.stringify(state.history.slice(-80)))}catch(_){}
+}
+
+function pushHistory(p){
+  if(!p) return;
+  const id=p.event_id || p.signal_id || `${p.symbol}|${p.timeframe}|${p.bar_time||p.generated_at}|${p.signal}`;
+  if(state.history.some(h=>h.id===id)) return; // dedupe
+  state.history.push({
+    id,
+    symbol:p.symbol,
+    timeframe:p.timeframe,
+    signal:p.signal||'WAIT',
+    score:p.score?.total ?? null,
+    structure:p.structure_bias||null,
+    price:p.price,
+    reason:p.reason||'',
+    at:p.generated_at || new Date().toISOString(),
+    bar_time:p.bar_time||null
+  });
+  if(state.history.length>80) state.history=state.history.slice(-80);
+  saveHistory();
+  renderHistory();
+}
+
+function renderHistory(){
+  const box=$('history');
+  $('histCount').textContent=String(state.history.length);
+  if(!state.history.length){
+    box.innerHTML='<div class="empty">ยังไม่มีประวัติ signal</div>';
+    return;
+  }
+  box.innerHTML=state.history.slice().reverse().map(h=>`
+    <div class="history-item" data-id="${h.id}">
+      <span class="sig ${h.signal}">${h.signal}</span>
+      <span>${h.symbol} · ${h.timeframe}<br><span class="time">${new Date(h.at).toLocaleString()}</span></span>
+      <span>${h.score!=null?h.score+'/100':'—'}</span>
+    </div>`).join('');
+}
+
+function draw(){
+  const c=$('chart'), ctx=c.getContext('2d');
+  const d=state.payload?.candles||[];
+  const r=c.getBoundingClientRect(), ratio=devicePixelRatio||1;
+  c.width=r.width*ratio; c.height=r.height*ratio;
+  ctx.setTransform(ratio,0,0,ratio,0,0);
+  ctx.fillStyle='#0b0e11'; ctx.fillRect(0,0,r.width,r.height);
+  if(!d.length) return;
+
+  const pad={l:12,r:62,t:12,b:22};
+  const w=r.width-pad.l-pad.r, h=r.height-pad.t-pad.b;
+  let lo=Math.min(...d.map(x=>+x.low));
+  let hi=Math.max(...d.map(x=>+x.high));
+  const live=Number(state.livePrice ?? state.payload?.price);
+  if(Number.isFinite(live)){lo=Math.min(lo,live); hi=Math.max(hi,live);}
+  if(state.payload?.zone){lo=Math.min(lo,+state.payload.zone.low); hi=Math.max(hi,+state.payload.zone.high);}
+  const extra=(hi-lo)*.08||1e-4;
+  const min=lo-extra, max=hi+extra;
+  const y=v=>pad.t+(max-v)/(max-min)*h;
+  const cw=Math.max(2,w/d.length);
+
+  // grid
+  ctx.strokeStyle='#171c22'; ctx.lineWidth=1;
+  for(let i=1;i<6;i++){
+    const yy=pad.t+h*i/6;
+    ctx.beginPath(); ctx.moveTo(pad.l,yy); ctx.lineTo(pad.l+w,yy); ctx.stroke();
+  }
+
+  // zone band
+  const a=state.payload;
+  if(a?.zone){
+    const ya=y(+a.zone.high), yb=y(+a.zone.low);
+    ctx.fillStyle='rgba(115,126,140,.12)';
+    ctx.fillRect(pad.l, Math.min(ya,yb), w, Math.abs(yb-ya));
+    ctx.setLineDash([4,4]); ctx.strokeStyle='#6b7480';
+    ctx.beginPath(); ctx.moveTo(pad.l,ya); ctx.lineTo(pad.l+w,ya); ctx.moveTo(pad.l,yb); ctx.lineTo(pad.l+w,yb); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // candles
+  d.forEach((x,i)=>{
+    const xx=pad.l+i*cw+cw/2;
+    const up=+x.close>=+x.open;
+    const isLast=i===d.length-1;
+    ctx.strokeStyle=up?'#52c48d':'#e06b75';
+    ctx.fillStyle=ctx.strokeStyle;
+    if(isLast){ ctx.globalAlpha=0.95; }
+    ctx.beginPath(); ctx.moveTo(xx,y(+x.high)); ctx.lineTo(xx,y(+x.low)); ctx.stroke();
+    ctx.fillRect(xx-Math.max(1,cw*.3), Math.min(y(+x.open),y(+x.close)), Math.max(1,cw*.6), Math.max(1,Math.abs(y(+x.open)-y(+x.close))));
+    ctx.globalAlpha=1;
+  });
+
+  // entry / stop
+  [['entry_reference','Entry'],['stop_reference','Stop']].forEach(([k,label])=>{
+    if(a?.[k]==null) return;
+    const yy=y(+a[k]);
+    ctx.setLineDash([3,3]); ctx.strokeStyle='#69727e';
+    ctx.beginPath(); ctx.moveTo(pad.l,yy); ctx.lineTo(pad.l+w,yy); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#d9dde3'; ctx.font='11px Arial';
+    ctx.fillText(label+' '+price(a[k]), pad.l+w+4, yy+4);
+  });
+
+  // live price line
+  if(Number.isFinite(live)){
+    const yy=y(live);
+    ctx.setLineDash([2,3]); ctx.strokeStyle='#3d8bfd'; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.moveTo(pad.l,yy); ctx.lineTo(pad.l+w,yy); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#1b2430'; ctx.fillRect(pad.l+w+2, yy-9, 56, 18);
+    ctx.fillStyle='#7eb6ff'; ctx.font='11px Arial';
+    ctx.fillText(price(live), pad.l+w+6, yy+4);
+  }
+}
+
+function render(){
+  const p=state.payload;
+  if(!p) return;
+  signalClass(p.signal||'WAIT');
+  $('score').textContent=p.score?.total!=null?`${p.score.total}/100`:'—';
+  $('structure').textContent=p.structure_bias||'—';
+  $('eventId').textContent=p.event_id|| p.signal_id || '—';
+  $('reason').textContent=p.reason||'—';
+  $('zone').textContent=p.zone?`${p.zone.kind} ${price(p.zone.low)}–${price(p.zone.high)} (${p.zone.touches})`:'—';
+  $('entry').textContent=price(p.entry_reference);
+  $('stop').textContent=price(p.stop_reference);
+  $('breakout').textContent=p.breakout_state||'—';
+  $('price').textContent=price(state.livePrice ?? p.price);
+  $('candles').textContent=String(p.candles_used||p.candles?.length||0);
+  $('updated').textContent=p.generated_at?new Date(p.generated_at).toLocaleTimeString():'—';
+
+  let rr='—';
+  if(p.entry_reference!=null && p.stop_reference!=null && p.zone){
+    const e=+p.entry_reference, s=+p.stop_reference;
+    const reward=Math.abs(p.zone.kind==='SUPPORT'?(+p.zone.high-e):(+p.zone.low-e));
+    const risk=Math.abs(e-s);
+    if(risk>0) rr=(reward/risk).toFixed(2)+'R';
+  }
+  $('rr').textContent=rr;
+  updateRisk();
+  draw();
+}
+
+function updateRisk(){
+  const p=state.payload;
+  if(!p||p.signal==='WAIT'||p.entry_reference==null||p.stop_reference==null){
+    $('qty').textContent='—'; $('riskAmount').textContent='—'; return;
+  }
+  try{
+    const equity=+$('equity').value, risk=+$('risk').value;
+    const r=WebariaPaperEngine.evaluateRisk({equity, entry:+p.entry_reference, stop:+p.stop_reference, limits:{riskPerTrade:risk,maxDailyLoss:.03,maxOpenRisk:.02,maxPositions:1}});
+    $('qty').textContent=r.allowed?r.quantity.toFixed(2):'BLOCKED';
+    $('riskAmount').textContent=r.allowed?money(r.riskAmount):r.reason;
+  }catch(e){
+    $('qty').textContent='BLOCKED'; $('riskAmount').textContent=e.message;
+  }
+}
+
+async function analyze(){
+  const q=new URLSearchParams({symbol:symbolEl.value, timeframe:tfEl.value});
+  $('reason').textContent='กำลังวิเคราะห์แท่งที่ปิดแล้ว…';
+  try{
+    const res=await fetch('/api/signal?'+q,{cache:'no-store'});
+    const p=await res.json();
+    if(!res.ok) throw new Error(p.message||p.error||('HTTP '+res.status));
+    state.payload=p;
+    if(Number.isFinite(Number(p.price))) state.livePrice=Number(p.price);
+    pushHistory(p);
+    render();
+    $('liveStatus').innerHTML='<span class="live-dot"></span>Realtime';
+  }catch(e){
+    state.payload=null;
+    signalClass('WAIT');
+    $('reason').textContent='ไม่สามารถอ่านข้อมูลตลาดได้: '+e.message;
+    $('liveStatus').textContent='Offline';
+  }
+}
+
+async function pollPrice(){
+  try{
+    const q=new URLSearchParams({symbol:symbolEl.value});
+    const res=await fetch('/api/price?'+q,{cache:'no-store'});
+    if(!res.ok) return;
+    const p=await res.json();
+    if(Number.isFinite(Number(p.price))){
+      state.livePrice=Number(p.price);
+      if(state.payload){
+        $('price').textContent=price(state.livePrice);
+        draw();
+      }
+    }
+  }catch(_){}
+}
+
+$('refresh').onclick=analyze;
+symbolEl.onchange=()=>{analyze(); pollPrice();};
+tfEl.onchange=analyze;
+$('equity').oninput=updateRisk;
+$('risk').oninput=updateRisk;
+$('clearHistory').onclick=()=>{state.history=[]; saveHistory(); renderHistory();};
+window.onresize=draw;
+
+loadHistory();
+analyze();
+pollPrice();
+setInterval(analyze, 45000);   // signal every 45s
+setInterval(pollPrice, 8000);  // price every 8s for realtime feel
 </script>
 </body>
 </html>
