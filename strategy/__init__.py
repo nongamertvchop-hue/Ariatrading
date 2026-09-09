@@ -9,8 +9,8 @@ feature drift diagnostics, ML OOS behavior diagnostics, ML model health
 diagnostics, deep-learning challenger models, deep-learning walk-forward
 research, aggregated research evidence, research-gate completeness checks,
 execution recovery, paper execution conformance, broker symbol-contract
-validation, research provenance, feed integrity, and the final system
-readiness gate.
+validation, research provenance, feed integrity, causal paper-signal outcomes,
+and the final system readiness gate.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
@@ -38,6 +38,7 @@ from .ml_stability import FeatureImportance, MLStabilityReport, permutation_feat
 from .ml_walk_forward import MLWalkForwardFold, MLWalkForwardResult, ml_walk_forward_backtest
 from .order_persistence import OrderPersistenceError, load_order_state, save_order_state
 from .order_state import OrderRecord, OrderState, OrderStateMachine, OrderTransition
+from .outcomes import AMBIGUOUS, INVALID, TIMEOUT, SignalOutcome, label_signal_outcome, label_wait_outcome
 from .paper import CLOSED, OPEN, PaperAccount, PaperPosition, PaperTradingEngine
 from .paper_execution_conformance import RecoveryResult, submit_with_recovery
 from .paper_session import PaperSessionResult, PaperSessionRunner
@@ -102,4 +103,5 @@ __all__ = [
     "DeepLearningWalkForwardFold", "DeepLearningWalkForwardResult", "deep_learning_walk_forward_backtest",
     "ModelClassificationMetrics", "MLModelComparison", "MLChallengerAggregate", "compare_ml_models", "aggregate_challenger_results",
     "canonical_signal_event", "build_signal_event_id",
+    "SignalOutcome", "label_signal_outcome", "label_wait_outcome", "AMBIGUOUS", "INVALID", "TIMEOUT",
 ]
