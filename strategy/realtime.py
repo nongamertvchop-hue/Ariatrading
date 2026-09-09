@@ -121,6 +121,7 @@ class RealtimeMonitor:
 
     def evaluate_once(self, now: datetime | None = None) -> LiveEvaluation | None:
         """Evaluate a newly closed candle, or return None if data is not new/valid."""
+        evaluation_time = now or datetime.now(timezone.utc)
         bars = list(self.feed.closed_bars(self.symbol, self.timeframe, self.lookback))
         if len(bars) < 5:
             raise ValueError("not enough closed bars for evaluation")
@@ -129,7 +130,10 @@ class RealtimeMonitor:
         if not integrity.ok:
             raise RuntimeError(f"realtime feed integrity rejected: {integrity.reason}")
 
-        quality = self.guard.validate(bars, now=now)
+        # Accept atomically updates the duplicate cursor only after all guard
+        # checks pass. Calling validate() here would allow repeated evaluation
+        # of the same closed candle on every polling cycle.
+        quality = self.guard.accept(bars, now=evaluation_time)
         if not quality.ok:
             if quality.reason == "duplicate or old closed bar":
                 return None
@@ -179,14 +183,22 @@ class RealtimeMonitor:
             symbol=self.symbol,
             timeframe=self.timeframe,
             bar_time=latest.time,
+            candle=Candle(
+                open=latest.open,
+                high=latest.high,
+                low=latest.low,
+                close=latest.close,
+            ),
             current_close=latest.close,
-            previous_close=bars[-2].close,
-            data_quality=quality.reason,
+            support=support,
+            resistance=resistance,
+            forecast=forecast_result,
+            data_quality=quality,
         )
         evaluation = LiveEvaluation(
             self.symbol,
             self.timeframe,
-            latest.time if now is None else now,
+            evaluation_time,
             latest.time,
             final_signal,
             support,
