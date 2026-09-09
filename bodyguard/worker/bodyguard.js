@@ -1,16 +1,16 @@
 /**
- * Bodyguard(Aria) v0.02.0 — Worker enforcement primitives.
- * Defensive only: validate, rate-limit, probe-detect, soft-ban, redact.
+ * Bodyguard(Aria) v0.03.0 — Worker enforcement + coarse audit status.
+ * Defensive only. Status endpoint never returns secrets or client identities.
  */
 
-export const BODYGUARD_VERSION = "0.02.0";
+export const BODYGUARD_VERSION = "0.03.0";
 
 const DEFAULTS = Object.freeze({
   allowedMethods: ["GET", "HEAD", "OPTIONS"],
   maxQueryLength: 512,
   symbolPattern: /^[A-Z]{3}\/[A-Z]{3}$/,
   allowedTimeframes: new Set(["1m", "5m", "15m", "30m", "1h", "4h", "1D"]),
-  allowedApiPaths: new Set(["/api/signal", "/api/price", "/api/live-candle"]),
+  allowedApiPaths: new Set(["/api/signal", "/api/price", "/api/live-candle", "/api/bodyguard/status"]),
   rateWindowMs: 60_000,
   rateMax: 60,
   softBan: Object.freeze({ blockThreshold: 8, windowMs: 300_000, banMs: 600_000 }),
@@ -22,12 +22,21 @@ const DEFAULTS = Object.freeze({
   }),
 });
 
-// Very small in-memory maps (per isolate). Acceptable for edge defense signals.
 const rateBuckets = new Map();
 const offenseBuckets = new Map();
 const softBans = new Map();
 
-const PROBE_RE = /(\.\.|%2e%2e|%252e|\/etc\/passwd|\/proc\/|\/win(dows)?\/|<|>|javascript:|onerror=|onload=|union\s+select|drop\s+table|insert\s+into|xp_cmdshell|\$\{|\{\{|%3c%3c|%00|\x00)/i;
+const audit = {
+  startedAt: new Date().toISOString(),
+  allowed: 0,
+  blocked: 0,
+  rateLimited: 0,
+  probes: 0,
+  softBans: 0,
+  statusCalls: 0,
+};
+
+const PROBE_RE = /(\.\.|%2e%2e|%252e|\/etc\/passwd|\/proc\/|\/win(dows)?\/|<|>|javascript:|onerror=|onload=|union\s+select|drop\s+table|insert\s+into|xp_cmdshell|\$\{|\{\{|%3c%3c|%00)/i;
 
 function clientKey(request) {
   return (
@@ -61,7 +70,8 @@ function noteOffense(key, reason) {
   bucket.lastReason = reason;
   if (bucket.count >= DEFAULTS.softBan.blockThreshold) {
     softBans.set(key, now + DEFAULTS.softBan.banMs);
-    securityEvent("block", "soft_ban_applied", { key, count: bucket.count, until: softBans.get(key) });
+    audit.softBans += 1;
+    securityEvent("block", "soft_ban_applied", { count: bucket.count });
   }
 }
 
@@ -89,13 +99,8 @@ export function applySecurityHeaders(response) {
 
 export function detectProbe(request, url = new URL(request.url)) {
   const hay = `${url.pathname}?${url.search}`;
-  if (PROBE_RE.test(hay)) {
-    return { ok: false, status: 403, reason: "probe_pattern_blocked" };
-  }
-  // Reject weird encoded nulls / control chars in query
-  if (/[\u0000-\u001f\u007f]/.test(url.search)) {
-    return { ok: false, status: 400, reason: "control_chars_in_query" };
-  }
+  if (PROBE_RE.test(hay)) return { ok: false, status: 403, reason: "probe_pattern_blocked" };
+  if (/[\u0000-\u001f\u007f]/.test(url.search)) return { ok: false, status: 400, reason: "control_chars_in_query" };
   return { ok: true, status: 200, reason: "ok" };
 }
 
@@ -116,10 +121,12 @@ export function validatePublicApiRequest(request, url = new URL(request.url)) {
   if (url.search.length > DEFAULTS.maxQueryLength) {
     return { ok: false, status: 414, reason: "query_too_long" };
   }
-
   if (url.pathname.startsWith("/api/")) {
     if (!DEFAULTS.allowedApiPaths.has(url.pathname)) {
       return { ok: false, status: 404, reason: "api_route_not_found" };
+    }
+    if (url.pathname === "/api/bodyguard/status") {
+      return { ok: true, status: 200, reason: "ok" };
     }
     const symbol = (url.searchParams.get("symbol") || "EUR/USD").trim().toUpperCase();
     if (!DEFAULTS.symbolPattern.test(symbol)) {
@@ -145,6 +152,7 @@ export function checkRateLimit(request, opts = {}) {
   }
   bucket.count += 1;
   if (bucket.count > max) {
+    audit.rateLimited += 1;
     securityEvent("block", "rate_limited", { path: new URL(request.url).pathname, count: bucket.count });
     return { ok: false, status: 429, reason: "rate_limited" };
   }
@@ -152,6 +160,7 @@ export function checkRateLimit(request, opts = {}) {
 }
 
 export function publicError(status, reason, message) {
+  audit.blocked += 1;
   return new Response(
     JSON.stringify({
       error: reason,
@@ -171,9 +180,39 @@ export function publicError(status, reason, message) {
   );
 }
 
-/**
- * Returns a Response to block the request, or null to allow.
- */
+export function getStatusPayload() {
+  audit.statusCalls += 1;
+  return {
+    guard: "Bodyguard(Aria)",
+    version: BODYGUARD_VERSION,
+    mode: "enforce",
+    scope: "defensive-only",
+    execution: "NONE",
+    started_at: audit.startedAt,
+    counters: {
+      allowed: audit.allowed,
+      blocked: audit.blocked,
+      rate_limited: audit.rateLimited,
+      probes: audit.probes,
+      soft_bans: audit.softBans,
+      status_calls: audit.statusCalls,
+    },
+    note: "Aggregate counters only. No IPs, secrets, or personal data.",
+  };
+}
+
+export function statusResponse() {
+  return new Response(JSON.stringify(getStatusPayload()), {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      ...DEFAULTS.securityHeaders,
+    },
+  });
+}
+
+/** Returns a Response to block, or null to allow. */
 export function guardPublicRequest(request) {
   const url = new URL(request.url);
   const key = clientKey(request);
@@ -185,6 +224,7 @@ export function guardPublicRequest(request) {
 
   const probe = detectProbe(request, url);
   if (!probe.ok) {
+    audit.probes += 1;
     noteOffense(key, probe.reason);
     securityEvent("block", probe.reason, { path: url.pathname });
     return publicError(probe.status, probe.reason, probe.reason);
@@ -192,7 +232,6 @@ export function guardPublicRequest(request) {
 
   const ua = scoreUserAgent(request);
   if (ua.risk === "high" && url.pathname.startsWith("/api/")) {
-    // High-risk UA on API still allowed once, but counts toward offense if combined with other blocks.
     securityEvent("warn", ua.reason, { path: url.pathname });
   }
 
@@ -211,5 +250,6 @@ export function guardPublicRequest(request) {
     }
   }
 
+  audit.allowed += 1;
   return null;
 }
