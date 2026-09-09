@@ -78,14 +78,22 @@ def test_empty_report_is_safe_and_deterministic():
     assert report.max_drawdown_r == 0.0
     assert report.average_bars_held == 0.0
     assert report.r_stddev == 0.0
+    assert report.max_win_streak == 0
+    assert report.max_loss_streak == 0
+    assert report.current_streak == 0
+    assert report.current_streak_type is None
+    assert report.recovery_factor is None
 
 
 def test_positive_only_profit_factor_is_infinite_and_serializes_safely():
     report = PaperPerformanceAnalyzer([trade(1, "sig_a", 1.5)]).report()
     assert report.profit_factor == float("inf")
+    assert report.recovery_factor == float("inf")
     payload = report.as_dict()
     assert payload["profit_factor"] is None
     assert payload["profit_factor_unbounded"] is True
+    assert payload["recovery_factor"] is None
+    assert payload["recovery_factor_unbounded"] is True
     json.dumps(payload, allow_nan=False)
 
 
@@ -204,6 +212,34 @@ def test_dimension_grouping_does_not_invent_unknown_fields():
     analyzer = PaperPerformanceAnalyzer([trade(1, "sig_a", 1.0)])
     with pytest.raises(ValueError):
         analyzer.by_dimension("setup_state")
+
+
+def test_sequence_metrics_track_max_and_current_streaks():
+    analyzer = PaperPerformanceAnalyzer([
+        trade(1, "a", 1.0),
+        trade(2, "b", 2.0),
+        trade(3, "c", -1.0),
+        trade(4, "d", -0.5),
+        trade(5, "e", -2.0),
+        trade(6, "f", 0.0),
+        trade(7, "g", -1.0),
+    ])
+    report = analyzer.report()
+    assert report.max_win_streak == 2
+    assert report.max_loss_streak == 3
+    assert report.current_streak == 1
+    assert report.current_streak_type == "LOSS"
+    assert report.recovery_factor == pytest.approx(-1.0)
+
+
+def test_breakeven_breaks_streak_and_resets_current_state():
+    report = PaperPerformanceAnalyzer([
+        trade(1, "a", 1.0), trade(2, "b", 0.0), trade(3, "c", 1.0),
+    ]).report()
+    assert report.max_win_streak == 1
+    assert report.max_loss_streak == 0
+    assert report.current_streak == 1
+    assert report.current_streak_type == "WIN"
 
 
 def test_resistance_zone_constant_remains_available_for_future_short_tests():
