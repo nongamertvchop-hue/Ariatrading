@@ -75,9 +75,9 @@ class PaperSessionRunner:
             symbol=evaluation.symbol,
             timeframe=evaluation.timeframe,
             signal=evaluation.signal,
+            event_id=evaluation.event_id,
         )
 
-        # Manage an already-open position with the current closed candle first.
         closed = None
         close_event = None
         if self.paper.position is not None:
@@ -97,10 +97,6 @@ class PaperSessionRunner:
                     position=closed,
                 )
 
-        # A signal from the immediately preceding evaluation can fill only now.
-        # The fill uses the current bar's OPEN, because the signal was known only
-        # from the previous completed bar. Using the current close would consume
-        # information that was unavailable at the decision boundary.
         opened = None
         open_event = None
         pending = self._pending_signal
@@ -122,7 +118,6 @@ class PaperSessionRunner:
                         position=opened,
                     )
 
-        # Only an approved directional signal is eligible for the next bar.
         if (
             evaluation.signal.action in {LONG, SHORT}
             and evaluation.supervisor is not None
