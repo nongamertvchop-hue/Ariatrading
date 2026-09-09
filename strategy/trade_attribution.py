@@ -57,6 +57,7 @@ class PaperTradeAttribution:
         self._events = tuple(journal.events if isinstance(journal, PaperTradeJournal) else journal)
         self._by_trade: dict[int, list[JournalEvent]] = {}
         self._signal_by_id: dict[str, JournalEvent] = {}
+        self._trade_ids_by_signal_id: dict[str, set[int]] = {}
         self._index()
 
     def _index(self) -> None:
@@ -69,6 +70,25 @@ class PaperTradeAttribution:
                     self._signal_by_id[event.event_id] = event
             elif event.trade_id is not None:
                 self._by_trade.setdefault(event.trade_id, []).append(event)
+                if event.signal_event_id is not None:
+                    self._trade_ids_by_signal_id.setdefault(event.signal_event_id, set()).add(event.trade_id)
+
+    @staticmethod
+    def _validate_identity(
+        *,
+        trade_id: int,
+        signal: JournalEvent,
+        lifecycle_events: tuple[JournalEvent | None, JournalEvent | None],
+    ) -> None:
+        for lifecycle_event in lifecycle_events:
+            if lifecycle_event is None:
+                continue
+            if lifecycle_event.symbol != signal.symbol:
+                raise ValueError(f"symbol mismatch for trade_id: {trade_id}")
+            if lifecycle_event.timeframe != signal.timeframe:
+                raise ValueError(f"timeframe mismatch for trade_id: {trade_id}")
+            if lifecycle_event.action != signal.action:
+                raise ValueError(f"action mismatch for trade_id: {trade_id}")
 
     def for_trade(self, trade_id: int) -> TradeAttribution | None:
         """Return attribution for one trade ID, or ``None`` when unknown."""
@@ -97,6 +117,15 @@ class PaperTradeAttribution:
 
         signal_id = next(iter(candidate_ids), None)
         signal = self._signal_by_id.get(signal_id) if signal_id is not None else None
+        if signal_id is not None and signal is None:
+            raise ValueError(f"unresolved signal_event_id for trade_id: {trade_id}: {signal_id}")
+        if signal is not None:
+            self._validate_identity(
+                trade_id=trade_id,
+                signal=signal,
+                lifecycle_events=(open_event, close_event),
+            )
+
         return TradeAttribution(
             trade_id=trade_id,
             signal=signal,
@@ -108,12 +137,9 @@ class PaperTradeAttribution:
         """Return all paper trades attributed to one canonical signal."""
         if not signal_event_id:
             raise ValueError("signal_event_id must not be empty")
-        matches: list[TradeAttribution] = []
-        for trade_id in sorted(self._by_trade):
-            attribution = self.for_trade(trade_id)
-            if attribution is not None and attribution.signal_event_id == signal_event_id:
-                matches.append(attribution)
-        return tuple(matches)
+        trade_ids = self._trade_ids_by_signal_id.get(signal_event_id, set())
+        matches = [self.for_trade(trade_id) for trade_id in sorted(trade_ids)]
+        return tuple(match for match in matches if match is not None)
 
     def all_trades(self, *, closed_only: bool = False) -> tuple[TradeAttribution, ...]:
         """Return all indexed paper trades in stable trade-ID order."""
@@ -124,12 +150,12 @@ class PaperTradeAttribution:
         return filtered
 
     def unattributed_trades(self, *, closed_only: bool = False) -> tuple[TradeAttribution, ...]:
-        """Return trades with no resolvable canonical signal identity."""
+        """Return trades with no canonical signal identity (legacy records only)."""
         results = self.all_trades(closed_only=closed_only)
         return tuple(result for result in results if result.signal_event_id is None or result.signal is None)
 
     def closed_outcomes(self) -> tuple[tuple[str, float | None], ...]:
-        """Return ``(outcome, r_multiple)`` pairs for closed attributed/unattributed trades."""
+        """Return ``(outcome, r_multiple)`` pairs for closed paper trades."""
         return tuple(
             (result.outcome, result.r_multiple)
             for result in self.all_trades(closed_only=True)
