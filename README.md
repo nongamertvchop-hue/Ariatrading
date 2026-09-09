@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.14.3**
+**Current version: 0.14.4**
 
 ## Core idea
 
@@ -49,6 +49,9 @@ The project is layered so every stage can be used together without duplicating s
 29. **Webaria MTF Signal Advisor** — 1D -> 4H -> 1H -> 15M dashboard. Higher timeframes filter the existing 15M setup and cannot create a new entry pattern.
 30. **Webaria signal journal** — browser-local snapshots of advisor outputs for research review; this is not a broker execution log and is not synchronized between devices.
 31. **Webaria Paper Risk Engine** — browser-safe risk sizing, stop validation, P/L and conservative bar-exit semantics, isolated from broker execution.
+32. **Signal-event identity** — deterministic `sig_...` IDs for replay/realtime signal snapshots, with canonical Python/Worker payload semantics and browser journal deduplication.
+33. **Causal outcome labeling** — paper/replay signal outcomes use only candles strictly after the signal bar and preserve explicit `AMBIGUOUS` results when OHLC cannot reveal intrabar order.
+34. **Replay outcome attachment** — completed realtime replay results can be enriched with outcome records while keeping the strategy decision immutable.
 
 ## Key modules
 
@@ -86,8 +89,9 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/research_audit.py` — temporal and evidence consistency checks.
 - `strategy/research_gate.py` — baseline research evidence completeness gate.
 - `strategy/feed_integrity.py` — strict timestamped OHLC feed validation.
-- `strategy/realtime.py` — closed-candle realtime monitor with feed-integrity gating.
-- `strategy/realtime_replay.py` — deterministic historical replay of the realtime monitor.
+- `strategy/realtime.py` — closed-candle realtime monitor with feed-integrity gating and deterministic event identity.
+- `strategy/realtime_replay.py` — deterministic historical replay of the realtime monitor plus causal outcome attachment.
+- `strategy/outcomes.py` — causal paper-signal outcome labels and MFE/MAE diagnostics.
 - `strategy/paper.py` — deterministic single-position paper simulator.
 - `strategy/paper_session.py` — realtime-to-paper orchestration with next-bar entry and idempotency.
 - `strategy/journal.py` — SIGNAL/OPEN/CLOSE research event journal.
@@ -132,84 +136,17 @@ APPROACH -> TEST -> RECLAIM/REJECT -> CONFIRM
 LONG / SHORT / WAIT
         |
         +---- Historical path -> Risk -> Backtest -> Validation
-        |                         |
-        |                         +---- Walk-forward OOS
-        |                         +---- Classical ML meta-filter
-        |                         +---- Drift / behavior / stability / health
-        |                         +---- LSTM / Transformer challengers
-        |                         +---- DL walk-forward folds + provenance
-        |                         +---- ML Evidence Gate
         |
-        +---- Realtime path -> Supervisor -> System Gate -> Paper Session
-                                  |
-                                  +---- Realtime historical replay
-                                  |
-                                  +---- Webaria Signal Advisor
-                                  |       |
-                                  |       +---- 1D -> 4H -> 1H -> 15M filter
-                                  |       +---- Entry / Stop / Score inspection
-                                  |       +---- Browser-local signal journal
-                                  |
-                                  +---- Webaria Paper Risk Engine
-
-Worker realtime path:
-Twelve Data -> closed-candle feed guard -> parity strategy -> forecast
-             -> realtime supervisor -> Webaria Signal Advisor
-
-Paper execution validation path:
-System Gate -> Broker Contract -> Order State -> Persistence -> Audit
-                                      |
-                                      v
-                               Paper Broker Simulator
-                                      |
-                             Position Reconciliation
-                                      |
-                                      v
-                              Recovery verification
-                                      |
-                                ALLOW / HALT
+        +---- Realtime path -> Supervisor -> Event ID -> Paper Session
+        |                                  |
+        |                                  +---- next completed bars
+        |                                           |
+        |                                           v
+        |                                   Causal Outcome Label
+        |
+        +---- Research path -> MTF comparison -> Quality Report -> ML/DL
 ```
 
-The realtime path uses the same strategy engine rather than a separate live strategy:
+## Research safety contract
 
-`MT5 terminal -> MT5BarFeed -> feed integrity -> RealtimeMonitor -> engine -> LONG/SHORT/WAIT -> Supervisor -> SystemGate -> PaperSessionRunner`
-
-The Webaria Advisor path uses the Worker API for market-data analysis:
-
-`Twelve Data -> Cloudflare Worker /api/signal -> Webaria Signal Advisor -> MTF filter -> Paper Risk Planner`
-
-The MT5 adapter remains read-only. There is no live order-sending implementation in this repository.
-
-## Validation principles
-
-Research is descriptive evidence, not a profitability guarantee. Features at a decision index use only information available at or before that index. Future candles are used for labels only. Training boundaries, normalization, model challengers and final OOS evaluation remain chronologically separated. Any ambiguous execution, contract mismatch, or corrupted recovery state fails closed rather than being retried blindly.
-
-The MTF Advisor is deliberately conservative: it cannot invent LONG/SHORT direction. It can only pass through an existing lower-timeframe setup when higher-timeframe structure does not contradict it. A lack of alignment produces WAIT rather than forcing a trade direction.
-
-Webaria Paper Trading is simulation-only. Browser-local state and signal journals are useful for testing the interface and research workflow but are not durable multi-device execution records.
-
-The browser-facing `/api/signal` path uses the parity adapter in `worker/signal_parity_v2.js` so its single-timeframe signal semantics follow the Python realtime engine for zone context, sequence evaluation, structure bias, candidate selection, scoring, forecast context, supervisor gating, and stop-reference calculation. The Worker also rejects malformed, misaligned, future, stale, or duplicate closed-bar data before evaluation.
-
-## Testing
-
-The `tests/` directory covers candle/zone behavior, sequence logic, fake-breakout protection, market structure, MTF look-ahead protection, scoring, risk and quantity constraints, baseline and realistic execution simulation, bounded backtesting, entry-timing semantics, execution-cost consistency, validation, walk-forward windows, ML walk-forward provenance, ML drift, ML behavior, ML stability, ML model health, ML evidence readiness, fixed-window ML challenger comparison, deep-learning sequence causality, deep-learning walk-forward contracts and provenance persistence, realtime state handling, feed-integrity boundary behavior, deterministic realtime replay, paper trading, paper-session lifecycle, journaling, paper-broker failure semantics, paper-position reconciliation semantics including average-entry and broker-contract mismatches, order persistence/recovery, execution audit integrity, broker contract validation, the integrated research facade/system gate, Webaria paper-risk behavior, the single-timeframe Signal Advisor contract, the multi-timeframe Signal Advisor contract, and Worker signal parity contracts.
-
-The deep-learning implementation is optional in the default CI path because PyTorch is a large dependency. `requirements-ml.txt` provides the explicit ML environment for LSTM/Transformer experiments.
-
-## Version / continuation protocol
-
-Current version: **0.14.3**.
-
-At the start of a new chat:
-
-1. Read `VERSION.md` and this README.
-2. Inspect latest Git history and GitHub Actions status.
-3. Identify the current milestone and unfinished work.
-4. Inspect newly added files before making changes.
-5. Continue existing modules instead of recreating them.
-6. Any behavior change gets a test or an explicit reason why a test is impractical.
-7. Update the version only when the change matches semantic-versioning rules.
-
-## Important
-
-This repository is for programming practice and historical/realtime market-data research. It does not establish that a strategy is profitable. It is intentionally read-only with respect to MT5 trading actions. Any future execution architecture must remain isolated from the research engine and should only be considered after robust out-of-sample validation.
+Ariatrading is a research and paper/demo system. MT5 integration remains read-only, and the research outcome layer does not place or manage broker orders.
