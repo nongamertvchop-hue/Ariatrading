@@ -16,6 +16,7 @@ from .market_structure import MarketStructure, analyze_market_structure
 from .mtf import MultiTimeframeContext
 from .scoring import SetupScore, score_setup
 from .sequence import evaluate_sequence
+from .signal_id import make_signal_id
 from .timeframe import adaptive_confirmation_buffer, get_timeframe_config
 
 LONG = "LONG"
@@ -37,6 +38,7 @@ class EngineSignal:
     confirmation_index: int | None = None
     structure_bias: str = "UNKNOWN"
     score: SetupScore | None = None
+    signal_id: str | None = None
 
 
 def _protective_stop(
@@ -65,6 +67,7 @@ def _evaluate(
     direction: str,
     mtf: MultiTimeframeContext | None,
     max_test_age: int,
+    symbol: str = "UNKNOWN",
 ) -> EngineSignal:
     get_timeframe_config(timeframe)
     result = evaluate_sequence(
@@ -88,6 +91,14 @@ def _evaluate(
         )
         stop_reference = _protective_stop(zone, direction, candles[:-1], timeframe)
 
+    signal_id = make_signal_id(
+        symbol=symbol,
+        timeframe=timeframe,
+        action=result.action,
+        confirmation_index=result.confirmation_index,
+        zone=zone,
+    )
+
     return EngineSignal(
         result.action,
         result.reason,
@@ -101,6 +112,7 @@ def _evaluate(
         confirmation_index=result.confirmation_index,
         structure_bias=structure.bias,
         score=setup_score,
+        signal_id=signal_id,
     )
 
 
@@ -110,10 +122,11 @@ def evaluate_long(
     timeframe: str,
     mtf: MultiTimeframeContext | None = None,
     max_test_age: int = 3,
+    symbol: str = "UNKNOWN",
 ) -> EngineSignal:
     if support.kind != SUPPORT:
         raise ValueError("zone must be SUPPORT")
-    return _evaluate(candles, support, timeframe, LONG, mtf, max_test_age)
+    return _evaluate(candles, support, timeframe, LONG, mtf, max_test_age, symbol=symbol)
 
 
 def evaluate_short(
@@ -122,7 +135,8 @@ def evaluate_short(
     timeframe: str,
     mtf: MultiTimeframeContext | None = None,
     max_test_age: int = 3,
+    symbol: str = "UNKNOWN",
 ) -> EngineSignal:
     if resistance.kind != RESISTANCE:
         raise ValueError("zone must be RESISTANCE")
-    return _evaluate(candles, resistance, timeframe, SHORT, mtf, max_test_age)
+    return _evaluate(candles, resistance, timeframe, SHORT, mtf, max_test_age, symbol=symbol)
