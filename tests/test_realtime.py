@@ -109,6 +109,21 @@ def test_live_monitor_evaluates_after_a_new_closed_bar_arrives():
     assert second.event_id != first.event_id
 
 
+def test_live_monitor_does_not_advance_cursor_when_guard_rejects_stale_data():
+    bars = make_bars()
+    feed = FakeFeed(bars)
+    monitor = RealtimeMonitor(feed, "EURUSD", "1m", lookback=20)
+    first_now = bars[-1].time + timedelta(seconds=30)
+    first = monitor.evaluate_once(now=first_now)
+    assert first is not None
+
+    feed.bars = feed.bars[:-1]
+    with pytest.raises(RuntimeError, match="realtime data rejected"):
+        monitor.evaluate_once(now=bars[-1].time + timedelta(minutes=1, seconds=30))
+
+    assert monitor.last_bar_time == bars[-1].time
+
+
 def test_nearest_zone_helpers_prefer_closest_zone_then_touches():
     from strategy.levels_v2 import PriceZone, RESISTANCE, SUPPORT
 
