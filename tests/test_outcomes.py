@@ -42,7 +42,7 @@ def test_short_stop_is_loss():
     assert result.bars_to_resolution == 2
     assert result.target == 98.0
     assert result.mfe_r == 1.0
-    assert result.mae_r == -1.1
+    assert result.mae_r == pytest.approx(-1.1)
 
 
 def test_same_bar_stop_and_target_is_ambiguous():
