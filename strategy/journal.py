@@ -8,7 +8,7 @@ Python dictionaries for later analysis or persistence.
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from math import isfinite
-from typing import Any, Iterable
+from typing import Any
 
 from .engine import EngineSignal, LONG, SHORT, WAIT
 from .paper import PaperPosition
@@ -30,6 +30,7 @@ class JournalEvent:
     outcome: str | None = None
     r_multiple: float | None = None
     bars_held: int | None = None
+    event_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.event_time.tzinfo is None or self.event_time.utcoffset() is None:
@@ -42,6 +43,8 @@ class JournalEvent:
             raise ValueError("action must be LONG, SHORT, or WAIT")
         if self.trade_id is not None and self.trade_id < 1:
             raise ValueError("trade_id must be >= 1")
+        if self.event_id is not None and not self.event_id:
+            raise ValueError("event_id must not be empty")
         for name, value in (("entry_price", self.entry_price), ("stop", self.stop), ("target", self.target), ("exit_price", self.exit_price), ("r_multiple", self.r_multiple)):
             if value is not None and not isfinite(value):
                 raise ValueError(f"{name} must be finite")
@@ -59,6 +62,7 @@ class PaperTradeJournal:
 
     def __init__(self) -> None:
         self._events: list[JournalEvent] = []
+        self._signal_event_ids: set[str] = set()
 
     @property
     def events(self) -> tuple[JournalEvent, ...]:
@@ -71,7 +75,10 @@ class PaperTradeJournal:
         symbol: str,
         timeframe: str,
         signal: EngineSignal,
+        event_id: str | None = None,
     ) -> JournalEvent:
+        if event_id is not None and event_id in self._signal_event_ids:
+            raise ValueError(f"duplicate signal event_id: {event_id}")
         event = JournalEvent(
             event_time=event_time,
             event_type="SIGNAL",
@@ -80,8 +87,11 @@ class PaperTradeJournal:
             action=signal.action,
             reason=signal.reason,
             trade_id=None,
+            event_id=event_id,
         )
         self._events.append(event)
+        if event_id is not None:
+            self._signal_event_ids.add(event_id)
         return event
 
     def record_open(
