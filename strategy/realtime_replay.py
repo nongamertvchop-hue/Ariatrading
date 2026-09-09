@@ -1,7 +1,7 @@
 """Deterministic historical replay of the realtime monitoring path.
 
 This harness feeds already-closed historical candles through the same
-``RealtimeMonitor`` used for realtime research. It exists to detect drift
+``RealtimeMonitor`` used in realtime research. It exists to detect drift
 between the realtime data/strategy path and historical replay without creating
 a second strategy implementation.
 """
@@ -29,6 +29,11 @@ class RealtimeReplayResult:
     @property
     def signals(self) -> tuple[str, ...]:
         return tuple(evaluation.signal.action for evaluation in self.evaluations)
+
+    @property
+    def event_ids(self) -> tuple[str, ...]:
+        """Stable identities for each replayed closed-candle decision."""
+        return tuple(evaluation.event_id for evaluation in self.evaluations)
 
 
 def replay_realtime_monitor(
