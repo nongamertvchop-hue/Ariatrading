@@ -56,8 +56,8 @@ def replay_realtime_monitor(
     get_timeframe_config(timeframe)
     if not symbol:
         raise ValueError("symbol must be non-empty")
-    if lookback < 5:
-        raise ValueError("lookback must be at least 5")
+    if lookback < 10:
+        raise ValueError("lookback must be at least 10")
     if not candles:
         return RealtimeReplayResult(symbol, timeframe, ())
 
