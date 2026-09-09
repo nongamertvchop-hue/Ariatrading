@@ -3,7 +3,10 @@ import json
 
 import pytest
 
+from strategy.engine import EngineSignal, LONG
 from strategy.journal import JournalEvent, PaperTradeJournal
+from strategy.levels_v2 import PriceZone, SUPPORT
+from strategy.paper import PaperTradingEngine
 from strategy.performance import PaperPerformanceAnalyzer
 from strategy.trade_attribution import TradeAttribution
 
@@ -108,22 +111,35 @@ def test_by_outcome_returns_stable_grouped_reports():
     assert grouped["LOSS"].gross_r == -1.0
 
 
-def test_from_journal_builds_analyzer_from_persisted_events():
+def test_from_journal_builds_analyzer_from_public_journal_api():
     journal = PaperTradeJournal()
-    journal._events.extend([
-        signal("sig_a"),
-        JournalEvent(
-            event_time=dt(2), event_type="OPEN", symbol="EURUSD", timeframe="1m",
-            action="LONG", reason="paper position opened", trade_id=1,
-            entry_price=100.0, stop=99.0, target=102.0, signal_event_id="sig_a",
-        ),
-        JournalEvent(
-            event_time=dt(3), event_type="CLOSE", symbol="EURUSD", timeframe="1m",
-            action="LONG", reason="paper position closed", trade_id=1,
-            entry_price=100.0, stop=99.0, target=102.0, exit_price=102.0,
-            outcome="WIN", r_multiple=2.0, bars_held=1, signal_event_id="sig_a",
-        ),
-    ])
+    source_signal = EngineSignal(
+        LONG,
+        "confirmed",
+        "1m",
+        zone=PriceZone(low=99.0, high=100.0, kind=SUPPORT, touches=3),
+    )
+    source = journal.record_signal(
+        event_time=dt(1),
+        symbol="EURUSD",
+        timeframe="1m",
+        signal=source_signal,
+        event_id="sig_a",
+    )
+    paper = PaperTradingEngine(reward_risk=1.0)
+    position = paper.open_from_signal(
+        source_signal,
+        signal_time=dt(1),
+        entry_time=dt(2),
+        entry_price=101.0,
+        signal_event_id=source.event_id,
+    )
+    assert position is not None
+    journal.record_open(event_time=dt(2), symbol="EURUSD", timeframe="1m", position=position)
+    closed = paper.on_bar({"time": dt(3), "high": 103.0, "low": 101.0})
+    assert closed is not None
+    journal.record_close(event_time=closed.exit_time, symbol="EURUSD", timeframe="1m", position=closed)
+
     report = PaperPerformanceAnalyzer.from_journal(journal).report()
     assert report.total_trades == 1
-    assert report.gross_r == 2.0
+    assert report.gross_r == 1.0
