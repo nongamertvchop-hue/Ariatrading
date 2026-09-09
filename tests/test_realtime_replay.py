@@ -2,7 +2,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from strategy.realtime_replay import replay_realtime_monitor
+from strategy.engine import EngineSignal, LONG, WAIT
+from strategy.realtime import LiveEvaluation
+from strategy.realtime_replay import (
+    RealtimeReplayResult,
+    label_replay_outcomes,
+    replay_realtime_monitor,
+)
 
 
 def make_candles(n=40):
@@ -62,6 +68,58 @@ def test_realtime_replay_event_identity_changes_with_closed_bar():
     changed = replay_realtime_monitor(mutated, "TEST", "1m", lookback=10)
 
     assert baseline.event_ids[-1] != changed.event_ids[-1]
+
+
+def test_replay_outcomes_match_by_event_bar_and_ignore_future_beyond_resolution():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    signal_time = start + timedelta(minutes=1)
+    evaluation = LiveEvaluation(
+        "TEST",
+        "1m",
+        signal_time + timedelta(seconds=1),
+        signal_time,
+        EngineSignal(LONG, "test", "1m", entry_reference=100.0, stop_reference=99.0),
+        None,
+        None,
+    )
+    replay = RealtimeReplayResult("TEST", "1m", (evaluation,))
+    candles = [
+        {"time": start, "open": 100.0, "high": 100.5, "low": 99.5, "close": 100.2},
+        {"time": signal_time, "open": 100.2, "high": 100.4, "low": 99.9, "close": 100.1},
+        {"time": start + timedelta(minutes=2), "open": 100.1, "high": 102.0, "low": 100.0, "close": 101.5},
+        {"time": start + timedelta(minutes=3), "open": 101.5, "high": 150.0, "low": 101.0, "close": 149.0},
+    ]
+
+    outcomes = label_replay_outcomes(candles, replay, target_r_multiple=2.0, max_bars=20)
+
+    assert len(outcomes) == 1
+    assert outcomes[0].event_id == evaluation.event_id
+    assert outcomes[0].outcome == "WIN"
+    assert outcomes[0].bars_to_resolution == 1
+
+
+def test_wait_replay_outcome_is_invalid_and_preserves_event_identity():
+    signal_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    evaluation = LiveEvaluation(
+        "TEST",
+        "1m",
+        signal_time + timedelta(seconds=1),
+        signal_time,
+        EngineSignal(WAIT, "test", "1m"),
+        None,
+        None,
+    )
+    replay = RealtimeReplayResult("TEST", "1m", (evaluation,))
+
+    outcomes = label_replay_outcomes(
+        [
+            {"time": signal_time, "open": 100.0, "high": 100.5, "low": 99.5, "close": 100.2},
+        ],
+        replay,
+    )
+
+    assert outcomes[0].event_id == evaluation.event_id
+    assert outcomes[0].outcome == "INVALID"
 
 
 def test_realtime_replay_rejects_incompatible_lookback():
