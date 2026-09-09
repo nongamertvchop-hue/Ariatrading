@@ -34,6 +34,7 @@ class PaperPosition:
     stop: float
     target: float
     risk_distance: float
+    signal_event_id: str | None = None
     status: str = OPEN
     exit_time: datetime | None = None
     exit_price: float | None = None
@@ -109,6 +110,7 @@ class PaperTradingEngine:
         signal_time: datetime,
         entry_time: datetime,
         entry_price: float,
+        signal_event_id: str | None = None,
     ) -> PaperPosition | None:
         """Open a paper position from a prior closed-bar signal.
 
@@ -133,6 +135,8 @@ class PaperTradingEngine:
             raise ValueError("entry_time must be later than signal_time")
         if not isfinite(entry_price) or entry_price <= 0:
             raise ValueError("entry_price must be finite and > 0")
+        if signal_event_id is not None and not signal_event_id:
+            raise ValueError("signal_event_id must not be empty")
         if self._position is not None:
             return None
 
@@ -153,6 +157,7 @@ class PaperTradingEngine:
             stop=plan.stop,
             target=plan.target,
             risk_distance=plan.risk_distance,
+            signal_event_id=signal_event_id,
         )
         self._position = position
         self._next_trade_id += 1
