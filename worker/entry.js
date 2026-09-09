@@ -1,19 +1,20 @@
 /**
  * Webaria Worker gateway.
  *
- * Keeps the strategy Worker intact while adding bounded caching and a clearly
- * labelled synthetic fallback for research/UI mode when market-data secrets
- * are not configured. No broker order execution is performed here.
- *
- * Bodyguard(Aria) v0.01.0 enforces public API request validation and rate limits
- * before market handlers run.
+ * Bodyguard(Aria) enforces public API validation, rate limits, probe detection,
+ * and exposes a safe status endpoint. No broker order execution is performed.
  */
 
 import app from "./index.js";
 import { handleSignalParityV2, evaluateRealtimeSignalParity } from "./signal_parity_v2.js";
 import { buildSignalEventId } from "./signal_event.js";
 import { fallbackCandles, fallbackPrice, FALLBACK_SOURCE, TIMEFRAME_SECONDS } from "./fallback_market.js";
-import { guardPublicRequest, applySecurityHeaders, BODYGUARD_VERSION } from "../bodyguard/worker/bodyguard.js";
+import {
+  guardPublicRequest,
+  applySecurityHeaders,
+  statusResponse,
+  BODYGUARD_VERSION,
+} from "../bodyguard/worker/bodyguard.js";
 
 const FRESH_TTL_MS = Object.freeze({
   "/api/price": 10_000,
@@ -125,6 +126,8 @@ function fallbackCandleResponse(request) {
 }
 
 async function resolveApi(request, env, ctx, pathname) {
+  if (pathname === "/api/bodyguard/status") return statusResponse();
+
   if (!env.TWELVE_DATA_API_KEY) {
     if (pathname === "/api/signal") return fallbackSignalResponse(request);
     if (pathname === "/api/price") return fallbackPriceResponse(request);
@@ -139,10 +142,14 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // Bodyguard(Aria): block abusive / invalid public API traffic early.
     if (url.pathname.startsWith("/api/")) {
       const blocked = guardPublicRequest(request);
       if (blocked) return blocked;
+    }
+
+    // Status is never cached and always fresh.
+    if (url.pathname === "/api/bodyguard/status") {
+      return statusResponse();
     }
 
     const ttl = FRESH_TTL_MS[url.pathname];
@@ -169,7 +176,12 @@ export default {
       return applySecurityHeaders(response);
     } catch (error) {
       if (cached && now - cached.savedAt <= staleTtl) return cachedResponse(cached, 200, "STALE");
-      return json({ error: "upstream_or_internal_error", message: error?.message || "unknown error", guard: "Bodyguard(Aria)", version: BODYGUARD_VERSION }, 502);
+      return json({
+        error: "upstream_or_internal_error",
+        message: error?.message || "unknown error",
+        guard: "Bodyguard(Aria)",
+        version: BODYGUARD_VERSION,
+      }, 502);
     }
   },
 };

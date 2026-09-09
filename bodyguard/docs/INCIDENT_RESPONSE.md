@@ -1,23 +1,25 @@
-# Bodyguard(Aria) Incident Response — v0.02.0
+# Bodyguard(Aria) Incident Response — v0.03.0
+
+## Quick status check
+```http
+GET /api/bodyguard/status
+```
+Inspect `counters.blocked`, `rate_limited`, `probes`, `soft_bans`.
+No IPs or secrets are returned.
 
 ## API key leak
-1. Rotate provider key immediately.
-2. Update Cloudflare Worker secret.
+1. Rotate provider key.
+2. Update Cloudflare secret.
 3. Review git/CI logs.
 
-## Probe / soft-ban noise
-1. Check Worker logs for `probe_pattern_blocked` or `soft_ban_applied`.
-2. Soft-ban is per isolate and expires automatically (~10 minutes default).
-3. Do not whitelist attack patterns; fix client bugs instead.
+## Probe noise / soft-ban
+1. Read Worker logs for `probe_pattern_blocked` / `soft_ban_applied`.
+2. Soft-ban expires automatically.
+3. Do not whitelist attack patterns.
 
 ## Abuse floods
-1. Confirm UI polling is healthy.
-2. Optionally lower `rateMax` in a follow-up config release.
-3. Keep all execution paths closed.
-
-## Personal data in logs
-1. Stop the path.
-2. Scrub logs.
-3. Rotate related secrets if needed.
+1. Confirm UI polling health.
+2. Optionally lower rate limits in a later release.
+3. Keep execution paths closed.
 
 Standing rule: contain, rotate, patch, document — never retaliate.

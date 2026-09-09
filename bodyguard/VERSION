@@ -1,5 +1,5 @@
 Bodyguard(Aria)
-version: 0.02.0
-codename: hard-shell
-status: enforced-hardened
+version: 0.03.0
+codename: watch-tower
+status: enforced-hardened-observable
 scope: defensive-only

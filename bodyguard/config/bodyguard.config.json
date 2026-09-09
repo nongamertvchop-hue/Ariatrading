@@ -1,6 +1,6 @@
 {
   "name": "Bodyguard(Aria)",
-  "version": "0.02.0",
+  "version": "0.03.0",
   "enabled": true,
   "mode": "enforce",
   "http": {
@@ -10,7 +10,7 @@
     "requireHttps": true
   },
   "api": {
-    "publicRoutes": ["/api/signal", "/api/price", "/api/live-candle"],
+    "publicRoutes": ["/api/signal", "/api/price", "/api/live-candle", "/api/bodyguard/status"],
     "symbolPattern": "^[A-Z]{3}/[A-Z]{3}$",
     "allowedTimeframes": ["1m", "5m", "15m", "30m", "1h", "4h", "1D"],
     "rateLimit": {
@@ -34,7 +34,7 @@
     "levels": ["info", "warn", "block"]
   },
   "headers": {
-    "x-bodyguard": "0.02.0",
+    "x-bodyguard": "0.03.0",
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
     "x-frame-options": "DENY"
