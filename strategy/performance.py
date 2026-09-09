@@ -38,9 +38,12 @@ class PerformanceReport:
     def as_dict(self) -> dict[str, Any]:
         """Return strict-JSON-safe report data."""
         data = asdict(self)
-        unbounded = self.profit_factor == float("inf")
-        data["profit_factor"] = None if unbounded else self.profit_factor
-        data["profit_factor_unbounded"] = unbounded
+        profit_factor_unbounded = self.profit_factor == float("inf")
+        recovery_factor_unbounded = self.recovery_factor == float("inf")
+        data["profit_factor"] = None if profit_factor_unbounded else self.profit_factor
+        data["profit_factor_unbounded"] = profit_factor_unbounded
+        data["recovery_factor"] = None if recovery_factor_unbounded else self.recovery_factor
+        data["recovery_factor_unbounded"] = recovery_factor_unbounded
         return data
 
 
@@ -76,7 +79,6 @@ class PaperPerformanceAnalyzer:
         for value in r_values:
             if value > 0:
                 kind = "WIN"
-                max_win_streak += 0
             elif value < 0:
                 kind = "LOSS"
             else:
