@@ -120,9 +120,10 @@
       setNote('Only one paper position is allowed at a time.');
       return;
     }
+
     const symbol = currentSymbol();
     const entry = currentPrice();
-    const quantity = finitePositive($('qty')?.value, 1000);
+    const quantity = Number($('qty')?.value);
     const rawSl = $('sl')?.value?.trim();
     const rawTp = $('tp')?.value?.trim();
     const sl = rawSl ? Number(rawSl) : null;
@@ -130,6 +131,10 @@
 
     if (!Number.isFinite(entry)) {
       setNote('Cannot open paper trade: no valid quote.');
+      return;
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setNote('Rejected: quantity must be finite and > 0.');
       return;
     }
 
@@ -187,10 +192,18 @@
     }
   }
 
+  function intercept(handler) {
+    return event => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      handler();
+    };
+  }
+
   function bind() {
-    $('buy')?.addEventListener('click', () => open('LONG'), true);
-    $('sell')?.addEventListener('click', () => open('SHORT'), true);
-    $('close')?.addEventListener('click', () => close('manual close'), true);
+    $('buy')?.addEventListener('click', intercept(() => open('LONG')), true);
+    $('sell')?.addEventListener('click', intercept(() => open('SHORT')), true);
+    $('close')?.addEventListener('click', intercept(() => close('manual close')), true);
   }
 
   bind();
