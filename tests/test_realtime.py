@@ -41,11 +41,28 @@ def test_live_monitor_uses_closed_bars_only_and_returns_evaluation():
     assert result.timeframe == "1m"
     assert result.bar_time == bars[-1].time
     assert result.signal.action in {"LONG", "SHORT", "WAIT"}
+    assert result.signal.state in {"APPROACH", "TEST", "RECLAIM", "REJECT", "CONFIRM", "BROKEN"}
+    assert result.event_id.startswith("sig_")
+    assert len(result.event_id) == 36
     assert result.snapshot is not None
     assert result.snapshot.symbol == "EURUSD"
     assert result.snapshot.bar_time == bars[-1].time
     assert result.snapshot.current_close == bars[-1].close
     assert result.supervisor is not None
+
+
+def test_live_monitor_event_identity_is_stable_for_same_decision():
+    bars = make_bars()
+    first_monitor = RealtimeMonitor(FakeFeed(bars), "EURUSD", "1m", lookback=20)
+    second_monitor = RealtimeMonitor(FakeFeed(bars), "EURUSD", "1m", lookback=20)
+    now = bars[-1].time + timedelta(seconds=30)
+
+    first = first_monitor.evaluate_once(now=now)
+    second = second_monitor.evaluate_once(now=now)
+
+    assert first is not None
+    assert second is not None
+    assert first.event_id == second.event_id
 
 
 def test_live_monitor_does_not_evaluate_same_closed_bar_twice():
@@ -85,6 +102,7 @@ def test_live_monitor_evaluates_after_a_new_closed_bar_arrives():
     assert second is not None
     assert second.bar_time == feed.bars[-1].time
     assert second.bar_time > first.bar_time
+    assert second.event_id != first.event_id
 
 
 def test_nearest_zone_helpers_prefer_closest_zone_then_touches():
