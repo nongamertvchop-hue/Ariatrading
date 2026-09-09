@@ -81,10 +81,11 @@ class LiveEvaluation:
             "high": self.signal.zone.high,
             "touches": self.signal.zone.touches,
         }
+        bar_time = self.bar_time.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         return build_signal_event_id({
             "symbol": self.symbol,
             "timeframe": self.timeframe,
-            "bar_time": self.bar_time.isoformat(),
+            "bar_time": bar_time,
             "signal": self.signal.action,
             "state": self.signal.state,
             "breakout_state": self.signal.breakout_state,
@@ -178,72 +179,57 @@ class RealtimeMonitor:
             symbol=self.symbol,
             timeframe=self.timeframe,
             bar_time=latest.time,
-            candle=Candle(latest.open, latest.high, latest.low, latest.close),
             current_close=latest.close,
-            support=support,
-            resistance=resistance,
-            forecast=forecast_result,
-            data_quality=quality,
-        )
-
-        self.guard.accept(bars, now=now)
-        self._last_bar_time = latest.time
-        return LiveEvaluation(
-            symbol=self.symbol,
-            timeframe=self.timeframe,
-            evaluated_at=datetime.now(timezone.utc),
-            bar_time=latest.time,
-            signal=final_signal,
-            support=support,
-            resistance=resistance,
-            forecast=forecast_result,
+            previous_close=bars[-2].close,
             data_quality=quality.reason,
-            supervisor=supervisor,
-            snapshot=snapshot,
         )
+        evaluation = LiveEvaluation(
+            self.symbol,
+            self.timeframe,
+            latest.time if now is None else now,
+            latest.time,
+            final_signal,
+            support,
+            resistance,
+            forecast_result,
+            quality.reason,
+            supervisor,
+            snapshot,
+        )
+        self._last_bar_time = latest.time
+        return evaluation
 
     @staticmethod
     def _best_signal(signals: Sequence[EngineSignal]) -> EngineSignal:
-        if not signals:
-            raise ValueError("no candidate zones")
+        directional = [s for s in signals if s.action != WAIT]
+        if not directional:
+            return signals[0] if signals else EngineSignal(WAIT, "no setup", "")
         return max(
-            signals,
-            key=lambda s: (
-                1 if s.action != WAIT else 0,
-                s.score.total if s.score is not None else -1,
-                s.entry_reference or 0.0,
-            ),
-        )
-
-    @staticmethod
-    def _nearest_support(price: float, zones: Sequence[PriceZone]) -> PriceZone | None:
-        candidates = [z for z in zones if z.center <= price or z.low <= price <= z.high]
-        return min(
-            candidates,
-            key=lambda z: (0.0 if z.low <= price <= z.high else price - z.high, -z.touches),
-            default=None,
-        )
-
-    @staticmethod
-    def _nearest_resistance(price: float, zones: Sequence[PriceZone]) -> PriceZone | None:
-        candidates = [z for z in zones if z.center >= price or z.low <= price <= z.high]
-        return min(
-            candidates,
-            key=lambda z: (0.0 if z.low <= price <= z.high else z.low - price, -z.touches),
-            default=None,
+            directional,
+            key=lambda signal: signal.score.total if signal.score is not None else -1,
         )
 
     @staticmethod
     def _select_signal(long_signal: EngineSignal, short_signal: EngineSignal) -> EngineSignal:
-        long_ok = long_signal.action == "LONG"
-        short_ok = short_signal.action == "SHORT"
-        if long_ok and not short_ok:
+        if long_signal.action != WAIT and short_signal.action == WAIT:
             return long_signal
-        if short_ok and not long_ok:
+        if short_signal.action != WAIT and long_signal.action == WAIT:
             return short_signal
-        if long_ok and short_ok:
-            long_score = long_signal.score.total if long_signal.score else -1
-            short_score = short_signal.score.total if short_signal.score else -1
-            if long_score != short_score:
-                return long_signal if long_score > short_score else short_signal
-        return EngineSignal(WAIT, "no unambiguous realtime setup", long_signal.timeframe)
+        if long_signal.action == WAIT and short_signal.action == WAIT:
+            return EngineSignal(WAIT, "no directional setup", long_signal.timeframe)
+        long_score = long_signal.score.total if long_signal.score is not None else -1
+        short_score = short_signal.score.total if short_signal.score is not None else -1
+        return long_signal if long_score > short_score else short_signal
+
+    @staticmethod
+    def _nearest_support(price: float, zones: Sequence[PriceZone]) -> PriceZone | None:
+        candidates = [z for z in zones if z.center <= price]
+        return min(candidates, key=lambda z: price - z.center, default=None)
+
+    @staticmethod
+    def _nearest_resistance(price: float, zones: Sequence[PriceZone]) -> PriceZone | None:
+        candidates = [z for z in zones if z.center >= price]
+        return min(candidates, key=lambda z: z.center - price, default=None)
+
+
+__all__ = ["BarFeed", "LiveBar", "LiveEvaluation", "RealtimeMonitor"]
