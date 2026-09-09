@@ -1,6 +1,6 @@
 {
   "name": "Bodyguard(Aria)",
-  "version": "0.03.0",
+  "version": "0.04.0",
   "enabled": true,
   "mode": "enforce",
   "http": {
@@ -24,17 +24,19 @@
       "banSeconds": 600
     }
   },
+  "alerts": {
+    "probeWarn": 5,
+    "blockWarn": 20,
+    "rateLimitWarn": 10,
+    "softBanWarn": 1
+  },
   "privacy": {
     "scrubHeaders": ["authorization", "cookie", "x-api-key"],
     "redactKeys": ["apikey", "api_key", "token", "secret", "password", "email", "phone"],
     "forbidClientSecretNames": ["TWELVE_DATA_API_KEY", "CLOUDFLARE_API_TOKEN", "BROKER_"]
   },
-  "securityEvents": {
-    "logToConsole": true,
-    "levels": ["info", "warn", "block"]
-  },
   "headers": {
-    "x-bodyguard": "0.03.0",
+    "x-bodyguard": "0.04.0",
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
     "x-frame-options": "DENY"

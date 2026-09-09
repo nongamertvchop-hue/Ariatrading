@@ -1,27 +1,20 @@
-# Bodyguard(Aria) v0.03.0
+# Bodyguard(Aria) v0.04.0
 
 Defensive security layer for Ariatrading / Webaria.
 
-## Mission
-Protect the system, secrets, and personal data from probing, abuse, injection attempts, and leakage — with basic observability.
+## 0.04.0 highlights
+- Webaria page: `/bodyguard.html` — live status dashboard
+- Alert thresholds on status payload (`alerts[]`)
+- Still defensive only; no secrets or IPs exposed
 
-## 0.03.0 highlights
-- Public **status endpoint**: `GET /api/bodyguard/status`
-- In-memory **audit counters** (allowed / blocked / rate-limited / probes / soft-bans)
-- Status payload contains **no secrets, no IPs, no personal data**
-- Webaria UI security notes (`bodyguard/web/SECURITY_UI.md`)
-- Retains 0.02.0 probe detection + soft-ban + rate limits
+## Endpoints
+- `GET /api/bodyguard/status`
+- UI: `https://<worker>/bodyguard.html`
 
 ## Version ladder
 | Version | Focus |
 |---------|--------|
-| 0.00.0 | foundation |
-| 0.01.0 | enforce validate + rate limit |
-| 0.02.0 | probe detection + soft-ban |
-| **0.03.0** | **status + audit counters** |
-
-## Status endpoint example
-```http
-GET /api/bodyguard/status
-```
-Returns version, mode, and coarse counters only.
+| 0.01.0 | enforce + rate limit |
+| 0.02.0 | probe + soft-ban |
+| 0.03.0 | status + counters |
+| **0.04.0** | **status UI + thresholds** |

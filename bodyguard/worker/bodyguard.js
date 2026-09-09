@@ -1,9 +1,8 @@
 /**
- * Bodyguard(Aria) v0.03.0 — Worker enforcement + coarse audit status.
- * Defensive only. Status endpoint never returns secrets or client identities.
+ * Bodyguard(Aria) v0.04.0 — enforcement, audit counters, alert thresholds.
  */
 
-export const BODYGUARD_VERSION = "0.03.0";
+export const BODYGUARD_VERSION = "0.04.0";
 
 const DEFAULTS = Object.freeze({
   allowedMethods: ["GET", "HEAD", "OPTIONS"],
@@ -14,6 +13,7 @@ const DEFAULTS = Object.freeze({
   rateWindowMs: 60_000,
   rateMax: 60,
   softBan: Object.freeze({ blockThreshold: 8, windowMs: 300_000, banMs: 600_000 }),
+  alerts: Object.freeze({ probeWarn: 5, blockWarn: 20, rateLimitWarn: 10, softBanWarn: 1 }),
   securityHeaders: Object.freeze({
     "x-bodyguard": BODYGUARD_VERSION,
     "x-content-type-options": "nosniff",
@@ -39,22 +39,11 @@ const audit = {
 const PROBE_RE = /(\.\.|%2e%2e|%252e|\/etc\/passwd|\/proc\/|\/win(dows)?\/|<|>|javascript:|onerror=|onload=|union\s+select|drop\s+table|insert\s+into|xp_cmdshell|\$\{|\{\{|%3c%3c|%00)/i;
 
 function clientKey(request) {
-  return (
-    request.headers.get("cf-connecting-ip") ||
-    request.headers.get("x-forwarded-for") ||
-    "unknown"
-  );
+  return request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "unknown";
 }
 
 export function securityEvent(level, reason, extra = {}) {
-  const row = {
-    guard: "Bodyguard(Aria)",
-    version: BODYGUARD_VERSION,
-    level,
-    reason,
-    at: new Date().toISOString(),
-    ...extra,
-  };
+  const row = { guard: "Bodyguard(Aria)", version: BODYGUARD_VERSION, level, reason, at: new Date().toISOString(), ...extra };
   console.log(JSON.stringify(row));
   return row;
 }
@@ -78,23 +67,14 @@ function noteOffense(key, reason) {
 function isSoftBanned(key) {
   const until = softBans.get(key);
   if (!until) return false;
-  if (Date.now() > until) {
-    softBans.delete(key);
-    return false;
-  }
+  if (Date.now() > until) { softBans.delete(key); return false; }
   return true;
 }
 
 export function applySecurityHeaders(response) {
   const headers = new Headers(response.headers);
-  for (const [k, v] of Object.entries(DEFAULTS.securityHeaders)) {
-    if (!headers.has(k)) headers.set(k, v);
-  }
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
+  for (const [k, v] of Object.entries(DEFAULTS.securityHeaders)) if (!headers.has(k)) headers.set(k, v);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 export function detectProbe(request, url = new URL(request.url)) {
@@ -115,27 +95,15 @@ export function scoreUserAgent(request) {
 
 export function validatePublicApiRequest(request, url = new URL(request.url)) {
   const method = request.method.toUpperCase();
-  if (!DEFAULTS.allowedMethods.includes(method)) {
-    return { ok: false, status: 405, reason: "method_not_allowed" };
-  }
-  if (url.search.length > DEFAULTS.maxQueryLength) {
-    return { ok: false, status: 414, reason: "query_too_long" };
-  }
+  if (!DEFAULTS.allowedMethods.includes(method)) return { ok: false, status: 405, reason: "method_not_allowed" };
+  if (url.search.length > DEFAULTS.maxQueryLength) return { ok: false, status: 414, reason: "query_too_long" };
   if (url.pathname.startsWith("/api/")) {
-    if (!DEFAULTS.allowedApiPaths.has(url.pathname)) {
-      return { ok: false, status: 404, reason: "api_route_not_found" };
-    }
-    if (url.pathname === "/api/bodyguard/status") {
-      return { ok: true, status: 200, reason: "ok" };
-    }
+    if (!DEFAULTS.allowedApiPaths.has(url.pathname)) return { ok: false, status: 404, reason: "api_route_not_found" };
+    if (url.pathname === "/api/bodyguard/status") return { ok: true, status: 200, reason: "ok" };
     const symbol = (url.searchParams.get("symbol") || "EUR/USD").trim().toUpperCase();
-    if (!DEFAULTS.symbolPattern.test(symbol)) {
-      return { ok: false, status: 400, reason: "invalid_symbol" };
-    }
+    if (!DEFAULTS.symbolPattern.test(symbol)) return { ok: false, status: 400, reason: "invalid_symbol" };
     const timeframe = url.searchParams.get("timeframe");
-    if (timeframe && !DEFAULTS.allowedTimeframes.has(timeframe)) {
-      return { ok: false, status: 400, reason: "invalid_timeframe" };
-    }
+    if (timeframe && !DEFAULTS.allowedTimeframes.has(timeframe)) return { ok: false, status: 400, reason: "invalid_timeframe" };
   }
   return { ok: true, status: 200, reason: "ok" };
 }
@@ -161,27 +129,41 @@ export function checkRateLimit(request, opts = {}) {
 
 export function publicError(status, reason, message) {
   audit.blocked += 1;
-  return new Response(
-    JSON.stringify({
-      error: reason,
-      message: String(message || reason).slice(0, 240),
-      guard: "Bodyguard(Aria)",
-      version: BODYGUARD_VERSION,
-    }),
-    {
-      status,
-      headers: {
-        "content-type": "application/json; charset=utf-8",
-        "cache-control": "no-store",
-        ...DEFAULTS.securityHeaders,
-        ...(status === 429 || status === 403 ? { "retry-after": "60" } : {}),
-      },
+  return new Response(JSON.stringify({
+    error: reason,
+    message: String(message || reason).slice(0, 240),
+    guard: "Bodyguard(Aria)",
+    version: BODYGUARD_VERSION,
+  }), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      ...DEFAULTS.securityHeaders,
+      ...(status === 429 || status === 403 ? { "retry-after": "60" } : {}),
     },
-  );
+  });
+}
+
+function buildAlerts(counters) {
+  const alerts = [];
+  if (counters.probes >= DEFAULTS.alerts.probeWarn) alerts.push({ level: "warn", code: "probes_elevated", message: `probes=${counters.probes}` });
+  if (counters.blocked >= DEFAULTS.alerts.blockWarn) alerts.push({ level: "warn", code: "blocks_elevated", message: `blocked=${counters.blocked}` });
+  if (counters.rate_limited >= DEFAULTS.alerts.rateLimitWarn) alerts.push({ level: "warn", code: "rate_limits_elevated", message: `rate_limited=${counters.rate_limited}` });
+  if (counters.soft_bans >= DEFAULTS.alerts.softBanWarn) alerts.push({ level: "warn", code: "soft_bans_present", message: `soft_bans=${counters.soft_bans}` });
+  return alerts;
 }
 
 export function getStatusPayload() {
   audit.statusCalls += 1;
+  const counters = {
+    allowed: audit.allowed,
+    blocked: audit.blocked,
+    rate_limited: audit.rateLimited,
+    probes: audit.probes,
+    soft_bans: audit.softBans,
+    status_calls: audit.statusCalls,
+  };
   return {
     guard: "Bodyguard(Aria)",
     version: BODYGUARD_VERSION,
@@ -189,14 +171,8 @@ export function getStatusPayload() {
     scope: "defensive-only",
     execution: "NONE",
     started_at: audit.startedAt,
-    counters: {
-      allowed: audit.allowed,
-      blocked: audit.blocked,
-      rate_limited: audit.rateLimited,
-      probes: audit.probes,
-      soft_bans: audit.softBans,
-      status_calls: audit.statusCalls,
-    },
+    counters,
+    alerts: buildAlerts(counters),
     note: "Aggregate counters only. No IPs, secrets, or personal data.",
   };
 }
@@ -212,7 +188,6 @@ export function statusResponse() {
   });
 }
 
-/** Returns a Response to block, or null to allow. */
 export function guardPublicRequest(request) {
   const url = new URL(request.url);
   const key = clientKey(request);
