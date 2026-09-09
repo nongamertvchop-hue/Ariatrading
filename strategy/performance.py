@@ -31,12 +31,7 @@ class PerformanceReport:
     r_stddev: float
 
     def as_dict(self) -> dict[str, Any]:
-        """Return strict-JSON-safe report data.
-
-        ``Infinity`` is not valid in strict JSON. A positive-only sample keeps
-        ``profit_factor`` as ``None`` in the serialized form and exposes the
-        unbounded condition explicitly.
-        """
+        """Return strict-JSON-safe report data."""
         data = asdict(self)
         unbounded = self.profit_factor == float("inf")
         data["profit_factor"] = None if unbounded else self.profit_factor
@@ -55,8 +50,15 @@ class PaperPerformanceAnalyzer:
         """Build an analyzer directly from a paper-trading journal."""
         return cls(PaperTradeAttribution(journal).all_trades())
 
+    def _closed_trades(self) -> list[TradeAttribution]:
+        return [
+            trade
+            for trade in self._trades
+            if trade.is_closed and trade.r_multiple is not None
+        ]
+
     def report(self) -> PerformanceReport:
-        closed = [trade for trade in self._trades if trade.is_closed and trade.r_multiple is not None]
+        closed = self._closed_trades()
         r_values = [float(trade.r_multiple) for trade in closed]
         for value in r_values:
             if not isfinite(value):
@@ -82,7 +84,11 @@ class PaperPerformanceAnalyzer:
             peak = max(peak, equity)
             max_drawdown = max(max_drawdown, peak - equity)
 
-        bars = [trade.close_event.bars_held for trade in closed if trade.close_event is not None and trade.close_event.bars_held is not None]
+        bars = [
+            trade.close_event.bars_held
+            for trade in closed
+            if trade.close_event is not None and trade.close_event.bars_held is not None
+        ]
         average_bars = mean(bars) if bars else 0.0
         r_stddev = pstdev(r_values) if len(r_values) > 1 else 0.0
 
@@ -108,3 +114,38 @@ class PaperPerformanceAnalyzer:
                 outcome = trade.outcome or "UNKNOWN"
                 groups.setdefault(outcome, []).append(trade)
         return {outcome: PaperPerformanceAnalyzer(trades).report() for outcome, trades in sorted(groups.items())}
+
+    def by_dimension(self, dimension: str) -> dict[str, PerformanceReport]:
+        """Group closed-trade performance by an existing journal dimension.
+
+        Supported dimensions are ``symbol``, ``timeframe``, and ``action``.
+        Values are read from the CLOSE event so a completed trade has one
+        authoritative lifecycle record for the grouping key.
+        """
+        if dimension not in {"symbol", "timeframe", "action"}:
+            raise ValueError("dimension must be one of: symbol, timeframe, action")
+
+        groups: dict[str, list[TradeAttribution]] = {}
+        for trade in self._closed_trades():
+            close_event = trade.close_event
+            if close_event is None:
+                continue
+            value = getattr(close_event, dimension)
+            groups.setdefault(value, []).append(trade)
+
+        return {
+            value: PaperPerformanceAnalyzer(trades).report()
+            for value, trades in sorted(groups.items())
+        }
+
+    def by_symbol(self) -> dict[str, PerformanceReport]:
+        """Return closed-trade performance grouped by symbol."""
+        return self.by_dimension("symbol")
+
+    def by_timeframe(self) -> dict[str, PerformanceReport]:
+        """Return closed-trade performance grouped by timeframe."""
+        return self.by_dimension("timeframe")
+
+    def by_action(self) -> dict[str, PerformanceReport]:
+        """Return closed-trade performance grouped by LONG/SHORT action."""
+        return self.by_dimension("action")
