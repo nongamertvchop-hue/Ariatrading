@@ -20,6 +20,7 @@ from .levels_v2 import PriceZone, find_resistance_zones, find_support_zones
 from .market_snapshot import MarketSnapshot
 from .realtime_guard import RealtimeGuard
 from .realtime_supervisor import ALLOW, SupervisorDecision, supervise
+from .signal_id import SignalRegistry
 from .timeframe import adaptive_zone_tolerance, get_timeframe_config
 
 
@@ -69,13 +70,15 @@ class LiveEvaluation:
     data_quality: str = "ok"
     supervisor: SupervisorDecision | None = None
     snapshot: MarketSnapshot | None = None
+    is_new_signal: bool = True
 
 
 class RealtimeMonitor:
     """Poll a BarFeed with quality and consistency checks."""
 
     def __init__(self, feed: BarFeed, symbol: str, timeframe: str, lookback: int = 100,
-                 max_staleness_bars: int = 2, min_forecast_confidence: float = 0.45):
+                 max_staleness_bars: int = 2, min_forecast_confidence: float = 0.45,
+                 signal_registry: SignalRegistry | None = None):
         get_timeframe_config(timeframe)
         if lookback < 10:
             raise ValueError("lookback must be at least 10")
@@ -86,6 +89,7 @@ class RealtimeMonitor:
         self.guard = RealtimeGuard(timeframe, max_staleness_bars=max_staleness_bars)
         self.min_forecast_confidence = min_forecast_confidence
         self._last_bar_time: datetime | None = None
+        self.signal_registry = signal_registry or SignalRegistry()
 
     @property
     def last_bar_time(self) -> datetime | None:
@@ -116,10 +120,10 @@ class RealtimeMonitor:
         resistances = find_resistance_zones(history, tolerance=tolerance)
 
         long_signal = self._best_signal(
-            [evaluate_long(candles, zone, self.timeframe) for zone in supports]
+            [evaluate_long(candles, zone, self.timeframe, symbol=self.symbol) for zone in supports]
         ) if supports else EngineSignal(WAIT, "no support zone", self.timeframe)
         short_signal = self._best_signal(
-            [evaluate_short(candles, zone, self.timeframe) for zone in resistances]
+            [evaluate_short(candles, zone, self.timeframe, symbol=self.symbol) for zone in resistances]
         ) if resistances else EngineSignal(WAIT, "no resistance zone", self.timeframe)
         signal = self._select_signal(long_signal, short_signal)
 
@@ -141,10 +145,22 @@ class RealtimeMonitor:
                 protection="BLOCKED",
                 breakout_state=signal.breakout_state,
                 entry_reference=signal.entry_reference,
+                stop_reference=signal.stop_reference,
                 test_index=signal.test_index,
                 confirmation_index=signal.confirmation_index,
                 structure_bias=signal.structure_bias,
                 score=signal.score,
+                signal_id=signal.signal_id,
+            )
+
+        is_new = True
+        if final_signal.signal_id:
+            is_new, _ = self.signal_registry.register(
+                final_signal.signal_id,
+                symbol=self.symbol,
+                timeframe=self.timeframe,
+                action=final_signal.action,
+                now=now or datetime.now(timezone.utc),
             )
 
         snapshot = MarketSnapshot(
@@ -173,6 +189,7 @@ class RealtimeMonitor:
             data_quality=quality.reason,
             supervisor=supervisor,
             snapshot=snapshot,
+            is_new_signal=is_new,
         )
 
     @staticmethod
