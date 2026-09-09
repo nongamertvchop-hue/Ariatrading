@@ -47,7 +47,7 @@ export function fallbackCandles(symbol, timeframe, count = 100, nowMs = Date.now
     const high = Math.max(open, close) + wick;
     const low = Math.min(open, close) - wick;
     candles.push({
-      datetime: new Date((bucket + 1) * step * 1000).toISOString(),
+      datetime: new Date(bucket * step * 1000).toISOString(),
       open: Number(open.toFixed(6)),
       high: Number(high.toFixed(6)),
       low: Number(low.toFixed(6)),
