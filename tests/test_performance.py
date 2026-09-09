@@ -3,9 +3,9 @@ import json
 
 import pytest
 
-from strategy.engine import EngineSignal, LONG
+from strategy.engine import EngineSignal, LONG, SHORT
 from strategy.journal import JournalEvent, PaperTradeJournal
-from strategy.levels_v2 import PriceZone, SUPPORT
+from strategy.levels_v2 import PriceZone, SUPPORT, RESISTANCE
 from strategy.paper import PaperTradingEngine
 from strategy.performance import PaperPerformanceAnalyzer
 from strategy.trade_attribution import TradeAttribution
@@ -15,23 +15,32 @@ def dt(minute: int) -> datetime:
     return datetime(2026, 1, 1, 0, minute, tzinfo=timezone.utc)
 
 
-def signal(event_id: str) -> JournalEvent:
+def signal(event_id: str, *, symbol: str = "EURUSD", timeframe: str = "1m", action: str = LONG) -> JournalEvent:
     return JournalEvent(
-        event_time=dt(1), event_type="SIGNAL", symbol="EURUSD", timeframe="1m",
-        action="LONG", reason="confirmed", event_id=event_id,
+        event_time=dt(1), event_type="SIGNAL", symbol=symbol, timeframe=timeframe,
+        action=action, reason="confirmed", event_id=event_id,
     )
 
 
-def trade(trade_id: int, event_id: str, r_multiple: float, bars_held: int = 2) -> TradeAttribution:
-    source = signal(event_id)
+def trade(
+    trade_id: int,
+    event_id: str,
+    r_multiple: float,
+    bars_held: int = 2,
+    *,
+    symbol: str = "EURUSD",
+    timeframe: str = "1m",
+    action: str = LONG,
+) -> TradeAttribution:
+    source = signal(event_id, symbol=symbol, timeframe=timeframe, action=action)
     opened = JournalEvent(
-        event_time=dt(2), event_type="OPEN", symbol="EURUSD", timeframe="1m",
-        action="LONG", reason="paper position opened", trade_id=trade_id,
+        event_time=dt(2), event_type="OPEN", symbol=symbol, timeframe=timeframe,
+        action=action, reason="paper position opened", trade_id=trade_id,
         entry_price=100.0, stop=99.0, target=102.0, signal_event_id=event_id,
     )
     closed = JournalEvent(
-        event_time=dt(2 + bars_held), event_type="CLOSE", symbol="EURUSD", timeframe="1m",
-        action="LONG", reason="paper position closed", trade_id=trade_id,
+        event_time=dt(2 + bars_held), event_type="CLOSE", symbol=symbol, timeframe=timeframe,
+        action=action, reason="paper position closed", trade_id=trade_id,
         entry_price=100.0, stop=99.0, target=102.0,
         exit_price=102.0 if r_multiple > 0 else 99.0,
         outcome="WIN" if r_multiple > 0 else "LOSS", r_multiple=r_multiple,
@@ -90,7 +99,7 @@ def test_closed_trade_filter_is_applied_before_metrics():
         2, signal("sig_b"),
         JournalEvent(
             event_time=dt(2), event_type="OPEN", symbol="EURUSD", timeframe="1m",
-            action="LONG", reason="paper position opened", trade_id=2,
+            action=LONG, reason="paper position opened", trade_id=2,
             entry_price=100.0, stop=99.0, target=102.0, signal_event_id="sig_b",
         ),
         None,
@@ -143,3 +152,59 @@ def test_from_journal_builds_analyzer_from_public_journal_api():
     report = PaperPerformanceAnalyzer.from_journal(journal).report()
     assert report.total_trades == 1
     assert report.gross_r == 1.0
+
+
+def test_by_dimension_groups_from_close_event_and_keeps_stable_order():
+    trades = [
+        trade(1, "sig_a", 2.0, symbol="USDJPY", timeframe="5m", action=SHORT),
+        trade(2, "sig_b", -1.0, symbol="EURUSD", timeframe="1m", action=LONG),
+        trade(3, "sig_c", 1.0, symbol="EURUSD", timeframe="5m", action=SHORT),
+    ]
+    analyzer = PaperPerformanceAnalyzer(trades)
+
+    by_symbol = analyzer.by_symbol()
+    assert list(by_symbol) == ["EURUSD", "USDJPY"]
+    assert by_symbol["EURUSD"].total_trades == 2
+    assert by_symbol["EURUSD"].gross_r == 0.0
+
+    by_timeframe = analyzer.by_timeframe()
+    assert list(by_timeframe) == ["1m", "5m"]
+    assert by_timeframe["5m"].gross_r == 3.0
+
+    by_action = analyzer.by_action()
+    assert list(by_action) == [LONG, SHORT]
+    assert by_action[LONG].losses == 1
+    assert by_action[SHORT].wins == 2
+
+
+def test_by_dimension_rejects_unknown_dimension():
+    with pytest.raises(ValueError, match="dimension must be one of"):
+        PaperPerformanceAnalyzer([]).by_dimension("forecast")
+
+
+def test_by_dimension_excludes_open_trades_without_risking_metric_contamination():
+    open_trade = TradeAttribution(
+        4,
+        signal("sig_d", symbol="GBPUSD", timeframe="15m", action=LONG),
+        JournalEvent(
+            event_time=dt(2), event_type="OPEN", symbol="GBPUSD", timeframe="15m",
+            action=LONG, reason="paper position opened", trade_id=4,
+            entry_price=100.0, stop=99.0, target=102.0, signal_event_id="sig_d",
+        ),
+        None,
+    )
+    grouped = PaperPerformanceAnalyzer([
+        trade(1, "sig_a", 1.0, symbol="EURUSD"), open_trade,
+    ]).by_symbol()
+    assert list(grouped) == ["EURUSD"]
+    assert grouped["EURUSD"].total_trades == 1
+
+
+def test_dimension_grouping_does_not_invent_unknown_fields():
+    analyzer = PaperPerformanceAnalyzer([trade(1, "sig_a", 1.0)])
+    with pytest.raises(ValueError):
+        analyzer.by_dimension("setup_state")
+
+
+def test_resistance_zone_constant_remains_available_for_future_short_tests():
+    assert RESISTANCE == "RESISTANCE"
