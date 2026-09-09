@@ -31,6 +31,7 @@ class JournalEvent:
     r_multiple: float | None = None
     bars_held: int | None = None
     event_id: str | None = None
+    signal_event_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.event_time.tzinfo is None or self.event_time.utcoffset() is None:
@@ -45,6 +46,8 @@ class JournalEvent:
             raise ValueError("trade_id must be >= 1")
         if self.event_id is not None and not self.event_id:
             raise ValueError("event_id must not be empty")
+        if self.signal_event_id is not None and not self.signal_event_id:
+            raise ValueError("signal_event_id must not be empty")
         for name, value in (("entry_price", self.entry_price), ("stop", self.stop), ("target", self.target), ("exit_price", self.exit_price), ("r_multiple", self.r_multiple)):
             if value is not None and not isfinite(value):
                 raise ValueError(f"{name} must be finite")
@@ -113,6 +116,7 @@ class PaperTradeJournal:
             entry_price=position.entry_price,
             stop=position.stop,
             target=position.target,
+            signal_event_id=position.signal_event_id,
         )
         self._events.append(event)
         return event
@@ -142,6 +146,7 @@ class PaperTradeJournal:
             outcome=position.outcome,
             r_multiple=position.r_multiple,
             bars_held=position.bars_held,
+            signal_event_id=position.signal_event_id,
         )
         self._events.append(event)
         return event
