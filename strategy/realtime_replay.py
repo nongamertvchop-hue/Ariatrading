@@ -10,7 +10,7 @@ from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import Sequence
 
-from .outcomes import INVALID, SignalOutcome, label_signal_outcome, label_wait_outcome
+from .outcomes import SignalOutcome, label_signal_outcome, label_wait_outcome
 from .realtime import LiveBar, LiveEvaluation, RealtimeMonitor
 from .timeframe import get_timeframe_config
 
@@ -79,7 +79,7 @@ def label_replay_outcomes(
             continue
 
         if signal.entry_reference is None or signal.stop_reference is None:
-            outcomes.append(label_wait_outcome(event_id=evaluation.event_id, direction=INVALID))
+            outcomes.append(label_wait_outcome(event_id=evaluation.event_id, direction=signal.action))
             continue
 
         outcomes.append(
