@@ -109,6 +109,7 @@ class PaperSessionRunner:
                     signal_time=pending.bar_time,
                     entry_time=bar_time,
                     entry_price=evaluation.snapshot.candle.open,
+                    signal_event_id=pending.event_id,
                 )
                 if opened is not None:
                     open_event = self.journal.record_open(
