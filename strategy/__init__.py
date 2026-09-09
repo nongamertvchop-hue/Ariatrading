@@ -10,7 +10,7 @@ diagnostics, deep-learning challenger models, deep-learning walk-forward
 research, aggregated research evidence, research-gate completeness checks,
 execution recovery, paper execution conformance, broker symbol-contract
 validation, research provenance, feed integrity, causal paper-signal outcomes,
-and the final system readiness gate.
+replay outcome attachment, and the final system readiness gate.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
@@ -46,7 +46,7 @@ from .pipeline import ResearchReport, run_research
 from .portfolio_risk import ALLOW as PORTFOLIO_ALLOW, HALT, PortfolioRiskController, PortfolioRiskDecision, PortfolioRiskLimits, PortfolioRiskState
 from .position_reconciliation import FLAT, LocalPositionState, PositionSnapshot, ReconciliationDecision, new_entry_allowed, reconcile_position
 from .realtime_guard import DataQuality, RealtimeGuard, expected_closed_bar_open
-from .realtime_replay import RealtimeReplayResult, replay_realtime_monitor
+from .realtime_replay import RealtimeReplayResult, label_replay_outcomes, replay_realtime_monitor
 from .realtime_supervisor import ALLOW, SupervisorDecision, supervise
 from .replay import ReplayPoint, ReplayResult, replay_forecasts
 from .research_audit import ResearchAuditReport, audit_validation_evidence
@@ -82,7 +82,7 @@ __all__ = [
     "ExperimentRecord", "build_experiment_record",
     "ForecastResult", "HorizonForecast", "ScenarioForecast", "forecast",
     "JournalEvent", "PaperTradeJournal", "MarketSnapshot", "ReplayPoint", "ReplayResult", "replay_forecasts",
-    "DataQuality", "RealtimeGuard", "expected_closed_bar_open", "RealtimeReplayResult", "replay_realtime_monitor",
+    "DataQuality", "RealtimeGuard", "expected_closed_bar_open", "RealtimeReplayResult", "label_replay_outcomes", "replay_realtime_monitor",
     "ALLOW", "SupervisorDecision", "supervise", "ResearchReport", "run_research",
     "BacktestResult", "run_backtest", "run_all_timeframes", "ENTRY_TIMING_SIGNAL_REFERENCE", "ENTRY_TIMING_NEXT_BAR_OPEN",
     "CLOSED", "OPEN", "PaperAccount", "PaperPosition", "PaperTradingEngine", "PaperSessionResult", "PaperSessionRunner",
