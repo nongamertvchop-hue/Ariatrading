@@ -6,12 +6,13 @@ here, and no future candle information is introduced into the calculation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from math import isfinite
 from statistics import mean, pstdev
-from typing import Iterable
+from typing import Any, Iterable
 
-from .trade_attribution import TradeAttribution
+from .journal import PaperTradeJournal
+from .trade_attribution import PaperTradeAttribution, TradeAttribution
 
 
 @dataclass(frozen=True)
@@ -29,12 +30,30 @@ class PerformanceReport:
     average_bars_held: float
     r_stddev: float
 
+    def as_dict(self) -> dict[str, Any]:
+        """Return strict-JSON-safe report data.
+
+        ``Infinity`` is not valid in strict JSON. A positive-only sample keeps
+        ``profit_factor`` as ``None`` in the serialized form and exposes the
+        unbounded condition explicitly.
+        """
+        data = asdict(self)
+        unbounded = self.profit_factor == float("inf")
+        data["profit_factor"] = None if unbounded else self.profit_factor
+        data["profit_factor_unbounded"] = unbounded
+        return data
+
 
 class PaperPerformanceAnalyzer:
     """Calculate deterministic, order-preserving paper-trade statistics."""
 
     def __init__(self, trades: Iterable[TradeAttribution]) -> None:
         self._trades = tuple(trades)
+
+    @classmethod
+    def from_journal(cls, journal: PaperTradeJournal) -> "PaperPerformanceAnalyzer":
+        """Build an analyzer directly from a paper-trading journal."""
+        return cls(PaperTradeAttribution(journal).all_trades())
 
     def report(self) -> PerformanceReport:
         closed = [trade for trade in self._trades if trade.is_closed and trade.r_multiple is not None]
