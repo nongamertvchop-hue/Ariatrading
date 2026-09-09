@@ -48,6 +48,10 @@ def test_live_monitor_uses_closed_bars_only_and_returns_evaluation():
     assert result.snapshot.symbol == "EURUSD"
     assert result.snapshot.bar_time == bars[-1].time
     assert result.snapshot.current_close == bars[-1].close
+    assert result.snapshot.data_quality is not None
+    assert result.snapshot.data_quality.ok is True
+    assert result.snapshot.data_quality.latest_time == bars[-1].time
+    assert result.snapshot.ready is True
     assert result.supervisor is not None
 
 
