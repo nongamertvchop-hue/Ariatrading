@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 
 from strategy.engine import EngineSignal, LONG
-from strategy.journal import PaperTradeJournal
+from strategy.journal import JournalEvent, PaperTradeJournal
 from strategy.paper import PaperTradingEngine
 from strategy.trade_attribution import PaperTradeAttribution
 from strategy.candles import Candle
@@ -148,3 +148,96 @@ def test_conflicting_signal_ids_in_one_trade_fail_closed():
     attribution = PaperTradeAttribution(journal)
     with pytest.raises(ValueError, match="conflicting signal_event_id"):
         attribution.for_trade(1)
+
+
+def _journal_with_lifecycle(*, symbol: str = "EURUSD", timeframe: str = "1m", action: str = LONG, signal_event_id: str | None = "sig_x") -> PaperTradeJournal:
+    journal = PaperTradeJournal()
+    journal._events.append(
+        JournalEvent(
+            event_time=dt(1),
+            event_type="SIGNAL",
+            symbol="EURUSD",
+            timeframe="1m",
+            action=LONG,
+            reason="confirmed",
+            event_id="sig_x",
+        )
+    )
+    journal._events.append(
+        JournalEvent(
+            event_time=dt(2),
+            event_type="OPEN",
+            symbol=symbol,
+            timeframe=timeframe,
+            action=action,
+            reason="paper position opened",
+            trade_id=1,
+            entry_price=101.0,
+            stop=100.0,
+            target=102.0,
+            signal_event_id=signal_event_id,
+        )
+    )
+    return journal
+
+
+def test_explicit_signal_id_without_source_signal_fails_closed():
+    events = (
+        JournalEvent(
+            event_time=dt(2),
+            event_type="OPEN",
+            symbol="EURUSD",
+            timeframe="1m",
+            action=LONG,
+            reason="paper position opened",
+            trade_id=1,
+            entry_price=101.0,
+            stop=100.0,
+            target=102.0,
+            signal_event_id="missing_signal",
+        ),
+    )
+    attribution = PaperTradeAttribution(events)
+
+    with pytest.raises(ValueError, match="unresolved signal_event_id"):
+        attribution.for_trade(1)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("symbol", "GBPUSD", "symbol mismatch"),
+        ("timeframe", "5m", "timeframe mismatch"),
+        ("action", "SHORT", "action mismatch"),
+    ],
+)
+def test_lifecycle_identity_must_match_source_signal(field: str, value: str, message: str):
+    kwargs = {"symbol": "EURUSD", "timeframe": "1m", "action": LONG}
+    kwargs[field] = value
+    journal = _journal_with_lifecycle(**kwargs)
+    attribution = PaperTradeAttribution(journal)
+
+    with pytest.raises(ValueError, match=message):
+        attribution.for_trade(1)
+
+
+def test_by_signal_event_id_uses_stable_signal_index():
+    first = _journal_with_lifecycle()
+    first._events.append(
+        JournalEvent(
+            event_time=dt(3),
+            event_type="OPEN",
+            symbol="EURUSD",
+            timeframe="1m",
+            action=LONG,
+            reason="paper position opened",
+            trade_id=2,
+            entry_price=103.0,
+            stop=102.0,
+            target=104.0,
+            signal_event_id="sig_x",
+        )
+    )
+    attribution = PaperTradeAttribution(first)
+
+    assert [trade.trade_id for trade in attribution.by_signal_event_id("sig_x")] == [1, 2]
