@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
+import json
 
 import pytest
 
-from strategy.journal import JournalEvent
+from strategy.journal import JournalEvent, PaperTradeJournal
 from strategy.performance import PaperPerformanceAnalyzer
 from strategy.trade_attribution import TradeAttribution
 
@@ -52,6 +53,7 @@ def test_report_calculates_r_metrics_and_drawdown():
     assert report.profit_factor == 3.0
     assert report.max_drawdown_r == 1.0
     assert report.average_bars_held == 2.0
+    assert report.r_stddev == pytest.approx(1.11803398875)
 
 
 def test_empty_report_is_safe_and_deterministic():
@@ -62,11 +64,17 @@ def test_empty_report_is_safe_and_deterministic():
     assert report.average_r == 0.0
     assert report.profit_factor is None
     assert report.max_drawdown_r == 0.0
+    assert report.average_bars_held == 0.0
+    assert report.r_stddev == 0.0
 
 
-def test_positive_only_profit_factor_is_infinite():
+def test_positive_only_profit_factor_is_infinite_and_serializes_safely():
     report = PaperPerformanceAnalyzer([trade(1, "sig_a", 1.5)]).report()
     assert report.profit_factor == float("inf")
+    payload = report.as_dict()
+    assert payload["profit_factor"] is None
+    assert payload["profit_factor_unbounded"] is True
+    json.dumps(payload, allow_nan=False)
 
 
 def test_non_finite_r_is_rejected():
@@ -98,3 +106,24 @@ def test_by_outcome_returns_stable_grouped_reports():
     assert grouped["WIN"].gross_r == 3.0
     assert grouped["LOSS"].total_trades == 1
     assert grouped["LOSS"].gross_r == -1.0
+
+
+def test_from_journal_builds_analyzer_from_persisted_events():
+    journal = PaperTradeJournal()
+    journal._events.extend([
+        signal("sig_a"),
+        JournalEvent(
+            event_time=dt(2), event_type="OPEN", symbol="EURUSD", timeframe="1m",
+            action="LONG", reason="paper position opened", trade_id=1,
+            entry_price=100.0, stop=99.0, target=102.0, signal_event_id="sig_a",
+        ),
+        JournalEvent(
+            event_time=dt(3), event_type="CLOSE", symbol="EURUSD", timeframe="1m",
+            action="LONG", reason="paper position closed", trade_id=1,
+            entry_price=100.0, stop=99.0, target=102.0, exit_price=102.0,
+            outcome="WIN", r_multiple=2.0, bars_held=1, signal_event_id="sig_a",
+        ),
+    ])
+    report = PaperPerformanceAnalyzer.from_journal(journal).report()
+    assert report.total_trades == 1
+    assert report.gross_r == 2.0
