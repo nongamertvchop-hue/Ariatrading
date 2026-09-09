@@ -30,6 +30,7 @@ class JournalEvent:
     outcome: str | None = None
     r_multiple: float | None = None
     bars_held: int | None = None
+    signal_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.event_time.tzinfo is None or self.event_time.utcoffset() is None:
@@ -80,6 +81,7 @@ class PaperTradeJournal:
             action=signal.action,
             reason=signal.reason,
             trade_id=None,
+            signal_id=getattr(signal, "signal_id", None),
         )
         self._events.append(event)
         return event
@@ -141,3 +143,6 @@ class PaperTradeJournal:
 
     def trade_events(self, trade_id: int) -> tuple[JournalEvent, ...]:
         return tuple(event for event in self._events if event.trade_id == trade_id)
+
+    def signal_events(self, signal_id: str) -> tuple[JournalEvent, ...]:
+        return tuple(event for event in self._events if event.signal_id == signal_id)
