@@ -1,8 +1,8 @@
 {
   "name": "Bodyguard(Aria)",
-  "version": "0.00.0",
+  "version": "0.02.0",
   "enabled": true,
-  "mode": "monitor",
+  "mode": "enforce",
   "http": {
     "allowedMethods": ["GET", "HEAD", "OPTIONS"],
     "maxQueryLength": 512,
@@ -17,6 +17,11 @@
       "windowSeconds": 60,
       "maxRequestsPerIp": 60,
       "burst": 20
+    },
+    "softBan": {
+      "blockThreshold": 8,
+      "windowSeconds": 300,
+      "banSeconds": 600
     }
   },
   "privacy": {
@@ -28,5 +33,10 @@
     "logToConsole": true,
     "levels": ["info", "warn", "block"]
   },
-  "notes": "mode=monitor means helpers are available but entry.js wiring is still optional in 0.00.0"
+  "headers": {
+    "x-bodyguard": "0.02.0",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "x-frame-options": "DENY"
+  }
 }

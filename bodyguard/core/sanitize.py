@@ -5,8 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-_SECRET_VALUE = re.compile(r"(?i)(api[_-]?key|token|secret|password)\s*[:=]\s*([^
-]{6,})")
+_SECRET_VALUE = re.compile(r"(?i)(api[_-]?key|token|secret|password)\s*[:=]\s*([^\n\r]{6,})")
 _EMAIL = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
 
 
@@ -34,8 +33,4 @@ def scrub_mapping(data: dict[str, Any], redact_keys: list[str] | None = None) ->
 
 
 def safe_public_error(message: str, code: str = "rejected") -> dict[str, str]:
-    """Client-safe error envelope — no internals."""
-    return {
-        "error": code,
-        "message": scrub_text(message)[:240],
-    }
+    return {"error": code, "message": scrub_text(message)[:240]}

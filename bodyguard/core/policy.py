@@ -1,7 +1,4 @@
-"""Bodyguard(Aria) policy helpers — Python research side.
-
-Defensive evaluation only. No network calls, no offensive behavior.
-"""
+"""Bodyguard(Aria) policy helpers — Python research side (v0.02.0)."""
 
 from __future__ import annotations
 
@@ -12,7 +9,10 @@ from pathlib import Path
 from typing import Any
 
 _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "bodyguard.config.json"
-_SYMBOL_RE = re.compile(r"^[A-Z]{3}/[A-Z]{3}$")
+_PROBE_RE = re.compile(
+    r"(\.\.|%2e%2e|/etc/passwd|<script|javascript:|union\s+select|drop\s+table|\{\{|\$\{)",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -57,8 +57,17 @@ def validate_method(method: str, config: dict[str, Any] | None = None) -> Policy
     return PolicyDecision(True, "ok", "R3")
 
 
+def detect_probe(text: str) -> PolicyDecision:
+    if not text:
+        return PolicyDecision(True, "ok", "R12")
+    if _PROBE_RE.search(text):
+        return PolicyDecision(False, "probe_pattern_blocked", "R12")
+    if any(ord(ch) < 32 for ch in text):
+        return PolicyDecision(False, "control_chars", "R12")
+    return PolicyDecision(True, "ok", "R12")
+
+
 def reject_secret_shaped_client_payload(payload: dict[str, Any], config: dict[str, Any] | None = None) -> PolicyDecision:
-    """Block obvious attempts to push secrets through client-facing structures."""
     cfg = config or load_config()
     forbidden = [s.lower() for s in cfg.get("privacy", {}).get("forbidClientSecretNames", [])]
     blob = json.dumps(payload, ensure_ascii=True).lower()
