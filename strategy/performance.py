@@ -29,6 +29,11 @@ class PerformanceReport:
     max_drawdown_r: float
     average_bars_held: float
     r_stddev: float
+    max_win_streak: int
+    max_loss_streak: int
+    current_streak: int
+    current_streak_type: str | None
+    recovery_factor: float | None
 
     def as_dict(self) -> dict[str, Any]:
         """Return strict-JSON-safe report data."""
@@ -56,6 +61,46 @@ class PaperPerformanceAnalyzer:
             for trade in self._trades
             if trade.is_closed and trade.r_multiple is not None
         ]
+
+    @staticmethod
+    def _sequence_metrics(r_values: list[float]) -> tuple[int, int, int, str | None]:
+        if not r_values:
+            return 0, 0, 0, None
+
+        max_win_streak = 0
+        max_loss_streak = 0
+        current_streak = 0
+        current_type: str | None = None
+        streak_type: str | None = None
+
+        for value in r_values:
+            if value > 0:
+                kind = "WIN"
+                max_win_streak += 0
+            elif value < 0:
+                kind = "LOSS"
+            else:
+                kind = "BREAKEVEN"
+
+            if kind == "BREAKEVEN":
+                current_streak = 0
+                current_type = None
+                streak_type = None
+                continue
+
+            if kind == streak_type:
+                current_streak += 1
+            else:
+                current_streak = 1
+                streak_type = kind
+
+            current_type = kind
+            if kind == "WIN":
+                max_win_streak = max(max_win_streak, current_streak)
+            else:
+                max_loss_streak = max(max_loss_streak, current_streak)
+
+        return max_win_streak, max_loss_streak, current_streak, current_type
 
     def report(self) -> PerformanceReport:
         closed = self._closed_trades()
@@ -91,6 +136,8 @@ class PaperPerformanceAnalyzer:
         ]
         average_bars = mean(bars) if bars else 0.0
         r_stddev = pstdev(r_values) if len(r_values) > 1 else 0.0
+        max_win_streak, max_loss_streak, current_streak, current_streak_type = self._sequence_metrics(r_values)
+        recovery_factor = gross_r / max_drawdown if max_drawdown > 0 else (float("inf") if gross_r > 0 else None)
 
         return PerformanceReport(
             total_trades=total,
@@ -105,6 +152,11 @@ class PaperPerformanceAnalyzer:
             max_drawdown_r=max_drawdown,
             average_bars_held=average_bars,
             r_stddev=r_stddev,
+            max_win_streak=max_win_streak,
+            max_loss_streak=max_loss_streak,
+            current_streak=current_streak,
+            current_streak_type=current_streak_type,
+            recovery_factor=recovery_factor,
         )
 
     def by_outcome(self) -> dict[str, PerformanceReport]:
