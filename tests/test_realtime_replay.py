@@ -64,6 +64,11 @@ def test_realtime_replay_event_identity_changes_with_closed_bar():
     assert baseline.event_ids[-1] != changed.event_ids[-1]
 
 
+def test_realtime_replay_rejects_incompatible_lookback():
+    with pytest.raises(ValueError, match="lookback"):
+        replay_realtime_monitor(make_candles(12), "TEST", "1m", lookback=5)
+
+
 def test_realtime_replay_rejects_invalid_start_index():
     with pytest.raises(ValueError, match="start_index"):
         replay_realtime_monitor(make_candles(10), "TEST", "1m", start_index=10)
