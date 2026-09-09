@@ -37,6 +37,7 @@ class EngineSignal:
     confirmation_index: int | None = None
     structure_bias: str = "UNKNOWN"
     score: SetupScore | None = None
+    state: str = "APPROACH"
 
 
 def _protective_stop(
@@ -101,6 +102,7 @@ def _evaluate(
         confirmation_index=result.confirmation_index,
         structure_bias=structure.bias,
         score=setup_score,
+        state=result.state,
     )
 
 
