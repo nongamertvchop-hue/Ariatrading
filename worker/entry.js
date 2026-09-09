@@ -4,12 +4,16 @@
  * Keeps the strategy Worker intact while adding bounded caching and a clearly
  * labelled synthetic fallback for research/UI mode when market-data secrets
  * are not configured. No broker order execution is performed here.
+ *
+ * Bodyguard(Aria) v0.01.0 enforces public API request validation and rate limits
+ * before market handlers run.
  */
 
 import app from "./index.js";
 import { handleSignalParityV2, evaluateRealtimeSignalParity } from "./signal_parity_v2.js";
 import { buildSignalEventId } from "./signal_event.js";
 import { fallbackCandles, fallbackPrice, FALLBACK_SOURCE, TIMEFRAME_SECONDS } from "./fallback_market.js";
+import { guardPublicRequest, applySecurityHeaders, BODYGUARD_VERSION } from "../bodyguard/worker/bodyguard.js";
 
 const FRESH_TTL_MS = Object.freeze({
   "/api/price": 10_000,
@@ -32,13 +36,13 @@ function cloneHeaders(response, extra = {}) {
 }
 
 function cachedResponse(record, statusOverride, cacheStatus) {
-  return new Response(record.body, {
+  return applySecurityHeaders(new Response(record.body, {
     status: statusOverride ?? record.status,
     headers: cloneHeaders(record.headers, {
       "x-webaria-market-cache": cacheStatus,
       "cache-control": "no-store",
     }),
-  });
+  }));
 }
 
 async function readResponse(response) {
@@ -51,14 +55,14 @@ async function readResponse(response) {
 }
 
 function json(data, status = 200, headers = {}) {
-  return new Response(JSON.stringify(data), {
+  return applySecurityHeaders(new Response(JSON.stringify(data), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
       ...headers,
     },
-  });
+  }));
 }
 
 function requestParams(request) {
@@ -134,10 +138,20 @@ async function resolveApi(request, env, ctx, pathname) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    // Bodyguard(Aria): block abusive / invalid public API traffic early.
+    if (url.pathname.startsWith("/api/")) {
+      const blocked = guardPublicRequest(request);
+      if (blocked) return blocked;
+    }
+
     const ttl = FRESH_TTL_MS[url.pathname];
     const staleTtl = STALE_TTL_MS[url.pathname];
 
-    if (!ttl || request.method !== "GET") return app.fetch(request, env, ctx);
+    if (!ttl || request.method !== "GET") {
+      const response = await app.fetch(request, env, ctx);
+      return applySecurityHeaders(response);
+    }
 
     const key = cacheKey(request);
     const now = Date.now();
@@ -152,10 +166,10 @@ export default {
         return cachedResponse(record, record.status, "MISS");
       }
       if (cached && now - cached.savedAt <= staleTtl) return cachedResponse(cached, 200, "STALE");
-      return response;
+      return applySecurityHeaders(response);
     } catch (error) {
       if (cached && now - cached.savedAt <= staleTtl) return cachedResponse(cached, 200, "STALE");
-      return json({ error: "upstream_or_internal_error", message: error?.message || "unknown error" }, 502);
+      return json({ error: "upstream_or_internal_error", message: error?.message || "unknown error", guard: "Bodyguard(Aria)", version: BODYGUARD_VERSION }, 502);
     }
   },
 };

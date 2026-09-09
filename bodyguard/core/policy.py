@@ -1,7 +1,4 @@
-"""Bodyguard(Aria) policy helpers — Python research side.
-
-Defensive evaluation only. No network calls, no offensive behavior.
-"""
+"""Bodyguard(Aria) policy helpers — Python research side."""
 
 from __future__ import annotations
 
@@ -12,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "bodyguard.config.json"
-_SYMBOL_RE = re.compile(r"^[A-Z]{3}/[A-Z]{3}$")
 
 
 @dataclass(frozen=True)
@@ -58,7 +54,6 @@ def validate_method(method: str, config: dict[str, Any] | None = None) -> Policy
 
 
 def reject_secret_shaped_client_payload(payload: dict[str, Any], config: dict[str, Any] | None = None) -> PolicyDecision:
-    """Block obvious attempts to push secrets through client-facing structures."""
     cfg = config or load_config()
     forbidden = [s.lower() for s in cfg.get("privacy", {}).get("forbidClientSecretNames", [])]
     blob = json.dumps(payload, ensure_ascii=True).lower()

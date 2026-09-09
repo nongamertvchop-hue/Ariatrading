@@ -1,52 +1,36 @@
-# Bodyguard(Aria) Rules — v0.00.0
+# Bodyguard(Aria) Rules — v0.01.0
 
-These rules are mandatory for anything under Bodyguard protection.
+Mandatory defensive rules.
 
 ## R1 — Secrets never leave the server boundary
-- API keys, tokens, broker credentials, private keys must live only in environment secrets / secure storage.
-- Never put secrets in frontend JS, HTML, git commits, screenshots, or error messages.
-- If a secret may have leaked: rotate immediately, then investigate.
+API keys, tokens, broker credentials stay in environment secrets only. Never in frontend, git, or error text.
 
 ## R2 — Least data in responses
-- Public endpoints return only what the UI needs.
-- No internal stack traces, file paths, account emails, phone numbers, or full request dumps to clients.
-- Research journals and local browser storage are not treated as durable secure stores.
+Public endpoints return only UI-needed fields. No stack traces, paths, emails, or secret material.
 
 ## R3 — Fail closed on uncertainty
-- Invalid input, malformed JSON, unexpected methods, or failed integrity checks are rejected.
-- Prefer `403` / `400` / `429` over partial processing of suspicious traffic.
-- Do not “best-effort” continue when authentication or validation is ambiguous.
+Invalid method, malformed input, or failed checks are rejected (400/403/405/429). No partial processing of suspicious traffic.
 
 ## R4 — Input is hostile until proven otherwise
-- Validate symbol, timeframe, numeric ranges, and string length before use.
-- Reject path traversal patterns, control characters, and oversized bodies.
-- Never pass raw query strings into shell, eval, or dynamic code execution.
+Validate symbol, timeframe, query length. Reject control characters and oversized input.
 
 ## R5 — Rate and abuse controls
-- Public market endpoints must be rate-limited per IP / client fingerprint where possible.
-- Repeated identical probing, burst traffic, or auth failures trigger cooldown / block signals.
-- Caching is allowed for availability; it must not bypass auth or expose privileged data.
+Public market endpoints are rate-limited per IP + path. Burst abuse is blocked.
 
 ## R6 — No privilege through the browser
-- Browser UI is untrusted. Paper trading state in localStorage is local simulation only.
-- No endpoint may place real broker orders unless a future execution adapter is explicitly enabled behind separate gates.
-- Admin or operator actions require separate strong authentication (not shipped in 0.00.0).
+Browser is untrusted. No real broker order placement from public UI paths.
 
 ## R7 — Logging without leaking
-- Security events are recorded with time, route, reason, and coarse client identity.
-- Logs must scrub Authorization headers, cookies, API keys, and personal identifiers.
-- Retain security logs long enough to investigate; do not ship them to public clients.
+Security events log time, route, reason, coarse client key. Scrub Authorization, cookies, API keys.
 
 ## R8 — Dependency and deploy hygiene
-- Do not commit `.env`, key files, or Cloudflare token material.
-- Deploy tokens stay in CI secrets.
-- Review Worker / Pages permissions when connectors or secrets change.
+No `.env` or token files in git. CI secrets only.
 
 ## R9 — Personal data minimization
-- Do not collect names, phone numbers, national IDs, or private messages in this stack unless a future feature explicitly requires it and documents consent + retention.
-- Trading research data is market data + strategy state, not identity data.
+Do not collect identity data unless a documented feature requires it.
 
 ## R10 — Change control
-- Security rule changes bump Bodyguard version and update `RULES.md`.
-- Disabling a guard requires an explicit config flag and a recorded reason.
-- “Temporary” bypasses without expiry are forbidden.
+Security changes bump Bodyguard version. Temporary bypasses without expiry are forbidden.
+
+## R11 — Enforcement on the edge (new in 0.01.0)
+Worker entry must run Bodyguard checks before market handlers for `/api/*`.

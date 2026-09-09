@@ -1,27 +1,23 @@
-# Bodyguard(Aria) Incident Response — v0.00.0
+# Bodyguard(Aria) Incident Response — v0.01.0
 
-## If an API key may have leaked
-1. Rotate the key at the provider (Twelve Data / Cloudflare / broker) immediately.
-2. Update Cloudflare Worker secrets.
-3. Review Git history and CI logs for accidental prints.
-4. Record time, scope, and who rotated the key.
+## API key leak
+1. Rotate provider key immediately.
+2. Update Cloudflare Worker secret.
+3. Review git/CI for accidental prints.
 
-## If the public site is under abusive traffic
-1. Enable stricter rate limits in `bodyguard.config.json` (next enforcement release).
-2. Temporarily reduce polling frequency in Webaria UI.
-3. Check Cloudflare analytics for IP bursts.
-4. Keep market endpoints read-only — never open execution paths under pressure.
+## Abuse / 429 storms
+1. Confirm legitimate UI polling is not the source.
+2. Tighten `rateMax` in a follow-up release if needed.
+3. Keep execution paths closed.
 
-## If personal data appears in logs or responses
-1. Stop the leaking path (config / code rollback).
-2. Scrub stored logs where possible.
-3. Treat as a privacy incident even if volume is small.
+## Personal data in logs
+1. Stop the path.
+2. Scrub logs.
+3. Treat as privacy incident.
 
-## If GitHub or Cloudflare account looks compromised
+## Account compromise (GitHub / Cloudflare)
 1. Revoke sessions and tokens.
 2. Rotate all secrets.
-3. Review recent deploys and repository commits.
-4. Re-deploy only from a known-good commit.
+3. Redeploy only from known-good commit.
 
-## Standing rule
-Bodyguard does not perform retaliation or counter-attacks. Contain, rotate, patch, document.
+Standing rule: contain, rotate, patch, document — never retaliate.

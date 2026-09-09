@@ -1,11 +1,9 @@
 /**
- * Bodyguard(Aria) v0.00.0 — Worker-side defensive primitives.
- *
- * Monitor-friendly helpers for request validation, redaction, and
- * lightweight rate signaling. Wire into entry.js in a later version.
+ * Bodyguard(Aria) v0.01.0 — Worker enforcement primitives.
+ * Defensive only: validate, rate-limit, redact, block.
  */
 
-export const BODYGUARD_VERSION = "0.00.0";
+export const BODYGUARD_VERSION = "0.01.0";
 
 const DEFAULTS = Object.freeze({
   allowedMethods: ["GET", "HEAD", "OPTIONS"],
@@ -14,6 +12,12 @@ const DEFAULTS = Object.freeze({
   allowedTimeframes: new Set(["1m", "5m", "15m", "30m", "1h", "4h", "1D"]),
   rateWindowMs: 60_000,
   rateMax: 60,
+  securityHeaders: Object.freeze({
+    "x-bodyguard": BODYGUARD_VERSION,
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "x-frame-options": "DENY",
+  }),
 });
 
 const rateBuckets = new Map();
@@ -35,9 +39,20 @@ export function securityEvent(level, reason, extra = {}) {
     at: new Date().toISOString(),
     ...extra,
   };
-  // Avoid logging raw secrets; callers must pass already-safe fields.
   console.log(JSON.stringify(row));
   return row;
+}
+
+export function applySecurityHeaders(response) {
+  const headers = new Headers(response.headers);
+  for (const [k, v] of Object.entries(DEFAULTS.securityHeaders)) {
+    if (!headers.has(k)) headers.set(k, v);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 export function validatePublicApiRequest(request, url = new URL(request.url)) {
@@ -48,7 +63,6 @@ export function validatePublicApiRequest(request, url = new URL(request.url)) {
   if (url.search.length > DEFAULTS.maxQueryLength) {
     return { ok: false, status: 414, reason: "query_too_long" };
   }
-
   if (url.pathname.startsWith("/api/")) {
     const symbol = (url.searchParams.get("symbol") || "EUR/USD").trim().toUpperCase();
     if (!DEFAULTS.symbolPattern.test(symbol)) {
@@ -59,7 +73,6 @@ export function validatePublicApiRequest(request, url = new URL(request.url)) {
       return { ok: false, status: 400, reason: "invalid_timeframe" };
     }
   }
-
   return { ok: true, status: 200, reason: "ok" };
 }
 
@@ -75,7 +88,7 @@ export function checkRateLimit(request, opts = {}) {
   }
   bucket.count += 1;
   if (bucket.count > max) {
-    securityEvent("block", "rate_limited", { key, count: bucket.count });
+    securityEvent("block", "rate_limited", { path: new URL(request.url).pathname, count: bucket.count });
     return { ok: false, status: 429, reason: "rate_limited" };
   }
   return { ok: true, status: 200, reason: "ok", remaining: Math.max(0, max - bucket.count) };
@@ -83,28 +96,37 @@ export function checkRateLimit(request, opts = {}) {
 
 export function publicError(status, reason, message) {
   return new Response(
-    JSON.stringify({ error: reason, message: String(message || reason).slice(0, 240) }),
+    JSON.stringify({
+      error: reason,
+      message: String(message || reason).slice(0, 240),
+      guard: "Bodyguard(Aria)",
+      version: BODYGUARD_VERSION,
+    }),
     {
       status,
       headers: {
         "content-type": "application/json; charset=utf-8",
         "cache-control": "no-store",
-        "x-bodyguard": BODYGUARD_VERSION,
+        ...DEFAULTS.securityHeaders,
+        ...(status === 429 ? { "retry-after": "60" } : {}),
       },
     },
   );
 }
 
+/**
+ * Returns a Response to block the request, or null to allow.
+ */
 export function guardPublicRequest(request) {
   const url = new URL(request.url);
   const basic = validatePublicApiRequest(request, url);
   if (!basic.ok) {
-    securityEvent("block", basic.reason, { path: url.pathname });
+    securityEvent("block", basic.reason, { path: url.pathname, method: request.method });
     return publicError(basic.status, basic.reason, basic.reason);
   }
   if (url.pathname.startsWith("/api/")) {
     const rate = checkRateLimit(request);
     if (!rate.ok) return publicError(rate.status, rate.reason, "too many requests");
   }
-  return null; // null => allow through
+  return null;
 }

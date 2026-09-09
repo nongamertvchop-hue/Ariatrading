@@ -1,45 +1,38 @@
-# Bodyguard(Aria) v0.00.0
+# Bodyguard(Aria) v0.01.0
 
-Defensive security layer for the Ariatrading / Webaria stack.
+Defensive security layer for Ariatrading / Webaria.
 
-**Purpose:** protect the system, operators, and personal data from unauthorized access, probing, credential theft, and abuse of public endpoints.
+**Mission:** protect the system, secrets, and personal data from probing, abuse, and leakage.
 
-This package is **defensive only**. It does not attack other systems.
-
-## What it protects
-
-1. Public Worker / Webaria endpoints from abuse and scraping
-2. Secrets and API keys from accidental exposure
-3. Personal / account data from leakage through logs and responses
-4. Application integrity from obvious injection and malformed input
-5. Operational visibility via security event records
+## What changed in 0.01.0
+- Enforcement is **active** on the Worker gateway (`worker/entry.js`)
+- Public `/api/*` requests pass method, query, symbol/timeframe, and rate-limit checks
+- Security events are logged in structured JSON (no secrets)
+- Response header `x-bodyguard: 0.01.0` marks guarded responses
 
 ## Layout
-
 ```text
 bodyguard/
-  VERSION                 # package version
-  README.md               # this file
-  RULES.md                # hard security rules (policy)
-  THREAT_MODEL.md         # what we assume and defend against
-  config/
-    bodyguard.config.json # tunable guard settings
-  core/
-    policy.py             # rule evaluation helpers (Python research side)
-    sanitize.py           # input/output sanitization helpers
-  worker/
-    bodyguard.js          # Worker-side request guard primitives
-  docs/
-    INCIDENT_RESPONSE.md  # what to do when something looks wrong
+  VERSION
+  README.md
+  RULES.md
+  THREAT_MODEL.md
+  config/bodyguard.config.json
+  core/policy.py
+  core/sanitize.py
+  worker/bodyguard.js
+  docs/INCIDENT_RESPONSE.md
 ```
 
-## Version policy
+## Modes
+| Version | Mode | Behavior |
+|---------|------|----------|
+| 0.00.0 | monitor | helpers only |
+| **0.01.0** | **enforce** | blocks bad requests on Worker |
+| 0.02.x | harden | tighter limits, bot scores, audit sink |
 
-- `0.00.x` = foundation / policy / scaffolding only
-- `0.01.x` = enforced request guards on Worker
-- `0.1.x`  = integrated with production deploy path
-- `1.0.0`  = locked baseline after review
-
-## Integration note
-
-v0.00.0 ships rules, config, and helper modules. Enforcement wiring into `worker/entry.js` is intentional next work so this release stays reviewable and low-risk.
+## Operator notes
+- Rate limit defaults: 60 requests / IP / path / 60 seconds on `/api/*`
+- Legitimate UI polling (signal ~45s, price ~8s) stays well under the limit
+- If you are blocked with HTTP 429, wait for the window to reset
+- Still no real order execution path
