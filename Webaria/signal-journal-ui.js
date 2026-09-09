@@ -34,8 +34,7 @@
       let entryChanged=false;
       for(const horizon of HORIZONS){
         const end=i+horizon;if(end>=data.length)continue;
-        const window=data.slice(i+1,end+1);
-        const direction=entry.signal==='LONG'?1:-1;
+        const window=data.slice(i+1,end+1),direction=entry.signal==='LONG'?1:-1;
         const closePct=((+data[end].close-base)/base)*100*direction;
         const mfe=Math.max(...window.map(c=>(((entry.signal==='LONG'?+c.high:+c.low)-base)/base)*100*direction));
         const mae=Math.min(...window.map(c=>(((entry.signal==='LONG'?+c.low:+c.high)-base)/base)*100*direction));
@@ -46,18 +45,31 @@
     }
     if(changed)write(symbol,tf,list);
   }
-  function statText(x){
-    const o=x.outcome||{};
-    return HORIZONS.map(h=>o[h]?`${h}:${o[h].close_pct>=0?'+':''}${o[h].close_pct.toFixed(2)}%`:`${h}:—`).join(' ');
+  function stats(symbol,tf){
+    const list=read(symbol,tf).filter(x=>['LONG','SHORT'].includes(String(x.signal||'')));
+    return Object.fromEntries(HORIZONS.map(h=>{
+      const rows=list.map(x=>x.outcome?.[h]).filter(x=>x&&x.completed&&Number.isFinite(+x.close_pct));
+      const wins=rows.filter(x=>+x.close_pct>0).length;
+      const avg=rows.length?rows.reduce((s,x)=>s+(+x.close_pct),0)/rows.length:0;
+      const avgMfe=rows.length?rows.reduce((s,x)=>s+(+x.mfe_pct),0)/rows.length:0;
+      const avgMae=rows.length?rows.reduce((s,x)=>s+(+x.mae_pct),0)/rows.length:0;
+      return [h,{n:rows.length,wins,win_rate:rows.length?wins/rows.length*100:0,avg_close:Number(avg.toFixed(4)),avg_mfe:Number(avgMfe.toFixed(4)),avg_mae:Number(avgMae.toFixed(4))}];
+    }));
+  }
+  function renderSummary(symbol,tf){
+    const box=document.getElementById('journalSummary');if(!box)return;
+    const s=stats(symbol,tf);
+    box.innerHTML=HORIZONS.map(h=>{const x=s[h];return `<div class="journal-stat"><strong>${h} bars</strong><span>${x.n?x.win_rate.toFixed(1)+'%':'—'}</span><small>${x.n} completed · avg ${x.n?(x.avg_close>=0?'+':'')+x.avg_close.toFixed(2)+'%':'—'}</small></div>`}).join('');
   }
   function render(symbol,tf){
     const box=document.getElementById('journal');if(!box)return;
+    renderSummary(symbol,tf);
     const list=read(symbol,tf).slice().reverse().slice(0,12);
-    if(!list.length){box.innerHTML='<div class="journal-empty">No observations yet.</div>';return;}
+    if(!list.length){box.innerHTML='<div class="journal-empty">No observations yet.</div>';return}
     box.innerHTML=list.map(x=>{
       const sig=String(x.signal||'WAIT'),cls=sig==='LONG'?'up':sig==='SHORT'?'down':'';
       const raw=numTime(x.bar_time);const time=Number.isFinite(raw)?new Date(raw).toLocaleString():String(x.bar_time);
-      const score=x.score==null?'—':x.score;const outcome=statText(x);
+      const score=x.score==null?'—':x.score;const outcome=HORIZONS.map(h=>x.outcome?.[h]?.completed?`${h}:${x.outcome[h].close_pct>=0?'+':''}${x.outcome[h].close_pct.toFixed(2)}%`:`${h}:—`).join(' ');
       return `<div class="journal-row"><div><span class="journal-sig ${cls}">${sig}</span><div class="journal-meta">${time} · ${x.source||'unknown'}</div><div class="journal-outcome">${sig==='WAIT'?'No directional outcome':outcome}</div></div><div class="journal-meta">S:${score}</div></div>`;
     }).join('');
   }
@@ -65,8 +77,7 @@
     const candles=Array.isArray(j?.candles)?j.candles:[];const last=candles[candles.length-1];const barTime=last?.time??last?.datetime;if(barTime==null)return;
     record({event_id:`${symbol}|${tf}|${barTime}`,symbol,tf,bar_time:barTime,signal:j?.signal||j?.direction||'WAIT',state:j?.state||null,structure:j?.structure_bias||null,breakout:j?.breakout_state||null,score:j?.score??null,source:j?.source||'unknown',observed_at:j?.generated_at||new Date().toISOString()});
     updateOutcomes(symbol,tf,candles);
-    const selectedSymbol=document.getElementById('symbol')?.value,selectedTf=document.getElementById('tf')?.value;
-    if(symbol===selectedSymbol&&tf===selectedTf)render(symbol,tf);
+    render(symbol,tf);
   }
   function inspectRequest(input){try{const url=new URL(typeof input==='string'?input:input?.url||'',window.location.href);if(url.pathname!=='/api/signal')return null;return {symbol:url.searchParams.get('symbol')||'EUR/USD',tf:url.searchParams.get('timeframe')||'15m'};}catch{return null}}
   function bind(){
@@ -76,6 +87,6 @@
   }
   const originalFetch=root.fetch.bind(root);
   root.fetch=async function(input,init){const meta=inspectRequest(input);const response=await originalFetch(input,init);if(meta)response.clone().json().then(payload=>observe(payload,meta.symbol,meta.tf)).catch(()=>{});return response;};
-  root.WebariaObservedSignalJournalUI=Object.freeze({observe,render,bind,read,updateOutcomes});
+  root.WebariaObservedSignalJournalUI=Object.freeze({observe,render,bind,read,stats,updateOutcomes});
   window.addEventListener('DOMContentLoaded',bind);
 })(typeof window!=='undefined'?window:globalThis);
