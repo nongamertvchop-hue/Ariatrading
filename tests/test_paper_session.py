@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from strategy.candles import Candle
 from strategy.engine import EngineSignal, LONG, SHORT, WAIT
 from strategy.journal import PaperTradeJournal
@@ -121,6 +123,29 @@ def test_journal_contains_signal_and_open_events():
     assert len(journal.trade_events(1)) == 1
     assert journal.trade_events(1)[0].event_type == "OPEN"
     assert journal.trade_events(1)[0].entry_price == 101.0
+    assert journal.events[0].event_id == evaluation(1).event_id
+    assert journal.events[0].event_id is not None
+
+
+def test_journal_rejects_duplicate_signal_event_id():
+    journal = PaperTradeJournal()
+    first = evaluation(1)
+    journal.record_signal(
+        event_time=first.evaluated_at,
+        symbol=first.symbol,
+        timeframe=first.timeframe,
+        signal=first.signal,
+        event_id=first.event_id,
+    )
+
+    with pytest.raises(ValueError, match="duplicate signal event_id"):
+        journal.record_signal(
+            event_time=first.evaluated_at,
+            symbol=first.symbol,
+            timeframe=first.timeframe,
+            signal=first.signal,
+            event_id=first.event_id,
+        )
 
 
 def test_wait_does_not_create_pending_trade():
