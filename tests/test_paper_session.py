@@ -87,6 +87,9 @@ def test_signal_from_bar_n_opens_at_next_bar_open_only():
     assert second.opened.entry_time == dt(2)
     assert second.opened.entry_price == second_eval.snapshot.candle.open
     assert second.opened.entry_price != second_eval.snapshot.current_close
+    assert second.opened.signal_event_id == first.signal_event.event_id
+    assert second.open_event is not None
+    assert second.open_event.signal_event_id == first.signal_event.event_id
 
 
 def test_existing_position_is_managed_on_subsequent_bar():
@@ -109,6 +112,9 @@ def test_existing_position_is_managed_on_subsequent_bar():
     assert result is not None
     assert result.closed is not None
     assert result.closed.outcome == "WIN"
+    assert result.closed.signal_event_id == opened_result.opened.signal_event_id
+    assert result.close_event is not None
+    assert result.close_event.signal_event_id == opened_result.opened.signal_event_id
     assert runner.paper.position is None
 
 
@@ -125,6 +131,7 @@ def test_journal_contains_signal_and_open_events():
     assert journal.trade_events(1)[0].entry_price == 101.0
     assert journal.events[0].event_id == evaluation(1).event_id
     assert journal.events[0].event_id is not None
+    assert journal.events[2].signal_event_id == journal.events[0].event_id
 
 
 def test_journal_rejects_duplicate_signal_event_id():
