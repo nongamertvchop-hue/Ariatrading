@@ -2,14 +2,15 @@
 
 The package keeps the two core setups stable while exposing consistent
 interfaces across strategy, forecast, backtest, execution-cost simulation,
-replay, realtime monitoring, paper simulation, journaling, walk-forward
-validation, robustness analysis, reproducible research control, ML
-meta-filter research, experiment registry, regime diagnostics, ML feature
-drift diagnostics, ML OOS behavior diagnostics, ML model health diagnostics,
-deep-learning challenger models, deep-learning walk-forward research,
-aggregated research evidence, research-gate completeness checks, execution
-recovery, paper execution conformance, broker symbol-contract validation,
-research provenance, feed integrity, and the final system readiness gate.
+replay, realtime monitoring, paper simulation, journaling, signal-event
+identity, walk-forward validation, robustness analysis, reproducible research
+control, ML meta-filter research, experiment registry, regime diagnostics, ML
+feature drift diagnostics, ML OOS behavior diagnostics, ML model health
+diagnostics, deep-learning challenger models, deep-learning walk-forward
+research, aggregated research evidence, research-gate completeness checks,
+execution recovery, paper execution conformance, broker symbol-contract
+validation, research provenance, feed integrity, and the final system
+readiness gate.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
@@ -56,6 +57,7 @@ from .research_validation import ValidationEvidence, build_validation_evidence
 from .regime import REGIMES, RegimeStats, classify_regime, stratify_samples
 from .risk_engine import RiskDecision, RiskLimits, evaluate_risk, position_size
 from .robustness import RobustnessCase, RobustnessReport, RobustnessScenario, run_robustness_analysis
+from .signal_event import build_signal_event_id, canonical_signal_event
 from .system_gate import SystemGateDecision, evaluate_system_readiness
 from .trade_guard import TradeGuardDecision, evaluate_trade_guard
 from .two_setups import TwoSetupResult, evaluate_two_setups
@@ -99,4 +101,5 @@ __all__ = [
     "ModelType", "DeepLearningMetrics", "build_causal_sequences", "train_deep_sequence_model",
     "DeepLearningWalkForwardFold", "DeepLearningWalkForwardResult", "deep_learning_walk_forward_backtest",
     "ModelClassificationMetrics", "MLModelComparison", "MLChallengerAggregate", "compare_ml_models", "aggregate_challenger_results",
+    "canonical_signal_event", "build_signal_event_id",
 ]
