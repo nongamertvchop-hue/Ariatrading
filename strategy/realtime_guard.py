@@ -8,7 +8,7 @@ data cannot silently become a signal. Research/paper monitoring only.
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from math import isfinite
-from typing import Sequence, Protocol
+from typing import Protocol, Sequence
 
 from .timeframe import bar_duration, get_timeframe_config
 
@@ -48,7 +48,7 @@ class RealtimeGuard:
         if not bars:
             return DataQuality(False, "empty feed")
         for bar in bars:
-            if bar.time.tzinfo is None:
+            if bar.time.tzinfo is None or bar.time.utcoffset() is None:
                 return DataQuality(False, "bar timestamp must be timezone-aware", bar.time)
             values = (bar.open, bar.high, bar.low, bar.close)
             if not all(isfinite(float(v)) for v in values):
@@ -60,7 +60,7 @@ class RealtimeGuard:
                 return DataQuality(False, "bars must be strictly chronological", right.time)
         latest = bars[-1]
         reference = now or datetime.now(timezone.utc)
-        if reference.tzinfo is None:
+        if reference.tzinfo is None or reference.utcoffset() is None:
             raise ValueError("now must be timezone-aware")
         age = (reference - latest.time).total_seconds()
         max_age = bar_duration(self.timeframe).total_seconds() * self.max_staleness_bars
@@ -82,7 +82,7 @@ class RealtimeGuard:
 def expected_closed_bar_open(now: datetime, timeframe: str) -> datetime:
     """Return the start time of the currently forming bar."""
     get_timeframe_config(timeframe)
-    if now.tzinfo is None:
+    if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     duration = bar_duration(timeframe)
     epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
