@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import Sequence
 
+from .outcomes import INVALID, SignalOutcome, label_signal_outcome, label_wait_outcome
 from .realtime import LiveBar, LiveEvaluation, RealtimeMonitor
 from .timeframe import get_timeframe_config
 
@@ -34,6 +35,66 @@ class RealtimeReplayResult:
     def event_ids(self) -> tuple[str, ...]:
         """Stable identities for each replayed closed-candle decision."""
         return tuple(evaluation.event_id for evaluation in self.evaluations)
+
+
+def label_replay_outcomes(
+    candles: Sequence[dict],
+    replay: RealtimeReplayResult,
+    *,
+    target_r_multiple: float = 2.0,
+    max_bars: int = 20,
+) -> tuple[SignalOutcome, ...]:
+    """Attach causal paper-signal outcomes to a completed realtime replay.
+
+    Each evaluation is matched to its closed candle by timestamp. Directional
+    signals are labeled from candles strictly after that signal candle; WAIT
+    and supervisor-blocked decisions become ``INVALID`` rather than being
+    treated as trades. The returned tuple preserves replay order and therefore
+    keeps ``outcome.event_id`` aligned with ``replay.event_ids``.
+    """
+    if target_r_multiple <= 0:
+        raise ValueError("target_r_multiple must be > 0")
+    if max_bars < 1:
+        raise ValueError("max_bars must be >= 1")
+
+    normalized = [dict(candle) for candle in candles]
+    positions: dict[object, int] = {}
+    for index, candle in enumerate(normalized):
+        timestamp = candle.get("time", candle.get("datetime"))
+        if timestamp is None:
+            raise ValueError("replay outcome labeling requires candle timestamps")
+        if timestamp in positions:
+            raise ValueError("replay outcome labeling requires unique candle timestamps")
+        positions[timestamp] = index
+
+    outcomes: list[SignalOutcome] = []
+    for evaluation in replay.evaluations:
+        index = positions.get(evaluation.bar_time)
+        if index is None:
+            raise ValueError("replay evaluation timestamp is missing from candles")
+
+        signal = evaluation.signal
+        if signal.action not in {"LONG", "SHORT"}:
+            outcomes.append(label_wait_outcome(event_id=evaluation.event_id))
+            continue
+
+        if signal.entry_reference is None or signal.stop_reference is None:
+            outcomes.append(label_wait_outcome(event_id=evaluation.event_id, direction=INVALID))
+            continue
+
+        outcomes.append(
+            label_signal_outcome(
+                event_id=evaluation.event_id,
+                direction=signal.action,
+                entry=signal.entry_reference,
+                stop=signal.stop_reference,
+                future_candles=normalized[index + 1:],
+                target_r_multiple=target_r_multiple,
+                max_bars=max_bars,
+            )
+        )
+
+    return tuple(outcomes)
 
 
 def replay_realtime_monitor(
@@ -112,4 +173,4 @@ def _to_live_bar(raw: dict) -> LiveBar:
         raise ValueError("historical replay candle cannot be converted to LiveBar") from exc
 
 
-__all__ = ["RealtimeReplayResult", "replay_realtime_monitor"]
+__all__ = ["RealtimeReplayResult", "label_replay_outcomes", "replay_realtime_monitor"]
