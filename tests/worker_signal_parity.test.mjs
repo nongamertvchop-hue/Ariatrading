@@ -165,7 +165,7 @@ test("realtime feed guard rejects stale and duplicate observations", () => {
   resetRealtimeFeedGuard();
 });
 
-test("signal event id is deterministic and independent of generated_at", async () => {
+test("signal event id is deterministic, independent of generated_at, and matches Python contract", async () => {
   const base = {
     symbol: "EUR/USD",
     timeframe: "15m",
@@ -184,8 +184,11 @@ test("signal event id is deterministic and independent of generated_at", async (
   const a = await buildSignalEventId(base);
   const b = await buildSignalEventId({ ...base, generated_at: "2026-09-08T19:17:00Z" });
   assert.equal(a, b);
-  assert.match(a, /^sig_[0-9a-f]{32}$/);
-  assert.match(canonicalSignalEvent(base), /EUR\/USD/);
+  assert.equal(a, "sig_9bf358bd9e1b18cc12aff86774938787");
+  assert.equal(
+    canonicalSignalEvent(base),
+    '["EUR/USD","15m","2026-09-08T19:15:00Z","WAIT","APPROACH","NO_BREAKOUT",1.1025,null,null,"RANGE",null,null]',
+  );
 });
 
 test("signal event id changes when the closed-candle decision identity changes", async () => {
