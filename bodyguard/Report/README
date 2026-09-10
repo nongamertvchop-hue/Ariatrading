@@ -1,1 +1,78 @@
-Report
+# Bodyguard(Aria) — Real-Time Security Incident Reports
+
+โฟลเดอร์นี้เป็น **Security Incident & Attack Intelligence Log** ของ Ariatrading
+
+หน้าที่หลักคือบันทึกเหตุการณ์ความปลอดภัยที่ Bodyguard ตรวจพบจริงจาก runtime เช่น scanner/probe, abuse, CORS rejection, payload attack, execution-boundary attempt และเหตุผิดปกติอื่น ๆ
+
+## Real-time rule
+
+เมื่อ Bodyguard ตรวจพบ security event ให้เกิดลำดับนี้ทันทีใน request เดียวกัน:
+
+```text
+Request
+  ↓
+Detection
+  ↓
+Block / Allow / Rate-limit / Soft-ban
+  ↓
+Security Event
+  ↓
+Redacted Telemetry
+  ↓
+Incident Record / Alert Surface
+```
+
+เป้าหมายคือ **near-real-time detection and alerting** โดยไม่ทำให้ระบบปลอมว่า latency เป็นศูนย์หรือรับประกันการส่งมอบ event 100% ในทุกกรณีของเครือข่าย/ผู้ให้บริการ
+
+## สิ่งที่ต้องบันทึก
+
+แต่ละ incident ควรมีอย่างน้อย:
+
+- `incident_id`
+- `detected_at`
+- `category`
+- `severity`
+- `endpoint`
+- `method`
+- `rule`
+- `action`
+- `count`
+- `evidence_ref`
+- `status`
+
+`category` ตัวอย่าง: `SCAN`, `PROBE`, `ABUSE`, `AUTH`, `EXECUTION`, `PAYLOAD`, `CORS`, `BOT`, `INCIDENT`
+
+## หลักฐานและตัวตนของผู้โจมตี
+
+รายงานต้องแยก **สิ่งที่ตรวจพบจริง** ออกจาก **สิ่งที่อนุมาน**
+
+ห้ามเขียนว่า "บุคคล X โจมตี" จาก user-agent หรือ pattern เพียงอย่างเดียว ให้ระบุเป็น `scanner-like traffic`, `automated probe`, หรือ category ที่หลักฐานรองรับแทน
+
+ต้องไม่เก็บถาวร:
+
+- IP address
+- access token / API key / password
+- request body ที่อาจมี secrets
+- PII ที่ไม่จำเป็น
+
+ใช้ aggregate / redacted identifiers / evidence references ตามกฎของ Bodyguard แทน
+
+## Severity
+
+- `INFO` — anomaly หรือ event ที่ควรติดตาม
+- `LOW` — policy violation เล็กน้อย
+- `MEDIUM` — repeated abuse / suspicious probing
+- `HIGH` — sustained attack pattern / soft-ban
+- `CRITICAL` — attempted execution-boundary bypass, credential exposure หรือเหตุที่อาจกระทบ broker/system boundary
+
+## Incident lifecycle
+
+`DETECTED → CONTAINED → INVESTIGATING → RESOLVED`
+
+ถ้ายังไม่มีหลักฐานพอ ให้คง `DETECTED` หรือ `INVESTIGATING` ห้ามเดาว่าเป็นผู้โจมตีรายใด
+
+## Source of truth
+
+Runtime telemetry เป็นแหล่งความจริงของเหตุการณ์แบบสด ส่วนไฟล์ใน `Report/` เป็น **durable incident memory / evidence index** สำหรับการตรวจสอบย้อนหลังและ regression testing
+
+ห้ามสร้าง incident ปลอมเพื่อให้ dashboard ดูมี activity
