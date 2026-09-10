@@ -5,7 +5,11 @@
     const url=`/api/market?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}`;
     const response=await originalFetch(url,{cache:'no-store'});let payload;
     try{payload=await response.json();}catch{throw new Error(`Live market returned invalid JSON (HTTP ${response.status})`);}
-    if(!response.ok||payload.source!=='mt5') throw new Error(payload.message||`MT5 broker feed unavailable (HTTP ${response.status})`);
+    if(!response.ok||payload.source!=='mt5'){
+      const contract=response.headers.get('x-webaria-market-contract')||'unknown-contract';
+      const detail=payload.message||payload.error||`MT5 broker feed unavailable (HTTP ${response.status})`;
+      throw new Error(`${detail} · HTTP ${response.status} · ${contract}`);
+    }
     return payload;
   }
   function normalizeTime(value){const n=Number(value);if(Number.isFinite(n)&&n>0&&Math.abs(n)<1e11)return n*1000;const parsed=Date.parse(value);return Number.isFinite(parsed)?parsed:NaN;}
