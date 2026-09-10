@@ -1,1 +1,27 @@
-FIX ERROR 
+# FIX ERROR — Ariatrading
+
+โฟลเดอร์นี้คือศูนย์กลางสำหรับ **ปัญหาที่เกิดขึ้นจริง** ใน Ariatrading
+
+หลักการ: ทุก bug ที่พบจากเว็บ, Worker, MT5 bridge, strategy หรือ execution ให้บันทึกไว้ที่นี่จนกว่าจะมีหลักฐานว่าแก้แล้ว
+
+## Workflow
+
+1. Reproduce — ระบุขั้นตอนที่ทำให้เกิดปัญหา
+2. Observe — เก็บ error/status/network response ที่เกิดขึ้นจริง
+3. Root cause — ระบุไฟล์และชั้นระบบที่เป็นต้นเหตุ
+4. Fix — แก้ที่ต้นเหตุ ไม่แก้ด้วย fake UI state
+5. Regression test — เพิ่ม test หรือ smoke check
+6. Verify — ตรวจบน deployment จริงก่อนปิด incident
+
+## ห้ามทำ
+
+- ห้ามเปลี่ยนข้อความปุ่มเพื่อทำให้ดูเหมือนทำงาน
+- ห้ามสร้างข้อมูลตลาดปลอมแล้วติดป้าย LIVE
+- ห้ามให้ browser ข้าม safety gate ของ execution
+- ห้ามปิด bug โดยไม่มี reproduction และ verification
+
+## Current incident
+
+`WEB-001` — Webaria controls / terminal interactions ต้องตอบสนองจริงและสะท้อน state จริงของระบบ
+
+ดูรายละเอียดใน `WEB-001.md`
