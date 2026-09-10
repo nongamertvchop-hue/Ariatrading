@@ -4,11 +4,11 @@ const ctx = canvas.getContext('2d', { alpha: false });
 const wrap = $('chartwrap');
 const symbols = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'USD/CAD'];
 const KEY = 'webaria-drawings-v2';
-const MIN_VISIBLE = 18;
+const MIN_VISIBLE = 12;
 const MAX_VISIBLE = 140;
 const DEFAULT_VISIBLE = 36;
-const TARGET_PX_PER_BAR = 24;
-const FUTURE_SPACE = 72;
+const TARGET_PX_PER_BAR = 20;
+const FUTURE_SPACE = 56;
 const LEFT_AXIS = 12;
 const state = window.WebariaChartState = {
   symbol: $('symbol')?.value || 'EUR/USD', tf: $('tf')?.value || '15m', candles: [], signal: null, price: null,
@@ -24,7 +24,15 @@ const apiUrl=(symbol=state.symbol,tf=state.tf)=>`/api/signal?symbol=${encodeURIC
 const priceUrl=symbol=>`/api/price?symbol=${encodeURIComponent(symbol)}`;
 async function api(symbol=state.symbol,tf=state.tf){const r=await fetch(apiUrl(symbol,tf),{cache:'no-store'}),j=await r.json();if(!r.ok)throw Error(j.message||j.error||`HTTP ${r.status}`);return j}
 async function priceApi(symbol){const r=await fetch(priceUrl(symbol),{cache:'no-store'}),j=await r.json();if(!r.ok)throw Error(j.message||j.error||`HTTP ${r.status}`);return j}
-function normalize(j){return(j.candles||[]).map((c,i)=>({time:c.time??c.datetime??i,open:+c.open,high:+c.high,low:+c.low,close:+c.close})).filter(c=>[c.open,c.high,c.low,c.close].every(Number.isFinite))}
+function normalizeTime(value){const n=Number(value);if(Number.isFinite(n)&&n>0&&Math.abs(n)<1e11)return n*1000;return value}
+function normalize(j){
+  const rows=(j.candles||[]).map((c,i)=>({time:normalizeTime(c.time??c.datetime??i),open:+c.open,high:+c.high,low:+c.low,close:+c.close}))
+    .filter(c=>[c.open,c.high,c.low,c.close].every(Number.isFinite)&&Number.isFinite(Number(c.time)));
+  rows.sort((a,b)=>Number(a.time)-Number(b.time));
+  const out=[];let lastTime=null;
+  for(const c of rows){const t=Number(c.time);if(t===lastTime){out[out.length-1]=c}else{out.push(c);lastTime=t}}
+  return out;
+}
 function scopeKey(){return`${state.symbol}|${state.tf}`}
 function loadDrawings(){try{const x=JSON.parse(localStorage.getItem(KEY)||'{}');state.drawings=Array.isArray(x[scopeKey()])?x[scopeKey()]:[]}catch{state.drawings=[]}state.selectedDrawing=null}
 function saveDrawings(){try{const x=JSON.parse(localStorage.getItem(KEY)||'{}');x[scopeKey()]=state.drawings.slice(-200);localStorage.setItem(KEY,JSON.stringify(x))}catch{}}
@@ -37,8 +45,6 @@ async function updateWatch(){const results=await Promise.all(symbols.map(async s
 function renderWatch(){const box=$('watch');if(!box)return;box.innerHTML=symbols.map(sym=>{const x=state.watch[sym]||{},pct=x.pct??0;return`<button class="row" data-symbol="${esc(sym)}"><span><span class="sym">${esc(sym)}</span><small>Forex</small></span><span>${fmt(x.price)}</span><span class="${pct>=0?'up':'down'}">${pct>=0?'+':''}${pct.toFixed(2)}%</span></button>`}).join('');box.querySelectorAll('[data-symbol]').forEach(b=>b.onclick=()=>{state.symbol=b.dataset.symbol;$('symbol').value=state.symbol;state.offset=0;state._userViewport=false;load()})}
 function getViewport(){const total=state.candles.length,count=Math.max(1,Math.min(total,Math.round(state.visibleBars))),end=Math.max(count,total-Math.max(0,Math.round(state.offset))),start=Math.max(0,end-count);return{data:state.candles.slice(start,end),start,end,count,total}}
 function mapping(data,w,h){const {rightAxis}=plotMetrics(w),L=LEFT_AXIS,R=rightAxis,T=38,B=26,{plotWidth}=plotMetrics(w),gw=plotWidth,gh=Math.max(1,h-T-B);let lo=Math.min(...data.map(c=>c.low)),hi=Math.max(...data.map(c=>c.high));
-  // Keep the primary price scale anchored to the actual candles. Signal levels and
-  // drawings must not silently stretch the chart and make every candle look tiny.
   const candleRange=Math.max(hi-lo,Number.EPSILON);
   const overlayAllowance=candleRange*.18;
   const overlayValues=[state.signal?.zone?.low,state.signal?.zone?.high,state.signal?.entry_reference,state.signal?.stop_reference];
@@ -49,7 +55,7 @@ function mapping(data,w,h){const {rightAxis}=plotMetrics(w),L=LEFT_AXIS,R=rightA
 function drawGrid(m,w){ctx.strokeStyle='#20262d';ctx.fillStyle='#707a86';ctx.font='10px Arial';for(let i=0;i<=6;i++){const yy=m.T+m.gh*i/6;ctx.beginPath();ctx.moveTo(m.L,yy);ctx.lineTo(w-m.R,yy);ctx.stroke();const p=m.hi-(m.hi-m.lo)*i/6;ctx.fillText(p.toFixed(Math.abs(p)>=20?2:5),w-m.R+6,yy+3)}for(let i=0;i<=8;i++){const xx=m.L+m.gw*i/8;ctx.beginPath();ctx.moveTo(xx,m.T);ctx.lineTo(xx,m.T+m.gh);ctx.stroke()}ctx.fillStyle='#ffffff03';ctx.fillRect(m.futureX,m.T,Math.max(0,w-m.R-m.futureX),m.gh);ctx.strokeStyle='#20262d';ctx.setLineDash([3,5]);ctx.beginPath();ctx.moveTo(m.futureX,m.T);ctx.lineTo(m.futureX,m.T+m.gh);ctx.stroke();ctx.setLineDash([])}
 function drawCandle(c,x,m,cw){const up=c.close>=c.open;ctx.strokeStyle=up?'#26a69a':'#ef5350';ctx.fillStyle=ctx.strokeStyle;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(Math.round(x)+.5,m.y(c.high));ctx.lineTo(Math.round(x)+.5,m.y(c.low));ctx.stroke();const a=m.y(Math.max(c.open,c.close)),b=m.y(Math.min(c.open,c.close));ctx.fillRect(Math.round(x-cw/2),a,Math.max(3,Math.round(cw)),Math.max(2,b-a))}
 function hline(p,color,label,m,w,selected=false){if(!Number.isFinite(+p))return;const yy=m.y(+p);if(yy<m.T-20||yy>m.T+m.gh+20)return;ctx.strokeStyle=color;ctx.lineWidth=selected?2:1;ctx.setLineDash([6,4]);ctx.beginPath();ctx.moveTo(m.L,yy);ctx.lineTo(w-m.R,yy);ctx.stroke();ctx.setLineDash([]);ctx.lineWidth=1;if(label){ctx.fillStyle=color;ctx.fillText(label,m.L+6,yy-5)}}
-function timeNumber(t){const n=Number(t);return Number.isFinite(n)?n:Date.parse(t)}
+function timeNumber(t){const n=Number(t);if(Number.isFinite(n))return Math.abs(n)<1e11?n*1000:n;return Date.parse(t)}
 function xFromTime(t,m,data){const target=timeNumber(t);if(!Number.isFinite(target)||!data.length)return null;const ts=data.map(c=>timeNumber(c.time));let k=ts.findIndex(v=>v>=target);if(k<0)return target>ts.at(-1)?m.x(ts.length-1):null;if(k===0)return m.x(0);if(ts[k]===target)return m.x(k);const ratio=(target-ts[k-1])/Math.max(1,ts[k]-ts[k-1]);return m.L+m.gw*(k-.5+ratio)/data.length}
 function drawingGeometry(d,m,data){if(d.type==='hline')return{x1:m.L,x2:m.L+m.gw,y1:m.y(d.p),y2:m.y(d.p)};if(d.type==='vline'){const x=xFromTime(d.t,m,data);return x==null?null:{x1:x,x2:x,y1:m.T,y2:m.T+m.gh}}if(d.type==='zone'){const x1=xFromTime(d.t1,m,data),x2=xFromTime(d.t2,m,data);if(x1==null||x2==null)return null;return{x1:Math.min(x1,x2),x2:Math.max(x1,x2),y1:m.y(Math.max(d.p1,d.p2)),y2:m.y(Math.min(d.p1,d.p2))}}return null}
 function drawUserDrawings(m,w,data){state.drawings.forEach((d,i)=>{const selected=i===state.selectedDrawing;if(d.type==='hline')hline(d.p,selected?'#fff':'#9ca6b2',selected?'SELECTED':'HLINE',m,w,selected);else{const g=drawingGeometry(d,m,data);if(!g)return;ctx.lineWidth=selected?2:1;ctx.setLineDash(d.type==='vline'?[5,5]:[]);if(d.type==='zone'){ctx.fillStyle=selected?'#ffffff1e':'#8b93a214';ctx.fillRect(g.x1,g.y1,g.x2-g.x1,g.y2-g.y1);ctx.strokeStyle=selected?'#ffffffcc':'#8b93a266';ctx.strokeRect(g.x1,g.y1,g.x2-g.x1,g.y2-g.y1)}else{ctx.strokeStyle=selected?'#ffffffaa':'#9ca6b288';ctx.beginPath();ctx.moveTo(g.x1,g.y1);ctx.lineTo(g.x2,g.y2);ctx.stroke()}ctx.setLineDash([])}})}
@@ -60,7 +66,7 @@ function drawDraft(d,m,data,w){const p=state.mouse;if(d.type==='hline')hline(d.p
 function xy(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
 function priceAt(y){const{data}=getViewport(),m=mapping(data,canvas.clientWidth,canvas.clientHeight);return m.hi-(Math.max(m.T,Math.min(m.T+m.gh,y))-m.T)*(m.hi-m.lo)/m.gh}
 function clampView(){const total=state.candles.length;state.visibleBars=Math.max(MIN_VISIBLE,Math.min(MAX_VISIBLE,total||MIN_VISIBLE,state.visibleBars));const maxOffset=Math.max(0,total-state.visibleBars);state.offset=Math.max(0,Math.min(maxOffset,state.offset))}
-function setZoom(next,anchorX=canvas.clientWidth*.5){const total=state.candles.length;if(!total)return;const old=Math.max(MIN_VISIBLE,Math.min(MAX_VISIBLE,state.visibleBars)),nv=Math.max(MIN_VISIBLE,Math.min(MAX_VISIBLE,next));if(nv===old)return;const{plotWidth}=plotMetrics(canvas.clientWidth),plotX=Math.max(0,Math.min(plotWidth,anchorX-LEFT_AXIS)),ratio=plotWidth?plotX/plotWidth:.5;const anchorIndex=total-Math.max(0,state.offset)-1;const rel=(old-1)*ratio;const newOffset=total-(anchorIndex+1)-(nv-1)*ratio;state.visibleBars=nv;state.offset=Math.max(0,newOffset);state._userViewport=true;clampView();draw()}
+function setZoom(next,anchorX=canvas.clientWidth*.5){const total=state.candles.length;if(!total)return;const old=Math.max(MIN_VISIBLE,Math.min(MAX_VISIBLE,state.visibleBars)),nv=Math.max(MIN_VISIBLE,Math.min(MAX_VISIBLE,next));if(nv===old)return;const {plotWidth}=plotMetrics(canvas.clientWidth),plotX=Math.max(0,Math.min(plotWidth,anchorX-LEFT_AXIS)),ratio=plotWidth?plotX/plotWidth:.5;const viewport=getViewport();const localIndex=Math.max(0,Math.min(viewport.count-1,Math.floor(ratio*viewport.count)));const anchorIndex=viewport.start+localIndex;const newStart=anchorIndex-nv*ratio;state.visibleBars=nv;state.offset=total-(newStart+nv);state._userViewport=true;clampView();draw()}
 function panPixels(dx){const{plotWidth}=plotMetrics(canvas.clientWidth);if(!plotWidth)return;const delta=(dx/plotWidth)*state.visibleBars;state.offset=state.dragStartOffset+delta;state._userViewport=true;clampView();draw()}
 function resize(){const r=wrap.getBoundingClientRect(),dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1));canvas.width=Math.max(1,Math.round(r.width*dpr));canvas.height=Math.max(1,Math.round(r.height*dpr));canvas.style.width=`${Math.max(1,r.width)}px`;canvas.style.height=`${Math.max(1,r.height)}px`;ctx.setTransform(dpr,0,0,dpr,0,0);if(state.candles.length&&!state._userViewport)fitVisibleBars();else draw()}
 function render(){draw()}
