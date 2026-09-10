@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Referrer-Policy" content="no-referrer">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
-<title>Bodyguard(Aria) Status v0.05.0</title>
+<title>Bodyguard(Aria) Live Security Status v0.05.1</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b0e11;color:#d9dde3;font:14px Arial,sans-serif}.wrap{max-width:960px;margin:0 auto;padding:20px}.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}.brand{font-weight:700;font-size:18px;margin-right:auto}button{background:#181d23;color:#d9dde3;border:1px solid #303640;border-radius:6px;padding:9px 12px;cursor:pointer}.card{border:1px solid #252a31;background:#11151a;border-radius:10px;padding:14px;margin-bottom:12px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.metric{border:1px solid #252a31;border-radius:8px;padding:12px;background:#0e1217}.metric span{display:block;color:#89929e;font-size:11px}.metric strong{display:block;font-size:24px;margin-top:6px}.ok{color:#52c48d}.warn{color:#e6c07b}.bad{color:#e06b75}.muted{color:#89929e}.row{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #1d2228}.row:last-child{border-bottom:0}code{background:#181d23;padding:2px 6px;border-radius:4px}.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:bold}@media(max-width:700px){.grid{grid-template-columns:1fr 1fr}}
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b0e11;color:#d9dde3;font:14px Arial,sans-serif}.wrap{max-width:1100px;margin:0 auto;padding:20px}.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}.brand{font-weight:700;font-size:18px;margin-right:auto}button{background:#181d23;color:#d9dde3;border:1px solid #303640;border-radius:6px;padding:9px 12px;cursor:pointer}.card{border:1px solid #252a31;background:#11151a;border-radius:10px;padding:14px;margin-bottom:12px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.metric{border:1px solid #252a31;border-radius:8px;padding:12px;background:#0e1217}.metric span{display:block;color:#89929e;font-size:11px}.metric strong{display:block;font-size:24px;margin-top:6px}.ok{color:#52c48d}.warn{color:#e6c07b}.bad{color:#e06b75}.muted{color:#89929e}.row{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #1d2228}.row:last-child{border-bottom:0}code{background:#181d23;padding:2px 6px;border-radius:4px}.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:bold}.events{overflow:auto}.event{display:grid;grid-template-columns:145px 80px 80px 1fr 180px;gap:8px;padding:9px 0;border-bottom:1px solid #1d2228;align-items:center}.event:last-child{border-bottom:0}.pill{font-size:11px;font-weight:bold}.live{font-size:11px;letter-spacing:.05em}.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;background:#52c48d}@media(max-width:800px){.grid{grid-template-columns:1fr 1fr}.event{grid-template-columns:1fr 1fr;gap:5px}}@media(max-width:520px){.grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="top">
-    <div class="brand">🛡️ Bodyguard(Aria)</div>
+    <div class="brand">🛡️ Bodyguard(Aria) <span class="live"><span class="dot"></span>LIVE TELEMETRY</span></div>
     <a href="/" style="color:#89929e;text-decoration:none">Terminal</a>
     <a href="/signal-advisor.html" style="color:#89929e;text-decoration:none">Advisor</a>
     <button id="refresh" type="button">Refresh</button>
@@ -25,6 +25,8 @@
     <div class="row"><span class="muted">Mode</span><strong id="mode">—</strong></div>
     <div class="row"><span class="muted">Security Posture</span><strong><span id="posture" class="tag ok">—</span></strong></div>
     <div class="row"><span class="muted">Started</span><strong id="started">—</strong></div>
+    <div class="row"><span class="muted">Telemetry</span><strong id="telemetry">—</strong></div>
+    <div class="row"><span class="muted">Latest detection</span><strong id="latest">—</strong></div>
     <div class="row"><span class="muted">Health</span><strong id="health" class="ok">—</strong></div>
   </div>
 
@@ -44,30 +46,46 @@
   </div>
 
   <div class="card">
+    <h3 style="margin-top:0">Live Security Events</h3>
+    <div id="events" class="muted">ยังไม่มี event ใน runtime isolate นี้</div>
+  </div>
+
+  <div class="card">
     <h3 style="margin-top:0">Active Alerts</h3>
     <div id="alerts" class="muted">ไม่มี alert</div>
   </div>
 
   <div class="card muted" style="font-size:12px;line-height:1.6">
-    <b>Defensive Contract (R1–R17):</b><br>
-    หน้านี้แสดงเฉพาะตัวเลขรวมจาก isolate ปัจจุบัน · ไม่มีการเปิดเผย IP / secret / ข้อมูลส่วนตัว<br>
-    API: <code>/api/bodyguard/status</code> · execution: <code>ISOLATED_NONE</code> · rules: <code>R1–R17 in force</code>
+    <b>Defensive Contract (R1–R18):</b><br>
+    ตรวจจับและแสดง security event จาก runtime แบบ near-real-time · ไม่มีการเปิดเผย IP / secret / request body / PII<br>
+    API: <code>/api/bodyguard/status</code> · execution: <code>ISOLATED_NONE</code> · durable incident memory: <code>bodyguard/Report/</code><br>
+    หมายเหตุ: recent events เป็นข้อมูลแบบ ephemeral ของ Worker isolate ปัจจุบัน ไม่ใช่ฐานข้อมูล global ถาวร
   </div>
 </div>
 <script>
 const $=id=>document.getElementById(id);
 function setText(id,v){$(id).textContent=v}
+function escapeHtml(value){return String(value??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]))}
+function eventRow(e){
+  const level=String(e.level||'info').toLowerCase();
+  const sev=String(e.severity||'INFO').toUpperCase();
+  const levelClass=sev==='CRITICAL'||level==='block'?'bad':(sev==='HIGH'||sev==='MEDIUM'||level==='warn'?'warn':'ok');
+  const when=e.at?new Date(e.at).toLocaleTimeString():'—';
+  const target=[e.method,e.path].filter(Boolean).join(' ');
+  return `<div class="event"><span>${escapeHtml(when)}</span><span class="pill ${levelClass}">${escapeHtml(sev)}</span><span>${escapeHtml(e.category||'—')}</span><span><code>${escapeHtml(e.reason||'—')}</code></span><span class="muted">${escapeHtml(target||e.action||'—')}</span></div>`;
+}
 async function load(){
   try{
     const res=await fetch('/api/bodyguard/status',{cache:'no-store'});
     const p=await res.json();
     if(!res.ok)throw new Error(p.message||p.error||('HTTP '+res.status));
     setText('guard',p.guard||'Bodyguard(Aria)');
-    setText('version',p.version||'0.05.0');
+    setText('version',p.version||'0.05.1');
     setText('codename',p.codename||'aegis-shield');
     setText('mode',p.mode||'enforce');
     setText('started',p.started_at?new Date(p.started_at).toLocaleString():'—');
-    
+    setText('telemetry',p.telemetry?`${p.telemetry.freshness} · ${p.telemetry.delivery}`:'—');
+
     const post=$('posture');
     const posture=p.posture||'HEALTHY';
     post.textContent=posture;
@@ -84,12 +102,16 @@ async function load(){
     setText('cCors',c.cors_blocked??0);
     setText('cPayload',c.payloads_blocked??0);
 
+    const events=Array.isArray(p.recent_events)?p.recent_events:[];
+    setText('latest',events[0]?.at?new Date(events[0].at).toLocaleString():'—');
+    $('events').innerHTML=events.length?events.map(eventRow).join(''):'ยังไม่มี event ใน runtime isolate นี้';
+
     const alerts=Array.isArray(p.alerts)?p.alerts:[];
     const health=$('health');
     if(alerts.length){
       health.textContent='ATTENTION';
       health.className='warn';
-      $('alerts').innerHTML=alerts.map(a=>`<div class="row"><span class="${a.level==='critical'?'bad':'warn'}">[${a.level.toUpperCase()}] ${a.code}</span><span>${a.message||''}</span></div>`).join('');
+      $('alerts').innerHTML=alerts.map(a=>`<div class="row"><span class="${a.level==='critical'?'bad':'warn'}">[${escapeHtml(String(a.level||'warn').toUpperCase())}] ${escapeHtml(a.code||'')}</span><span>${escapeHtml(a.message||'')}</span></div>`).join('');
     }else{
       health.textContent='OK';
       health.className='ok';
@@ -103,7 +125,7 @@ async function load(){
 }
 $('refresh').onclick=load;
 load();
-setInterval(load,15000);
+setInterval(load,2000);
 </script>
 </body>
 </html>
