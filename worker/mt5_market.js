@@ -2,7 +2,7 @@ const TIMEFRAME_SECONDS = Object.freeze({"1m":60,"5m":300,"15m":900,"30m":1800,"
 const MAX_CANDLES = 500;
 const MAX_AGE_SECONDS = 90;
 const MAX_INGEST_BYTES = 256 * 1024;
-const MARKET_CONTRACT_VERSION = "mt5-market-v4";
+const MARKET_CONTRACT_VERSION = "mt5-market-v5";
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type":"application/json; charset=utf-8", "cache-control":"no-store", "x-webaria-market-contract": MARKET_CONTRACT_VERSION, ...extraHeaders } });
@@ -43,10 +43,20 @@ export class Mt5MarketStore {
     if(request.method!=="GET") return json({error:"method_not_allowed"},405);
     if(!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)||!Object.prototype.hasOwnProperty.call(TIMEFRAME_SECONDS,timeframe)) return json({error:"bad_request",message:"invalid symbol or timeframe",source:"mt5"},400);
     const stored=await this.state.storage.get(key(symbol,timeframe));
-    if(!stored) return json({error:"mt5_feed_unavailable",message:"no MT5 data received",source:"mt5"},503);
+    if(!stored) return json({error:"mt5_feed_unavailable",message:"no MT5 data received",source:"mt5",contract:MARKET_CONTRACT_VERSION},503);
     const age=Math.max(0,Math.floor(Date.now()/1000)-stored.received_at);
-    if(age>MAX_AGE_SECONDS) return json({error:"mt5_feed_unavailable",message:"MT5 bridge data is stale",source:"mt5",age_seconds:age},503);
+    if(age>MAX_AGE_SECONDS) return json({error:"mt5_feed_unavailable",message:"MT5 bridge data is stale",source:"mt5",age_seconds:age,contract:MARKET_CONTRACT_VERSION},503);
     return json({symbol,timeframe,candles:stored.candles,live_candle:stored.live_candle,price:stored.price,source:"mt5",data_quality:{ok:true,age_seconds:age,mode:"BROKER_FEED"},received_at:stored.received_at,execution:"NONE"});
+  }
+  async diagnostics(symbol) {
+    const now=Math.floor(Date.now()/1000), rows=[];
+    for(const timeframe of Object.keys(TIMEFRAME_SECONDS)){
+      const stored=await this.state.storage.get(key(symbol,timeframe));
+      if(!stored){rows.push({timeframe,state:"NO_DATA",age_seconds:null,candles:0,live_candle:false});continue;}
+      const age=Math.max(0,now-Number(stored.received_at));
+      rows.push({timeframe,state:age>MAX_AGE_SECONDS?"STALE":"LIVE",age_seconds:age,candles:Array.isArray(stored.candles)?stored.candles.length:0,live_candle:Boolean(stored.live_candle),price:Number(stored.price)});
+    }
+    return json({source:"mt5",contract:MARKET_CONTRACT_VERSION,symbol,timeframes:rows,summary:{live:rows.filter(r=>r.state==="LIVE").length,no_data:rows.filter(r=>r.state==="NO_DATA").length,stale:rows.filter(r=>r.state==="STALE").length}});
   }
   async ingest(request) {
     try {
@@ -59,7 +69,7 @@ export class Mt5MarketStore {
       const existing=await this.state.storage.get(key(payload.symbol,payload.timeframe)), existingLatest=existing?.live_candle||existing?.candles?.at(-1);
       if(existingLatest&&latest.time<existingLatest.time) return json({error:"out_of_order",message:"older candle payload rejected"},409);
       await this.state.storage.put(key(payload.symbol,payload.timeframe),{candles:candles.slice(-MAX_CANDLES),live_candle:payload.liveCandle,price:payload.price,received_at:payload.receivedAt});
-      return json({ok:true,symbol:payload.symbol,timeframe:payload.timeframe,source:"mt5"});
+      return json({ok:true,symbol:payload.symbol,timeframe:payload.timeframe,source:"mt5",contract:MARKET_CONTRACT_VERSION});
     } catch(error) { return json({error:"bad_request",message:error?.message||"invalid MT5 payload"},400); }
   }
 }
