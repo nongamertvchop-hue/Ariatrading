@@ -3,8 +3,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from live.production_stage1 import ProductionStage1Policy
-
 
 _TRUE = {"1", "true", "yes", "on"}
 
@@ -72,19 +70,15 @@ class BotConfig:
     def validate(self) -> None:
         if self.mode not in {"paper", "demo", "live"}:
             raise ValueError("BOT_MODE must be paper, demo, or live")
+        # Ariatrading remains paper/demo-only in this repository. Real-money
+        # broker execution is intentionally outside the supported runtime.
         if self.mode == "live":
-            policy = ProductionStage1Policy.from_env()
-            policy.validate_symbols(self.symbols)
-            if not 0 < self.default_risk_per_trade <= policy.max_risk_per_trade:
-                raise RuntimeError(
-                    "LIVE Stage 1 risk exceeds policy: "
-                    f"{self.default_risk_per_trade} > {policy.max_risk_per_trade}"
-                )
+            raise RuntimeError("LIVE execution is disabled; use paper or demo mode")
         if not self.symbols:
             raise ValueError("DEFAULT_SYMBOLS must not be empty")
         if self.max_request_rate <= 0 or self.max_burst < 1:
             raise ValueError("rate-limit settings must be positive")
         if not 0 < self.default_risk_per_trade <= 1:
             raise ValueError("DEFAULT_RISK_PER_TRADE must be in (0,1]")
-        if self.mode in {"demo", "live"} and self.mt5_login is not None and not self.mt5_server:
+        if self.mode == "demo" and self.mt5_login is not None and not self.mt5_server:
             raise ValueError("MT5_SERVER is required when an authenticated MT5 account is configured")
