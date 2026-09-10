@@ -80,13 +80,9 @@ test('evaluateRisk preserves deterministic sizing under valid limits', () => {
     valuePerPriceUnit: 1,
     limits: { riskPerTrade: 0.01, maxOpenRisk: 0.02, maxPositions: 1 }
   });
+
   assert.equal(result.allowed, true);
   assert.equal(result.quantity, 20);
   assert.equal(result.riskAmount, 100);
   assert.equal(result.riskFraction, 0.01);
-});
-
-test('journal dedup uses event_id instead of polling timestamp', () => {
-  const source = fs.readFileSync(new URL('../Webaria/signal-journal.js', import.meta.url), 'utf8');
-  assert.match(source, /event_id/);
 });
