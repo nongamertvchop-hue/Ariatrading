@@ -2,7 +2,8 @@
 
 The runtime is deliberately thin: it does not invent signals. It only obtains
 completed candles/ticks, validates freshness and account state, reconciles the
-execution journal, and delegates each symbol to ForexLiveOrchestrator.
+execution journal against read-only broker evidence, and delegates each symbol
+to ForexLiveOrchestrator.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from live.broker_reconciliation import find_execution_evidence, is_unambiguous_execution
 from live.execution_guard import ExecutionJournal
 from live.mt5_account import validate_account_mode
 from live.mt5_executor import MT5LiveExecutor
@@ -134,6 +136,38 @@ class LiveRuntime:
             total += float(getattr(deal, "commission", 0.0))
         return max(0.0, -total)
 
+    def _reconcile_unresolved(self, now: datetime) -> int:
+        """Resolve only intents backed by one exact broker execution identity."""
+        resolved = 0
+        for record in self.journal.recoverable_intents():
+            try:
+                intent_id = str(record["intent_id"])
+                since = _require_utc(datetime.fromisoformat(str(record["bar_time"])), "execution intent bar_time")
+                evidence = find_execution_evidence(
+                    mt5=self.executor.mt5,
+                    magic_number=self.executor.magic_number,
+                    intent_id=intent_id,
+                    symbol=str(record["symbol"]),
+                    direction=str(record["direction"]),
+                    volume=float(record["lot_size"]),
+                    since=since,
+                    now=now,
+                )
+                if not is_unambiguous_execution(evidence):
+                    continue
+                self.journal.transition(
+                    intent_id,
+                    "SUCCEEDED",
+                    reconciliation="broker_exact_match",
+                    evidence=evidence,
+                )
+                resolved += 1
+                logger.warning("Reconciled unresolved execution intent %s from exact broker evidence", intent_id)
+            except (KeyError, TypeError, ValueError, RuntimeError):
+                logger.exception("Execution reconciliation failed closed for unresolved intent")
+                raise
+        return resolved
+
     def preflight(self) -> None:
         """Refuse to start if the requested execution environment is inconsistent."""
         if self.orchestrator.mode not in {"DEMO", "LIVE"}:
@@ -141,14 +175,17 @@ class LiveRuntime:
         ok, reason = validate_account_mode(self.executor.mt5, self.orchestrator.mode)
         if not ok:
             raise RuntimeError(reason)
+
+        now = _require_utc(self.clock(), "runtime clock")
+        self._reconcile_unresolved(now)
         if self.journal.recoverable_intents():
-            raise RuntimeError("execution journal contains unreconciled intents; manual reconciliation required")
+            raise RuntimeError("execution journal contains unreconciled intents; broker evidence was insufficient")
 
         account = self.executor.get_account_snapshot()
         if not account.trade_allowed or not account.trade_expert:
             raise RuntimeError("MT5 trading permissions are not enabled")
         if self.circuit_breaker is not None:
-            ok, reason = self.circuit_breaker.check(account.equity, self.clock())
+            ok, reason = self.circuit_breaker.check(account.equity, now)
             if not ok:
                 raise RuntimeError(reason)
         logger.info("Live runtime preflight passed: mode=%s account=%s", self.orchestrator.mode, account.login)
