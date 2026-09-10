@@ -6,13 +6,20 @@
   function normalizeTime(value){const n=Number(value);if(Number.isFinite(n)&&n>0&&Math.abs(n)<1e11)return n*1000;const parsed=Date.parse(value);return Number.isFinite(parsed)?parsed:NaN;}
   function normalizeCandle(raw){if(!raw)return null;const candle={time:normalizeTime(raw.time??raw.datetime),open:Number(raw.open),high:Number(raw.high),low:Number(raw.low),close:Number(raw.close)};if(!Number.isFinite(candle.time)||![candle.open,candle.high,candle.low,candle.close].every(Number.isFinite))return null;if(candle.high<Math.max(candle.open,candle.close)||candle.low>Math.min(candle.open,candle.close)||candle.high<candle.low)return null;return candle;}
   function normalizeCandles(candles){const rows=(Array.isArray(candles)?candles:[]).map(normalizeCandle).filter(Boolean).sort((a,b)=>a.time-b.time),out=[];for(const candle of rows){if(out.length&&out[out.length-1].time===candle.time)out[out.length-1]=candle;else out.push(candle);}return out;}
-  function status(text,live){const node=document.getElementById('status');if(!node)return;node.textContent=text;node.dataset.marketState=live?'LIVE': 'SIMULATION';}
+  function status(text,live){const node=document.getElementById('status');if(!node)return;node.textContent=text;node.dataset.marketState=live?'LIVE':'SIMULATION';}
   function decorateSignal(payload,source){return {...payload,source,execution:'NONE'};}
 
   async function mt5Market(symbol,timeframe){
     const response=await originalFetch(`/api/market?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}`,{cache:'no-store'});
     let payload;try{payload=await response.json();}catch{throw new Error(`market returned invalid JSON (HTTP ${response.status})`);}
     if(!response.ok||payload.source!=='mt5')throw new Error(payload.message||payload.error||`MT5 market unavailable (HTTP ${response.status})`);
+    return payload;
+  }
+
+  async function strategyForCandles(symbol,timeframe,candles,source){
+    const response=await originalFetch('/api/strategy',{method:'POST',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({symbol,timeframe,candles,source})});
+    let payload;try{payload=await response.json();}catch{throw new Error(`strategy returned invalid JSON (HTTP ${response.status})`);}
+    if(!response.ok)throw new Error(payload.message||payload.error||`strategy unavailable (HTTP ${response.status})`);
     return payload;
   }
 
@@ -49,7 +56,12 @@
       try{
         const payload=await mt5Market(symbol,timeframe);
         if(generation!==pollGeneration||window.S?.symbol!==symbol||window.S?.tf!==timeframe)return;
-        renderPayload(payload,'MT5 LIVE');
+        const completed=normalizeCandles(payload.candles);
+        if(!completed.length)throw new Error('MT5 returned no completed candles');
+        const strategy=await strategyForCandles(symbol,timeframe,completed.slice(-100),'mt5');
+        const merged={...payload,...strategy,candles:completed,source:'mt5',execution:'NONE'};
+        if(generation!==pollGeneration||window.S?.symbol!==symbol||window.S?.tf!==timeframe)return;
+        renderPayload(merged,'MT5 LIVE');
         return;
       }catch(mt5Error){
         const payload=await simulationMarket(symbol,timeframe);
