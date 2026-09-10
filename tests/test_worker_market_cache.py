@@ -25,6 +25,14 @@ def test_worker_gateway_caches_slow_endpoints_but_never_caches_realtime_market_f
     assert '"/api/market":' not in stale_line
 
 
+def test_mt5_market_polling_has_dedicated_rate_limit_and_bypasses_generic_soft_ban():
+    source = ENTRY.read_text(encoding="utf-8")
+    assert "const MARKET_RATE_MAX=120;" in source
+    assert "function marketRateLimit(request)" in source
+    assert 'url.pathname!=="/api/market"' in source
+    assert 'if(url.pathname==="/api/market"){const limited=marketRateLimit(request);if(limited)return limited;}' in source
+
+
 def test_wranger_uses_cache_gateway_as_worker_entrypoint():
     config = WRANGLER.read_text(encoding="utf-8")
     assert 'main = "./worker/entry.js"' in config
