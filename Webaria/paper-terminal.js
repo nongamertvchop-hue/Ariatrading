@@ -59,11 +59,11 @@
 
   function setNote(message) {
     const node = $('paperNote');
-    if (node) node.textContent = message || 'Simulation only · execution NONE';
+    if (node) node.textContent = message || 'Simulation only · execution NONE · paper orders never reach a broker';
   }
 
   function renderHistory() {
-    const node = $('paperHistory');
+    const node = $('history') || $('paperHistory');
     if (!node) return;
     const rows = state.history.slice().reverse().slice(0, 5);
     if (!rows.length) {
@@ -164,8 +164,10 @@
       close: Number(raw?.close)
     })).filter(bar =>
       Number.isFinite(timeValue(bar.time)) &&
-      Number.isFinite(bar.open) && Number.isFinite(bar.high) &&
-      Number.isFinite(bar.low) && Number.isFinite(bar.close)
+      Number.isFinite(bar.open) &&
+      Number.isFinite(bar.high) &&
+      Number.isFinite(bar.low) &&
+      Number.isFinite(bar.close)
     ).sort((a, b) => timeValue(a.time) - timeValue(b.time));
   }
 
@@ -288,6 +290,17 @@
     recordTrade(position, price, reason || 'manual close', { exitSource: 'manual_quote' });
   }
 
+  function resetPaperAccount() {
+    if (state.position) {
+      setNote('Reset rejected while a paper position is open. Close the position first.');
+      return;
+    }
+    state = { balance: START_BALANCE, position: null, history: [] };
+    saveState();
+    setNote('Paper account reset · simulation only · execution NONE · paper orders never reach a broker');
+    render();
+  }
+
   async function monitorPosition() {
     if (monitorBusy || !state.position) return;
     monitorBusy = true;
@@ -346,6 +359,7 @@
     $('buy')?.addEventListener('click', intercept(() => { void open('LONG'); }), true);
     $('sell')?.addEventListener('click', intercept(() => { void open('SHORT'); }), true);
     $('close')?.addEventListener('click', intercept(() => close('manual close')), true);
+    $('resetPaper')?.addEventListener('click', intercept(resetPaperAccount), true);
   }
 
   bind();
