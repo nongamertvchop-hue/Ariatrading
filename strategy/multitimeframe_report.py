@@ -8,10 +8,8 @@ strategy and execution assumptions used by that result.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from math import isfinite
 from typing import Mapping
 
-from .validation import ResearchMetrics
 from .walk_forward import WalkForwardResult
 
 
@@ -38,6 +36,7 @@ class TimeframeResearchRow:
     @classmethod
     def from_result(cls, result: WalkForwardResult) -> "TimeframeResearchRow":
         metrics = result.metrics
+        positive_folds = sum(fold.metrics.net_r > 0 for fold in result.folds)
         return cls(
             timeframe=result.timeframe,
             history_bars=result.history_bars,
@@ -54,11 +53,8 @@ class TimeframeResearchRow:
             expectancy_r=metrics.expectancy_r,
             profit_factor=metrics.profit_factor,
             max_drawdown_r=metrics.max_drawdown_r,
-            positive_net_r_folds=sum(fold.metrics.net_r > 0 for fold in result.folds),
-            profitable_fold_ratio=(
-                sum(fold.metrics.net_r > 0 for fold in result.folds) / result.fold_count
-                if result.fold_count else 0.0
-            ),
+            positive_net_r_folds=positive_folds,
+            profitable_fold_ratio=positive_folds / result.fold_count if result.fold_count else 0.0,
         )
 
     def to_dict(self) -> dict[str, object]:
