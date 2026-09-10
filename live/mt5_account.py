@@ -3,16 +3,27 @@
 The strategy must never infer whether the connected terminal is demo or real.
 The terminal is the source of truth, and a mismatch is a hard execution stop.
 
-LIVE execution additionally requires the Stage 1 deployment policy: explicit
-operator opt-in, exact account/server allowlisting, and a narrow execution
-profile. The production policy is intentionally separate from strategy logic.
+LIVE execution additionally requires an explicitly armed production stage policy
+with exact account/server identity and bounded deployment limits.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from live.production_stage1 import ProductionStage1Policy
+from live.production_stage2 import ProductionStage2Policy
+
+
+def _live_policy() -> ProductionStage1Policy | ProductionStage2Policy:
+    """Load exactly one explicitly selected LIVE production stage."""
+    raw_stage = os.getenv("ARIATRADING_LIVE_STAGE", "0").strip()
+    if raw_stage == "1":
+        return ProductionStage1Policy.from_env()
+    if raw_stage == "2":
+        return ProductionStage2Policy.from_env()
+    raise RuntimeError("LIVE production stage is not armed: set ARIATRADING_LIVE_STAGE to 1 or 2")
 
 
 def validate_account_mode(mt5_module: Any, execution_mode: str) -> tuple[bool, str]:
@@ -21,14 +32,7 @@ def validate_account_mode(mt5_module: Any, execution_mode: str) -> tuple[bool, s
     if mode not in {"DEMO", "LIVE"}:
         return True, "account mode is not applicable"
 
-    if mode == "LIVE":
-        try:
-            policy = ProductionStage1Policy.from_env()
-        except RuntimeError as exc:
-            return False, str(exc)
-    else:
-        policy = None
-
+    policy = _live_policy() if mode == "LIVE" else None
     info = mt5_module.account_info()
     if info is None:
         last_error = mt5_module.last_error() if hasattr(mt5_module, "last_error") else "unknown"

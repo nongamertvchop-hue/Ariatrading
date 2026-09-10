@@ -23,12 +23,12 @@ class FakeMT5:
         return (500, "account unavailable")
 
 
-def _arm_live(monkeypatch):
+def _arm_live(monkeypatch, stage="1", login="12345", server="Broker-Real", symbols="EURUSD"):
     monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
-    monkeypatch.setenv("ARIATRADING_LIVE_STAGE", "1")
-    monkeypatch.setenv("ARIATRADING_LIVE_ACCOUNT", "12345")
-    monkeypatch.setenv("ARIATRADING_LIVE_SERVER", "Broker-Real")
-    monkeypatch.setenv("ARIATRADING_LIVE_SYMBOLS", "EURUSD")
+    monkeypatch.setenv("ARIATRADING_LIVE_STAGE", stage)
+    monkeypatch.setenv("ARIATRADING_LIVE_ACCOUNT", login)
+    monkeypatch.setenv("ARIATRADING_LIVE_SERVER", server)
+    monkeypatch.setenv("ARIATRADING_LIVE_SYMBOLS", symbols)
 
 
 def test_live_is_disabled_without_explicit_opt_in(monkeypatch):
@@ -58,6 +58,20 @@ def test_matching_live_account_is_allowed(monkeypatch):
     ok, reason = validate_account_mode(FakeMT5(2), "LIVE")
     assert ok
     assert reason == "account mode verified: LIVE"
+
+
+def test_matching_stage2_live_account_is_allowed(monkeypatch):
+    _arm_live(monkeypatch, stage="2", login="22334455", symbols="EURUSD,GBPUSD")
+    ok, reason = validate_account_mode(FakeMT5(2, login=22334455, server="Broker-Real"), "LIVE")
+    assert ok
+    assert reason == "account mode verified: LIVE"
+
+
+def test_stage2_rejects_wrong_account(monkeypatch):
+    _arm_live(monkeypatch, stage="2", login="22334455", symbols="EURUSD,GBPUSD")
+    ok, reason = validate_account_mode(FakeMT5(2, login=12345), "LIVE")
+    assert not ok
+    assert "Stage 2 account identity mismatch" in reason
 
 
 def test_matching_demo_account_is_allowed():
