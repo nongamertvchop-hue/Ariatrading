@@ -37,10 +37,14 @@ test('normalizes candle time without changing OHLC values', () => {
       { time: 1725000000, open: 1.1, high: 1.2, low: 1.0, close: 1.15 },
     ],
   };
-  assert.deepEqual(normalizeChartPayload(payload), {
-    symbol: 'EUR/USD',
-    candles: [
-      { time: 1725000000000, open: 1.1, high: 1.2, low: 1.0, close: 1.15 },
-    ],
+  const result = normalizeChartPayload(payload);
+  assert.equal(result.symbol, 'EUR/USD');
+  assert.equal(result.candles.length, 1);
+  assert.deepEqual({ ...result.candles[0] }, {
+    time: 1725000000000,
+    open: 1.1,
+    high: 1.2,
+    low: 1.0,
+    close: 1.15,
   });
 });
