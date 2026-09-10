@@ -6,8 +6,8 @@ import { fallbackCandles, fallbackPrice, FALLBACK_SOURCE, TIMEFRAME_SECONDS } fr
 import { guardPublicRequest, applySecurityHeaders, statusResponse, BODYGUARD_VERSION } from "../bodyguard/worker/bodyguard.js";
 import { sanitizeForBoundary } from "../bodyguard/worker/redaction.js";
 
-const FRESH_TTL_MS = Object.freeze({"/api/price":10000,"/api/signal":30000,"/api/live-candle":10000,"/api/market":2000});
-const STALE_TTL_MS = Object.freeze({"/api/price":5*60000,"/api/signal":5*60000,"/api/live-candle":2*60000,"/api/market":30000});
+const FRESH_TTL_MS = Object.freeze({"/api/price":10000,"/api/signal":30000,"/api/live-candle":10000});
+const STALE_TTL_MS = Object.freeze({"/api/price":5*60000,"/api/signal":5*60000,"/api/live-candle":2*60000});
 const MAX_RESPONSE_CACHE_ENTRIES=256;
 const MAX_MT5_INGEST_BYTES=256*1024;
 const responseCache=new Map();
