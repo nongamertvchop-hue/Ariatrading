@@ -39,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--symbols", default="EURUSD")
     parser.add_argument("--mode", choices=["DEMO", "LIVE"], default="DEMO")
     parser.add_argument("--timeframe", choices=["1m", "5m", "15m", "30m", "1h", "4h", "1D"], default="15m")
-    parser.add_argument("--risk", type=float, default=0.005)
+    parser.add_argument("--risk", type=float, default=0.0025)
     parser.add_argument("--interval", type=float, default=5.0)
     parser.add_argument("--terminal-path", default=None)
     return parser
@@ -69,16 +69,11 @@ def main() -> None:
         ok, reason = validate_account_mode(executor.mt5, args.mode)
         if not ok:
             raise RuntimeError(reason)
-
         feed = MT5BarFeed(mt5_module=executor.mt5, manage_connection=False)
         journal = ExecutionJournal(PROJECT_ROOT / "data" / "execution_journal.json")
         orchestrator = ForexLiveOrchestrator(
-            symbols=symbols,
-            mode=args.mode,
-            timeframe=args.timeframe,
-            risk_per_trade=args.risk,
-            feed=feed,
-            executor=executor,
+            symbols=symbols, mode=args.mode, timeframe=args.timeframe,
+            risk_per_trade=args.risk, feed=feed, executor=executor,
             execution_journal=journal,
         )
         limits = RuntimeLimits(
@@ -87,10 +82,7 @@ def main() -> None:
             max_daily_drawdown_fraction=policy.max_daily_drawdown if policy is not None else 0.02,
         )
         runtime = LiveRuntime(
-            orchestrator=orchestrator,
-            feed=feed,
-            executor=executor,
-            journal=journal,
+            orchestrator=orchestrator, feed=feed, executor=executor, journal=journal,
             limits=limits,
             circuit_breaker=DailyCircuitBreaker(
                 PROJECT_ROOT / "data" / "daily_circuit_breaker.json",
