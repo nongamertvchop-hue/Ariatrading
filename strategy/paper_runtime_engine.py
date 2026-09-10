@@ -15,6 +15,7 @@ from math import isfinite
 from pathlib import Path
 
 from .paper_accounting import PaperAccounting
+from .paper_history import PaperHistoryError, PaperHistoryStore
 from .paper_runtime_checkpoint import PaperCheckpointError, load_checkpoint, save_checkpoint
 
 
@@ -100,10 +101,12 @@ def _time_key(value: str) -> float:
 class PaperRuntimeEngine:
     """Stateful continuous paper runtime with durable restart recovery."""
 
-    def __init__(self, *, checkpoint_path: str | Path, initial_balance: float = 10_000.0, risk_fraction: float = 0.01, fee_per_unit: float = 0.0) -> None:
+    def __init__(self, *, checkpoint_path: str | Path, initial_balance: float = 10_000.0, risk_fraction: float = 0.01, fee_per_unit: float = 0.0, history_path: str | Path | None = None) -> None:
         if not 0 < risk_fraction <= 1:
             raise ValueError("risk_fraction must be in (0, 1]")
         self.checkpoint_path = Path(checkpoint_path)
+        self.history_path = Path(history_path) if history_path is not None else self.checkpoint_path.with_suffix(".history.jsonl")
+        self.history = PaperHistoryStore(self.history_path)
         self.risk_fraction = float(risk_fraction)
         self.account = PaperAccounting(initial_balance=initial_balance, fee_per_unit=fee_per_unit)
         self.lifecycle = RuntimeLifecycle.FLAT
@@ -149,32 +152,38 @@ class PaperRuntimeEngine:
         if self.failure_mode is FailureMode.DISAPPEAR_POSITION and self.account.position is not None:
             return self._halt("broker position disappeared during reconciliation")
 
-        self.account.mark(price=bar.close, bar_time=bar.time)
-        if self.account.position is not None and self._exit_levels is not None:
-            exit_reason = self._check_exit(bar)
-            if exit_reason is not None:
-                trade = self.account.close_position(exit_price=exit_reason[0], bar_time=bar.time)
-                self._exit_levels = None
-                self.lifecycle = RuntimeLifecycle.FLAT
-                self.last_processed_bar_time = bar.time
-                return self._emit(True, "CLOSED", exit_reason[1], pnl=trade.net_pnl)
+        try:
+            self.account.mark(price=bar.close, bar_time=bar.time)
+            if self.account.position is not None and self._exit_levels is not None:
+                exit_reason = self._check_exit(bar)
+                if exit_reason is not None:
+                    trade = self.account.close_position(exit_price=exit_reason[0], bar_time=bar.time)
+                    self._exit_levels = None
+                    self.lifecycle = RuntimeLifecycle.FLAT
+                    self.last_processed_bar_time = bar.time
+                    self._record_history()
+                    return self._emit(True, "CLOSED", exit_reason[1], pnl=trade.net_pnl)
 
-        if self.account.position is None:
-            normalized = self._normalize_signal(signal)
-            if normalized.action in {"LONG", "SHORT"}:
-                return self._enter(bar, normalized)
+            if self.account.position is None:
+                normalized = self._normalize_signal(signal)
+                if normalized.action in {"LONG", "SHORT"}:
+                    return self._enter(bar, normalized)
 
-        self.last_processed_bar_time = bar.time
-        return self._emit(True, "NO_UPDATE", "no executable setup on completed bar")
+            self.last_processed_bar_time = bar.time
+            self._record_history()
+            return self._emit(True, "NO_UPDATE", "no executable setup on completed bar")
+        except (ValueError, RuntimeError) as exc:
+            return self._halt(f"paper accounting rejected runtime state: {exc}")
 
     def recover(self) -> RuntimeResult:
         try:
             payload = load_checkpoint(self.checkpoint_path)
             self._restore(payload)
-        except (PaperCheckpointError, ValueError, TypeError, KeyError) as exc:
+            self.history.verify()
+        except (PaperCheckpointError, PaperHistoryError, ValueError, TypeError, KeyError) as exc:
             self.running = False
             self.lifecycle = RuntimeLifecycle.HALT
-            self.halt_reason = f"checkpoint recovery failed: {exc}"
+            self.halt_reason = f"checkpoint/history recovery failed: {exc}"
             return self._emit_no_persist(False, "HALT", self.halt_reason)
         if self._pending_order is not None:
             self.running = False
@@ -184,7 +193,7 @@ class PaperRuntimeEngine:
         self.lifecycle = RuntimeLifecycle.OPEN if self.account.position is not None else RuntimeLifecycle.FLAT
         self.halt_reason = ""
         self.running = False
-        return self._emit(True, "RECOVERED", "checkpoint and account state restored")
+        return self._emit(True, "RECOVERED", "checkpoint, account and long-term history restored")
 
     def persist(self) -> None:
         payload = {
@@ -204,9 +213,19 @@ class PaperRuntimeEngine:
         }
         save_checkpoint(payload, self.checkpoint_path)
 
+    def _record_history(self) -> None:
+        try:
+            self.history.append(self.account.snapshot(), bar_time=self.last_processed_bar_time)
+        except PaperHistoryError as exc:
+            self.running = False
+            self.lifecycle = RuntimeLifecycle.HALT
+            self.halt_reason = f"paper history persistence failed: {exc}"
+            raise
+
     def _enter(self, bar: RuntimeBar, signal: RuntimeSignal) -> RuntimeResult:
         if signal.entry is None or signal.stop is None or signal.entry <= 0 or signal.stop <= 0 or signal.entry == signal.stop:
             self.last_processed_bar_time = bar.time
+            self._record_history()
             return self._emit(False, "FLAT", "invalid paper entry/stop references")
         if signal.action not in {"LONG", "SHORT"}:
             return self._emit(False, "FLAT", "unsupported paper direction")
@@ -227,6 +246,7 @@ class PaperRuntimeEngine:
             self._pending_order = None
             self.lifecycle = RuntimeLifecycle.FLAT
             self.last_processed_bar_time = bar.time
+            self._record_history()
             return self._emit(True, "REJECTED", "paper broker rejected order", order_id=order_id)
         if self.failure_mode is FailureMode.PARTIAL_FILL:
             return self._halt("partial paper fill requires explicit reconciliation")
@@ -236,6 +256,7 @@ class PaperRuntimeEngine:
         self._exit_levels = {"side": signal.action, "stop": float(signal.stop), "target": float(signal.entry + 2 * risk_distance) if signal.action == "LONG" else float(signal.entry - 2 * risk_distance)}
         self.lifecycle = RuntimeLifecycle.OPEN
         self.last_processed_bar_time = bar.time
+        self._record_history()
         return self._emit(True, "OPEN", "paper order filled and position reconciled", order_id=order_id)
 
     @staticmethod
