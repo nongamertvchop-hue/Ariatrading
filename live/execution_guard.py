@@ -3,10 +3,8 @@
 The journal solves a subtle failure mode: a broker request can time out after the
 broker accepted it. Retrying immediately can create a duplicate position. An
 intent therefore has an explicit AMBIGUOUS state, and ambiguous intents are
-never automatically retried.
-
-This module is deliberately independent of the strategy layer and contains no
-broker API calls. It is safe to use for ALERT_ONLY/DEMO orchestration only.
+never automatically retried. An exact broker reconciliation may move an
+AMBIGUOUS intent directly to SUCCEEDED; it can never be reopened for retry.
 """
 
 from __future__ import annotations
@@ -102,12 +100,7 @@ class ExecutionJournal:
         return self._load().get(intent_id)
 
     def reserve(self, intent: ExecutionIntent) -> bool:
-        """Reserve an intent once and block all new work while reconciliation is pending.
-
-        A RESERVED/SUBMITTED/AMBIGUOUS record means the previous broker outcome
-        is not fully reconciled. Returning False here prevents a restart or a
-        fresh signal from submitting another order before that state is resolved.
-        """
+        """Reserve an intent once and block all new work while reconciliation is pending."""
         records = self._load()
         existing = records.get(intent.intent_id)
         if existing is not None:
@@ -123,7 +116,7 @@ class ExecutionJournal:
         return True
 
     def transition(self, intent_id: str, state: str, **metadata: Any) -> None:
-        """Move an intent to a valid state without silently reopening terminal/ambiguous work."""
+        """Move an intent safely; broker reconciliation is the only AMBIGUOUS exit."""
         allowed = {"RESERVED", "SUBMITTED", "SUCCEEDED", "FAILED", "AMBIGUOUS"}
         if state not in allowed:
             raise ValueError(f"Unsupported execution state: {state}")
@@ -132,13 +125,16 @@ class ExecutionJournal:
         if record is None:
             raise KeyError(f"Unknown execution intent: {intent_id}")
         current = str(record.get("state"))
-        if current in TERMINAL_STATES or current in NON_RETRYABLE_STATES:
+        if current in TERMINAL_STATES:
             if state != current:
                 raise RuntimeError(f"Cannot transition {current} intent {intent_id}")
             return
-        if current == "RESERVED" and state not in {"RESERVED", "SUBMITTED", "SUCCEEDED", "FAILED", "AMBIGUOUS"}:
+        if current == "AMBIGUOUS":
+            if state != "SUCCEEDED" or metadata.get("reconciliation") != "broker_exact_match":
+                raise RuntimeError(f"Cannot transition AMBIGUOUS intent {intent_id} without exact broker reconciliation")
+        elif current == "RESERVED" and state not in {"RESERVED", "SUBMITTED", "SUCCEEDED", "FAILED", "AMBIGUOUS"}:
             raise RuntimeError(f"Invalid transition {current} -> {state}")
-        if current == "SUBMITTED" and state not in {"SUBMITTED", "SUCCEEDED", "FAILED", "AMBIGUOUS"}:
+        elif current == "SUBMITTED" and state not in {"SUBMITTED", "SUCCEEDED", "FAILED", "AMBIGUOUS"}:
             raise RuntimeError(f"Invalid transition {current} -> {state}")
         record.update(metadata)
         record["state"] = state
