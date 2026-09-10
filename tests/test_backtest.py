@@ -165,6 +165,63 @@ def test_backtest_rejects_unknown_entry_timing():
         run_backtest(make_candles(), "15m", entry_timing="same_candle_close")
 
 
+def test_backtest_end_index_is_a_hard_out_of_sample_boundary(monkeypatch):
+    _patch_simple_long(monkeypatch)
+    candles = make_candles(40)
+    for candle in candles:
+        candle["open"] = 100.0
+        candle["high"] = 100.5
+        candle["low"] = 99.5
+        candle["close"] = 100.0
+
+    decision_index = 32
+    candles[decision_index + 1]["open"] = 101.0
+    candles[decision_index + 2]["high"] = 106.0
+    end_index = decision_index + 2
+
+    result = run_backtest(
+        candles,
+        "15m",
+        entry_timing=ENTRY_TIMING_NEXT_BAR_OPEN,
+        reward_risk=2.0,
+        max_hold_bars=5,
+        start_index=decision_index,
+        end_index=end_index,
+    )
+
+    assert result.trades
+    assert result.trades[0].outcome == "OPEN"
+    assert result.trades[0].bars_held == 0
+
+
+def test_signal_filter_is_applied_at_decision_index_without_changing_strategy(monkeypatch):
+    _patch_simple_long(monkeypatch)
+    candles = make_candles(40)
+    for candle in candles:
+        candle["open"] = 100.0
+        candle["high"] = 100.5
+        candle["low"] = 99.5
+        candle["close"] = 100.0
+    observed_indices = []
+
+    def allow_only_late(index, signal):
+        observed_indices.append(index)
+        return index >= 35
+
+    result = run_backtest(
+        candles,
+        "15m",
+        reward_risk=2.0,
+        max_hold_bars=5,
+        signal_filter=allow_only_late,
+    )
+
+    assert observed_indices
+    assert all(index >= 35 for index in [i for i in observed_indices if i >= 35])
+    assert result.trades
+    assert all(index >= 35 for index in result.signal_indices if index >= 35)
+
+
 def test_all_timeframes():
     data = make_candles()
     results = run_all_timeframes({tf: data for tf in ("1m", "5m", "15m", "30m", "1h", "4h", "1D")})
