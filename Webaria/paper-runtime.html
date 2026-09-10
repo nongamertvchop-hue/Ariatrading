@@ -3,32 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ARIA Paper Trading Runtime</title>
+  <title>ARIA Paper Trading Dashboard</title>
   <style>
     :root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}
-    *{box-sizing:border-box}body{margin:0;background:#0b0e13;color:#eef2f7}
-    main{max-width:1180px;margin:0 auto;padding:28px 18px 48px}h1{margin:0 0 6px;font-size:28px}.sub{color:#8f9aab;margin-bottom:22px}
-    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.card{background:#121722;border:1px solid #242c39;border-radius:12px;padding:16px}.label{color:#8f9aab;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.value{font-size:20px;font-weight:700;margin-top:7px;word-break:break-word}
-    .wide{grid-column:span 2}.full{grid-column:1/-1}.controls{display:flex;gap:8px;flex-wrap:wrap}.controls button,.controls select{background:#1a2230;border:1px solid #354052;color:#fff;border-radius:9px;padding:9px 12px}.controls button{cursor:pointer}.controls button:hover{background:#222c3d}
-    .danger{border-color:#6f3333!important}.status{display:inline-flex;align-items:center;gap:8px}.dot{width:9px;height:9px;border-radius:50%;background:#707987}.dot.run{background:#61d79f}.dot.halt{background:#ef7070}
-    .pipeline{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:10px}.step{padding:10px;border-radius:9px;background:#0f141d;border:1px solid #273040;text-align:center;font-size:12px}.step.active{border-color:#7fa8ff;box-shadow:0 0 0 1px #7fa8ff33 inset}
-    .events{max-height:420px;overflow:auto}.rt-event{display:grid;grid-template-columns:150px 90px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid #202837;font-size:13px}.rt-event span{font-weight:700}.rt-event small{color:#aab3c1}.notice{padding:11px 12px;border-radius:9px;background:#1a1510;border:1px solid #4b3b22;color:#d7c398}
-    @media (max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:span 2}.pipeline{grid-template-columns:repeat(3,1fr)}}
+    *{box-sizing:border-box}body{margin:0;background:#090c11;color:#eef2f7}main{max-width:1280px;margin:0 auto;padding:26px 18px 50px}
+    h1{margin:0;font-size:28px}.sub{margin:6px 0 20px;color:#8f9aab}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.card{background:#121722;border:1px solid #242c39;border-radius:12px;padding:15px}.wide{grid-column:span 2}.full{grid-column:1/-1}.label{color:#8f9aab;font-size:11px;text-transform:uppercase;letter-spacing:.08em}.value{font-size:20px;font-weight:700;margin-top:7px;word-break:break-word}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}.controls button,.controls select{background:#1a2230;border:1px solid #354052;color:#fff;border-radius:9px;padding:9px 12px}.controls button{cursor:pointer}.controls button:hover{background:#222c3d}.danger{border-color:#6f3333!important}.status{display:inline-flex;align-items:center;gap:8px}.dot{width:9px;height:9px;border-radius:50%;background:#707987}.dot.run{background:#61d79f}.dot.halt{background:#ef7070}
+    .pipeline{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:10px}.step{padding:10px;border-radius:9px;background:#0f141d;border:1px solid #273040;text-align:center;font-size:12px}.step.active{border-color:#7fa8ff;box-shadow:0 0 0 1px #7fa8ff33 inset}.notice{padding:11px 12px;border-radius:9px;background:#1a1510;border:1px solid #4b3b22;color:#d7c398}
+    .events{max-height:380px;overflow:auto}.rt-event{display:grid;grid-template-columns:150px 190px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid #202837;font-size:13px}.rt-event span{font-weight:700}.rt-event small{color:#aab3c1}.chart{height:240px;width:100%;display:block;background:#0d1219;border-radius:9px}.security{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.6;color:#aeb8c8}
+    @media (max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:span 2}.pipeline{grid-template-columns:repeat(3,1fr)}.rt-event{grid-template-columns:1fr}}
     @media (max-width:560px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}.pipeline{grid-template-columns:repeat(2,1fr)}}
   </style>
 </head>
 <body>
 <main>
-  <h1>ARIA Paper Trading Runtime</h1>
-  <div class="sub">Realtime closed-candle paper execution · persistent checkpoint · no real broker</div>
+  <h1>ARIA Paper Trading Dashboard</h1>
+  <div class="sub">Realtime closed-candle paper execution · persistent checkpoint · P/L, equity & drawdown · no real broker</div>
 
   <div class="card full">
     <div class="controls">
       <select id="paperRuntimeSymbol"><option>EUR/USD</option><option>GBP/USD</option><option>USD/JPY</option><option>AUD/USD</option><option>USD/CAD</option></select>
       <select id="paperRuntimeTf"><option>1m</option><option selected>5m</option><option>15m</option><option>30m</option><option>1h</option><option>4h</option><option>1D</option></select>
       <button id="start">Start runtime</button><button id="stop">Stop runtime</button><button id="recover">Crash / restart recovery</button>
-      <select id="failure"><option value="NONE">Failure injection: NONE</option><option value="TIMEOUT_AFTER_ACCEPT">Timeout after accept</option><option value="DISCONNECT_BEFORE_SUBMIT">Disconnect before submit</option><option value="REJECT">Order reject</option><option value="PARTIAL_FILL">Partial fill</option><option value="DISAPPEAR_POSITION">Broker position disappears</option></select>
-      <button id="applyFailure">Apply failure</button><button id="reset" class="danger">Reset paper account</button>
+      <select id="failure"><option value="NONE">Failure injection: NONE</option><option value="TIMEOUT_AFTER_ACCEPT">Timeout after accept</option><option value="DISCONNECT_BEFORE_SUBMIT">Disconnect before submit</option><option value="REJECT">Order reject</option><option value="PARTIAL_FILL">Partial fill</option><option value="DISAPPEAR_POSITION">Broker position disappears</option><option value="CHECKPOINT_CORRUPTION">Checkpoint corruption test</option></select>
+      <button id="applyFailure">Apply failure</button><button id="soak">Run 10k replay</button><button id="export">Export snapshot</button><button id="reset" class="danger">Reset paper account</button>
     </div>
   </div>
 
@@ -38,39 +36,51 @@
     <div class="card"><div class="label">Market</div><div class="value" id="rtSymbol">EUR/USD · 5m</div></div>
     <div class="card"><div class="label">Last closed candle</div><div class="value" id="rtLastBar">—</div></div>
     <div class="card"><div class="label">Balance</div><div class="value" id="rtBalance">10000.00</div></div>
+    <div class="card"><div class="label">Equity</div><div class="value" id="rtEquity">10000.00</div></div>
     <div class="card"><div class="label">Realized P/L</div><div class="value" id="rtRealized">+0.00</div></div>
+    <div class="card"><div class="label">Unrealized P/L</div><div class="value" id="rtUnrealized">+0.00</div></div>
+    <div class="card"><div class="label">Peak equity</div><div class="value" id="rtPeak">10000.00</div></div>
+    <div class="card"><div class="label">Drawdown</div><div class="value" id="rtDrawdown">0.00 (0.00%)</div></div>
+    <div class="card"><div class="label">Trades</div><div class="value" id="rtTrades">0</div></div>
+    <div class="card"><div class="label">Win rate</div><div class="value" id="rtWinRate">0.00%</div></div>
     <div class="card wide"><div class="label">Position</div><div class="value" id="rtPosition">FLAT</div></div>
     <div class="card wide"><div class="label">Failure mode</div><div class="value" id="rtFailure">NONE</div></div>
+    <div class="card"><div class="label">Checkpoint</div><div class="value" id="rtCheckpoint">OK</div></div>
+    <div class="card"><div class="label">Heartbeat</div><div class="value" id="rtHeartbeat">—</div></div>
+    <div class="card wide"><div class="label">Last soak</div><div class="value" id="rtSoak">—</div></div>
     <div class="card full"><div class="label">Halt reason</div><div class="value" id="rtHalt">—</div></div>
   </div>
+
+  <div class="card full" style="margin-top:12px"><div class="label">Equity curve</div><canvas id="equityChart" class="chart"></canvas></div>
 
   <div class="card full" style="margin-top:12px">
     <div class="label">Execution pipeline</div>
     <div class="pipeline">
       <div class="step" data-state="SIGNAL">SIGNAL</div><div class="step" data-state="APPROVED">APPROVED</div><div class="step" data-state="SUBMITTING">SUBMITTING</div><div class="step" data-state="ACKNOWLEDGED">ACK</div><div class="step" data-state="OPEN">OPEN</div><div class="step" data-state="EXIT_PENDING">EXIT</div>
     </div>
-    <div class="notice" style="margin-top:12px">Safety invariant: every order gets a stable client identity, every completed candle is processed at most once, and ambiguous broker outcomes halt until recovery proves the state.</div>
+    <div class="notice" style="margin-top:12px">Safety invariant: every order has a stable client identity; every completed candle is processed at most once; ambiguous outcomes halt; checkpoint corruption is never silently reset.</div>
   </div>
 
   <div class="card full" style="margin-top:12px">
-    <div class="label">Runtime events</div>
-    <div class="events" id="rtEvents"></div>
+    <div class="label">Operational security status</div>
+    <div class="security">MODE=PAPER_ONLY · REAL_BROKER=DISABLED · CLOSED_CANDLE_ONLY=TRUE · IDEMPOTENCY=ENABLED · CHECKPOINT=ATOMIC · UNKNOWN_OUTCOME=FAIL_CLOSED · P/L=MARK_TO_MARKET · DRAW_DOWN=PEAK_TO_EQUITY · REPLAY=DETERMINISTIC</div>
   </div>
+
+  <div class="card full" style="margin-top:12px"><div class="label">Runtime events</div><div class="events" id="rtEvents"></div></div>
 </main>
 <script src="paper-runtime.js"></script>
 <script>
-  const runtime = window.WebariaPaperRuntime;
-  const $ = id => document.getElementById(id);
+  const runtime = window.WebariaPaperRuntime; const $ = id => document.getElementById(id);
   $('start').onclick = () => { runtime.configureFromDom(); runtime.start(); };
   $('stop').onclick = () => runtime.stop();
   $('recover').onclick = () => runtime.recover();
   $('reset').onclick = () => runtime.reset();
   $('applyFailure').onclick = () => runtime.setFailureMode($('failure').value);
-  $('paperRuntimeSymbol').value = runtime.state.symbol;
-  $('paperRuntimeTf').value = runtime.state.timeframe;
+  $('soak').onclick = () => runtime.runSoak(10000);
+  $('export').onclick = () => runtime.exportSnapshot();
+  $('paperRuntimeSymbol').value = runtime.state.symbol; $('paperRuntimeTf').value = runtime.state.timeframe;
   setInterval(() => {
-    const state = runtime.state;
-    $('rtDot').className = `dot ${state.halted ? 'halt' : (state.running ? 'run' : '')}`;
+    const state = runtime.state; $('rtDot').className = `dot ${state.halted ? 'halt' : (state.running ? 'run' : '')}`;
     document.querySelectorAll('.step').forEach(node => node.classList.toggle('active', node.dataset.state === state.lifecycle));
   }, 250);
 </script>
