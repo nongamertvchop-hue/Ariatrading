@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.14.4**
+**Current version: 0.15.0**
 
 ## Core idea
 
@@ -53,6 +53,11 @@ The project is layered so every stage can be used together without duplicating s
 34. **Replay outcome attachment** — completed realtime replay results can be enriched with outcome records while keeping the strategy decision immutable.
 35. **Research & innovation rules** — hypothesis-driven invention, measurable experiments, evidence-based retention, explicit failure reporting, reproducibility, and fail-closed safety boundaries. The runtime strategy boundary enforces the executable research contract.
 36. **Polyglot Verification Fabric** — a language-neutral JSONL contract and fail-closed worker runner for independent validators/research workers across the requested language ecosystem. Language diversity validates or researches existing decisions; it never bypasses safety gates or creates a third strategy direction.
+37. **Paper accounting engine** — deterministic realized/unrealized P/L, equity, peak equity, drawdown, drawdown percentage, win/loss statistics, and validated account checkpoints.
+38. **Continuous Paper Runtime** — closed-candle runtime with deterministic stop/target exits, once-per-bar processing, stable paper order identity, atomic checkpoints, and restart recovery.
+39. **Paper Trading Dashboard** — runtime lifecycle, balance/equity/P&L/drawdown, position, heartbeat, checkpoint status, event stream, equity curve, snapshot export, recovery controls, and explicit fault injection.
+40. **Massive Replay / Soak** — deterministic 10,000-bar replay harness with repeatability checks and both LONG/SHORT exit paths.
+41. **Failure Injection + Operational Review** — reproducible timeout, disconnect, reject, partial-fill, missing-position, duplicate-bar, out-of-order-bar, and checkpoint-corruption scenarios with a documented paper/demo release gate.
 
 ## Key modules
 
@@ -101,7 +106,11 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/order_persistence.py` — crash-safe order-state snapshot persistence.
 - `strategy/execution_audit.py` — append-only hash-chain execution audit journal.
 - `strategy/execution_recovery.py` — fail-closed post-restart execution consistency gate.
-- `strategy/paper_execution_e2e.py` — end-to-end paper submission/recovery coordinator.
+- `strategy/paper_trading_loop.py` — end-to-end paper execution coordinator and reconciliation path.
+- `strategy/paper_accounting.py` — realized/unrealized P/L, equity, peak-equity and drawdown accounting.
+- `strategy/paper_runtime_checkpoint.py` — atomic versioned continuous-runtime checkpoint persistence.
+- `strategy/paper_runtime_engine.py` — continuous closed-candle paper runtime, restart recovery and deterministic exits.
+- `strategy/paper_soak.py` — deterministic 10,000-bar replay and failure-injection harness.
 - `strategy/position_reconciliation.py` — normalized local/broker position reconciliation with average-entry and contract checks.
 - `strategy/system_gate.py` — final fail-closed pre-execution readiness contract.
 - `strategy/broker_contract.py` — normalized broker-symbol contract checks.
@@ -113,6 +122,8 @@ The project is layered so every stage can be used together without duplicating s
 - `polyglot/README.md` — Polyglot architecture and research roles.
 - `Webaria/chart-quality.js` — canvas bitmap/viewport quality layer aligned with the actual chart state.
 - `Webaria/paper-engine.js` — browser-safe paper risk primitives; no broker calls.
+- `Webaria/paper-runtime.html` — Paper Trading Dashboard shell.
+- `Webaria/paper-runtime.js` — continuous browser paper runtime, P/L/equity/drawdown, recovery and soak diagnostics.
 - `Webaria/signal-advisor.html` — single-timeframe realtime Signal Advisor.
 - `Webaria/mtf-advisor.html` — multi-timeframe Signal Advisor and local signal journal.
 - `worker/signal_parity.js` — Worker-side low-level strategy parity primitives.
@@ -144,12 +155,14 @@ LONG / SHORT / WAIT
         |
         +---- Historical path -> Risk -> Backtest -> Validation
         |
-        +---- Realtime path -> Supervisor -> Event ID -> Paper Session
-        |                                  |
-        |                                  +---- next completed bars
-        |                                           |
-        |                                           v
-        |                                   Causal Outcome Label
+        +---- Realtime path -> Supervisor -> Event ID -> Paper Runtime
+        |                                                   |
+        |                                                   +---- closed candle once-only guard
+        |                                                   +---- paper order state / recovery
+        |                                                   +---- position reconciliation
+        |                                                   +---- P/L -> Equity -> Drawdown
+        |                                                   +---- audit + checkpoint
+        |                                                   +---- causal outcome/replay review
         |
         +---- Research path -> MTF comparison -> Quality Report -> ML/DL
         |
@@ -163,11 +176,19 @@ LONG / SHORT / WAIT
 
 ## Research safety contract
 
-Ariatrading is a research and paper/demo system. MT5 integration remains read-only, and the research outcome layer does not place or manage broker orders.
+Ariatrading is a research and paper/demo system. MT5 integration remains read-only, and the paper runtime does not place or manage real broker orders.
+
+The Paper Trading Dashboard is explicitly labeled **PAPER**. Ambiguous execution outcomes remain unresolved until a trustworthy source of truth is available; they are never converted into a synthetic fill merely to keep the runtime moving.
 
 ## Research & innovation contract
 
 Ariatrading does not treat novelty as proof. New mechanisms are hypotheses until measured, compared, and validated. Failures and negative results are retained as research evidence. Safety, causal data boundaries, reproducibility, and paper/demo isolation always override experimental novelty.
+
+## Paper runtime release gate
+
+The 0.15.0 release adds crash/restart recovery, first-class P/L/equity/drawdown state, a continuous closed-candle Paper Runtime, a browser dashboard, deterministic 10,000-bar replay/soak, reproducible failure injection, and a final operational checklist in `docs/PAPER_OPERATIONAL_REVIEW.md`.
+
+Passing these tests demonstrates that the tested paper/demo boundary behaves deterministically under the modeled scenarios. It is **not** evidence of profitability, future performance, or suitability for real-money use.
 
 ## Polyglot implementation status
 
