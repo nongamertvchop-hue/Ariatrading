@@ -15,6 +15,7 @@ import {
   statusResponse,
   BODYGUARD_VERSION,
 } from "../bodyguard/worker/bodyguard.js";
+import { sanitizeForBoundary } from "../bodyguard/worker/redaction.js";
 
 const FRESH_TTL_MS = Object.freeze({
   "/api/price": 10_000,
@@ -56,7 +57,7 @@ async function readResponse(response) {
 }
 
 function json(data, status = 200, headers = {}) {
-  return applySecurityHeaders(new Response(JSON.stringify(data), {
+  return applySecurityHeaders(new Response(JSON.stringify(sanitizeForBoundary(data)), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
@@ -174,11 +175,11 @@ export default {
       }
       if (cached && now - cached.savedAt <= staleTtl) return cachedResponse(cached, 200, "STALE");
       return applySecurityHeaders(response);
-    } catch (error) {
+    } catch (_) {
       if (cached && now - cached.savedAt <= staleTtl) return cachedResponse(cached, 200, "STALE");
       return json({
         error: "upstream_or_internal_error",
-        message: error?.message || "unknown error",
+        message: "request could not be completed",
         guard: "Bodyguard(Aria)",
         version: BODYGUARD_VERSION,
       }, 502);
