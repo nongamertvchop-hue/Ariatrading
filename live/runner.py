@@ -33,6 +33,7 @@ from live.execution_guard import ExecutionJournal, build_intent
 from live.mt5_account import validate_account_mode
 from live.mt5_executor import MT5LiveExecutor, ORDER_BUY, ORDER_SELL
 from live.notifier import Notifier
+from live.production_stage1 import ProductionStage1Policy
 from strategy.engine import EngineSignal, LONG, WAIT
 from strategy.forex_conditions import ForexConditionDecision, ForexSessionConfig, check_forex_conditions
 from strategy.forex_risk import ForexRiskDecision, ForexRiskLimits, ForexSymbolContract, evaluate_forex_risk
@@ -81,6 +82,14 @@ class ForexLiveOrchestrator:
         self.mode = mode.upper()
         if self.mode not in self.ALLOWED_MODES:
             raise ValueError(f"Unsupported execution mode: {self.mode}")
+        if self.mode == "LIVE":
+            policy = ProductionStage1Policy.from_env()
+            policy.validate_symbols(self.symbols)
+            if not 0 < risk_per_trade <= policy.max_risk_per_trade:
+                raise RuntimeError(
+                    "LIVE Stage 1 risk exceeds policy: "
+                    f"{risk_per_trade} > {policy.max_risk_per_trade}"
+                )
         self.timeframe = timeframe
         self.candle_history = max(candle_history, 50)
         self.risk_limits = ForexRiskLimits(risk_per_trade_fraction=risk_per_trade)
@@ -302,10 +311,10 @@ class ForexLiveOrchestrator:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Ariatrading Forex Orchestrator")
-    parser.add_argument("--symbols", default="EURUSD,GBPUSD,USDJPY", help="Comma-separated broker symbols")
+    parser.add_argument("--symbols", default="EURUSD", help="Comma-separated broker symbols")
     parser.add_argument("--mode", choices=["ALERT_ONLY", "DEMO", "LIVE"], default="ALERT_ONLY")
     parser.add_argument("--timeframe", default="15m", help="Candle timeframe (1m, 5m, 15m, 30m, 1h, 4h, 1D)")
-    parser.add_argument("--risk", type=float, default=0.01, help="Risk fraction per trade")
+    parser.add_argument("--risk", type=float, default=0.0025, help="Risk fraction per trade")
     parser.add_argument("--interval", type=int, default=5, help="Polling interval in seconds")
     return parser
 
