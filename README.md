@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.16.0**
+**Current version: 0.16.1**
 
 ## Core idea
 
@@ -63,6 +63,8 @@ The project is layered so every stage can be used together without duplicating s
 44. **Long-Term Paper History** — separate append-only SHA-256 hash-chained equity/accounting history survives checkpoint replacement and fails closed on corruption.
 45. **Operational Console** — standalone Webaria console for health, heartbeat, lifecycle, live market reachability, account metrics, alerts, release checks, event history, equity visualization and snapshot export.
 46. **Final Release Gate CI** — `.github/workflows/release-gate.yml` downloads a pinned real EURUSD 5-minute historical sample and runs the final paper-only gate plus the full Python regression suite.
+47. **Canonical MT5 Web Market Bridge** — Webaria `/api/market` now proxies an authenticated runtime `/market` endpoint; MT5 is the chart source of truth and provider fallback is intentionally disabled to prevent price/strategy drift.
+48. **Durable Bodyguard Telemetry Bridge** — Webaria `/api/bodyguard/status` reads sanitized runtime SQLite events and heartbeat data, giving the dashboard near-real-time durable incident visibility without exposing IPs, secrets, request bodies or PII.
 
 ## Key modules
 
@@ -86,10 +88,14 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/broker_contract.py` — normalized broker-symbol contract checks.
 - `adapters/mt5_feed.py` — read-only MT5 market-data adapter.
 - `adapters/paper_broker.py` — broker-like paper/demo simulator for deterministic execution tests.
+- `scripts/run_runtime_api.py` — authenticated REST/WebSocket runtime entrypoint and MT5 market bridge.
 - `polyglot/runner.py` — bounded JSONL worker execution and fail-closed consensus validation.
 - `Webaria/paper-runtime.html` — Paper Trading Dashboard shell.
 - `Webaria/paper-runtime.js` — continuous browser paper runtime and recovery controls.
 - `Webaria/operational-console.html` — operational monitoring console.
+- `Webaria/bodyguard.html` — durable Bodyguard security telemetry dashboard.
+- `Webaria/functions/api/market.js` — canonical Cloudflare-to-MT5 runtime market proxy.
+- `Webaria/functions/api/bodyguard/status.js` — sanitized durable Bodyguard telemetry facade.
 - `Webaria/signal-advisor.html` — single-timeframe realtime Signal Advisor.
 - `Webaria/mtf-advisor.html` — multi-timeframe Signal Advisor and local signal journal.
 - `worker/signal_parity.js` — Worker-side low-level strategy parity primitives.
@@ -100,42 +106,48 @@ The project is layered so every stage can be used together without duplicating s
 ## System flow
 
 ```text
-OHLC / MT5 closed bars
-        |
-        v
+MT5 terminal
+    |
+    +--> read-only closed bars + forming bar/tick
+    |
+    v
+Authenticated Runtime API (/market, /health, /events)
+    |
+    +--> Webaria /api/market ----> Trading Chart
+    |
+    +--> Webaria /api/bodyguard/status ----> Bodyguard Console
+    |
+    v
 Feed integrity + timeframe normalization
-        |
-        v
+    |
+    v
 Confirmed S/R zones <---- Market Structure
-        |
-        v
+    |
+    v
 Core Sequence Engine
 APPROACH -> TEST -> RECLAIM/REJECT -> CONFIRM
-        |
-        +---- Fake Breakout protection
-        +---- MTF look-ahead protection
-        +---- Setup scoring
-        |
-        v
+    |
+    +---- Fake Breakout protection
+    +---- MTF look-ahead protection
+    +---- Setup scoring
+    |
+    v
 LONG / SHORT / WAIT
-        |
-        +---- Historical path -> Risk -> Backtest -> Validation
-        |                         |
-        |                         +---- Real historical fixture
-        |                         +---- Backtest/Realtime parity
-        |
-        +---- Realtime path -> Supervisor -> Event ID -> Paper Runtime
-        |                                                   |
-        |                                                   +---- once-only closed candle
-        |                                                   +---- checkpoint/restart recovery
-        |                                                   +---- position reconciliation
-        |                                                   +---- P/L -> Equity -> Drawdown
-        |                                                   +---- long-term hash-chained history
-        |                                                   +---- Operational Console
-        |
-        +---- Polyglot Validation Fabric -> independent workers
-        |
-        +---- Final Release Gate -> CI/security/soak/failure evidence
+    |
+    +---- Historical path -> Risk -> Backtest -> Validation
+    |
+    +---- Realtime path -> Supervisor -> Event ID -> Paper Runtime
+    |                                                   |
+    |                                                   +---- once-only closed candle
+    |                                                   +---- checkpoint/restart recovery
+    |                                                   +---- position reconciliation
+    |                                                   +---- P/L -> Equity -> Drawdown
+    |                                                   +---- long-term hash-chained history
+    |                                                   +---- Operational Console
+    |
+    +---- Polyglot Validation Fabric -> independent workers
+    |
+    +---- Final Release Gate -> CI/security/soak/failure evidence
 ```
 
 ## Research safety contract
@@ -146,9 +158,7 @@ The Paper Trading Dashboard and Operational Console are explicitly **PAPER/DEMO*
 
 ## Final release gate
 
-Version 0.16.0 adds a final release-gate workflow over real historical EURUSD 5-minute OHLCV data, hard process-termination recovery tests, backtest/realtime/paper parity checks, long-term hash-chained accounting history, deterministic 10,000-bar soak validation, explicit failure injection, and an operational console.
-
-Passing the release gate demonstrates the tested engineering/research properties for the selected revision and fixture. It is **not** evidence of profitability, future performance, or authorization for real-money execution.
+Version 0.16.1 extends the final paper-only architecture with an authenticated MT5 runtime market bridge, canonical Webaria market sourcing, durable Bodyguard telemetry, and CI syntax coverage for the new edge endpoints. Passing the release gate demonstrates the tested engineering/research properties for the selected revision and fixture. It is **not** evidence of profitability, future performance, or authorization for real-money execution.
 
 ## Polyglot implementation status
 
