@@ -1,5 +1,5 @@
 #property strict
-#property version   "1.0"
+#property version   "1.1"
 #property description "Ariatrading MT5 market-data bridge. Demo/paper market data only; never sends trading orders."
 
 input string BridgeUrl = "https://YOUR-WORKER.workers.dev/api/mt5/ingest";
@@ -20,8 +20,6 @@ TfConfig Tfs[7] = {
    {PERIOD_D1,  "1D"}
 };
 
-typedef char byte_array[];
-
 string JsonEscape(string value)
 {
    StringReplace(value, "\\", "\\\\");
@@ -31,18 +29,26 @@ string JsonEscape(string value)
 
 string CandleJson(MqlRates &r)
 {
-   return StringFormat("{\"time\":%I64d,\"open\":%.10f,\"high\":%.10f,\"low\":%.10f,\"close\":%.10f}",
-                       r.time, r.open, r.high, r.low, r.close);
+   return "{\"time\":" + IntegerToString((long)r.time)
+        + ",\"open\":" + DoubleToString(r.open, 10)
+        + ",\"high\":" + DoubleToString(r.high, 10)
+        + ",\"low\":" + DoubleToString(r.low, 10)
+        + ",\"close\":" + DoubleToString(r.close, 10) + "}";
 }
 
 string BuildPayload(string timeframe, MqlRates &rates[], int count)
 {
-   // MT5 returns series data newest-first. The bridge normalizes/sorts it server-side.
-   string json = "{\"symbol\":\"" + JsonEscape(WebSymbol) + "\",\"timeframe\":\"" + timeframe + "\",\"received_at\":" + IntegerToString((long)TimeGMT()) + ",\"price\":" + DoubleToString(SymbolInfoDouble(_Symbol, SYMBOL_BID), 10) + ",\"candles\":[";
-   int limit = MathMin(count, HistoryBars);
-   for(int i=0; i<limit; i++)
+   // CopyRates position 0 is the current forming bar. Completed bars start at position 1.
+   string json = "{\"symbol\":\"" + JsonEscape(WebSymbol)
+               + "\",\"timeframe\":\"" + timeframe
+               + "\",\"received_at\":" + IntegerToString((long)TimeGMT())
+               + ",\"price\":" + DoubleToString(SymbolInfoDouble(_Symbol, SYMBOL_BID), 10)
+               + ",\"candles\":[";
+
+   int completed = MathMin(MathMax(count - 1, 0), HistoryBars);
+   for(int i=1; i<=completed; i++)
    {
-      if(i > 0) json += ",";
+      if(i > 1) json += ",";
       json += CandleJson(rates[i]);
    }
    json += "]";
@@ -64,10 +70,19 @@ bool SendPayload(string payload)
       return false;
    }
 
-   byte_array body, result;
+   uchar encoded[];
+   char body[];
+   char result[];
    string headers = "Content-Type: application/json\r\nAuthorization: Bearer " + BridgeToken + "\r\n";
-   StringToCharArray(payload, body, 0, WHOLE_ARRAY, CP_UTF8);
-   if(ArraySize(body) > 0 && body[ArraySize(body)-1] == 0) ArrayResize(body, ArraySize(body)-1);
+   int copied = StringToCharArray(payload, encoded, 0, WHOLE_ARRAY, CP_UTF8);
+   if(copied <= 0)
+   {
+      Print("Ariatrading bridge disabled: JSON encoding failed.");
+      return false;
+   }
+   if(encoded[copied - 1] == 0) copied--;
+   ArrayResize(body, copied);
+   for(int i=0; i<copied; i++) body[i] = (char)encoded[i];
 
    string result_headers;
    ResetLastError();
@@ -84,8 +99,8 @@ void PushTimeframe(int index)
 {
    MqlRates rates[];
    ArraySetAsSeries(rates, true);
-   int copied = CopyRates(_Symbol, Tfs[index].tf, 0, HistoryBars, rates);
-   if(copied <= 0)
+   int copied = CopyRates(_Symbol, Tfs[index].tf, 0, HistoryBars + 1, rates);
+   if(copied < 1)
    {
       PrintFormat("Ariatrading bridge CopyRates failed: timeframe=%s error=%d", Tfs[index].name, GetLastError());
       return;
@@ -100,7 +115,7 @@ void PushAll()
 
 int OnInit()
 {
-   if(PollSeconds < 1) return INIT_PARAMETERS_INCORRECT;
+   if(PollSeconds < 1 || HistoryBars < 2 || HttpTimeoutMs < 1000) return INIT_PARAMETERS_INCORRECT;
    EventSetTimer(PollSeconds);
    Print("Ariatrading MT5 market bridge started. No order functions are present in this EA.");
    return INIT_SUCCEEDED;
