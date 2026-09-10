@@ -117,30 +117,17 @@
     const unrealized = state.position && state.position.symbol === currentSymbol() ? pnl(state.position, price) : 0;
     const equity = finite(state.balance, START_BALANCE) + unrealized;
     return {
-      contract: 'aria.paper-runtime.v1',
-      mode: 'PAPER',
-      lifecycle: state.position ? 'OPEN' : 'FLAT',
-      running: true,
-      halted: false,
-      haltReason: '',
-      heartbeat: new Date().toISOString(),
+      contract: 'aria.paper-runtime.v1', mode: 'PAPER', lifecycle: state.position ? 'OPEN' : 'FLAT', running: true,
+      halted: false, haltReason: '', heartbeat: new Date().toISOString(),
       lastBarTime: state.position?.last_checked_bar_time || null,
       lastProcessedBarTime: state.position?.last_checked_bar_time || null,
       account: {
-        balance: finite(state.balance, START_BALANCE),
-        equity,
-        realizedPnl: finite(state.balance, START_BALANCE) - START_BALANCE,
-        unrealizedPnl: unrealized,
-        peakEquity: Math.max(START_BALANCE, equity),
-        drawdown: Math.max(0, START_BALANCE - equity),
-        drawdownPct: Math.max(0, (START_BALANCE - equity) / START_BALANCE),
-        tradeCount: state.history.length,
+        balance: finite(state.balance, START_BALANCE), equity, realizedPnl: finite(state.balance, START_BALANCE) - START_BALANCE,
+        unrealizedPnl: unrealized, peakEquity: Math.max(START_BALANCE, equity), drawdown: Math.max(0, START_BALANCE - equity),
+        drawdownPct: Math.max(0, (START_BALANCE - equity) / START_BALANCE), tradeCount: state.history.length,
         winRate: state.history.length ? state.history.filter(t => Number(t.pnl) > 0).length / state.history.length : 0
       },
-      position: state.position,
-      pending: null,
-      alerts: [],
-      history: state.history.slice(-MAX_HISTORY),
+      position: state.position, pending: null, alerts: [], history: state.history.slice(-MAX_HISTORY),
       events: [{ at: new Date().toISOString(), type: 'BROWSER_PAPER_SYNC', source: 'paper-terminal' }]
     };
   }
@@ -151,47 +138,24 @@
       const payload = await response.json();
       if (!response.ok || payload?.contract !== 'aria.paper-runtime.v1') throw new Error(payload?.message || `HTTP ${response.status}`);
       const account = payload.account || {};
-      state = {
-        balance: finite(account.balance, START_BALANCE),
-        position: payload.position && typeof payload.position === 'object' ? payload.position : null,
-        history: Array.isArray(payload.history) ? payload.history.slice(-MAX_HISTORY) : []
-      };
-      authoritative = true;
-      cacheLocal();
-      render();
-      return payload;
+      state = { balance: finite(account.balance, START_BALANCE), position: payload.position && typeof payload.position === 'object' ? payload.position : null, history: Array.isArray(payload.history) ? payload.history.slice(-MAX_HISTORY) : [] };
+      authoritative = true; cacheLocal(); render(); return payload;
     } catch (error) {
-      authoritative = false;
-      setNote(`Durable paper state unavailable: ${error.message}`);
-      render();
-      return null;
+      authoritative = false; setNote(`Durable paper state unavailable: ${error.message}`); render(); return null;
     }
   }
 
   async function writeDurable(nextState, note) {
     if (syncBusy) return false;
     syncBusy = true;
+    const previous = state;
+    state = nextState;
     try {
-      const previous = state;
-      state = nextState;
-      const response = await fetch(API, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'content-type': 'application/json', accept: 'application/json' },
-        body: JSON.stringify(toDurablePayload())
-      });
+      const response = await fetch(API, { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(toDurablePayload()) });
       if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || `HTTP ${response.status}`);
-      authoritative = true;
-      cacheLocal();
-      if (note) setNote(note);
-      render();
-      return true;
+      authoritative = true; cacheLocal(); if (note) setNote(note); render(); return true;
     } catch (error) {
-      state = previous;
-      authoritative = false;
-      setNote(`Paper state was not committed: ${error.message}`);
-      render();
-      return false;
+      state = previous; authoritative = false; setNote(`Paper state was not committed: ${error.message}`); render(); return false;
     } finally { syncBusy = false; }
   }
 
@@ -231,13 +195,22 @@
     await writeDurable(next,`Opened ${side} ${quantity} ${symbol} · durable paper runtime`);
   }
 
+  async function closeAt(exitPrice, reason, metadata = {}) {
+    const position = state.position;
+    if (!position) return false;
+    const price = Number(exitPrice);
+    if (!Number.isFinite(price) || price <= 0) return false;
+    const realized = pnl(position, price);
+    const history=[...state.history,{id:`paper-${Date.now()}`,symbol:position.symbol,timeframe:position.timeframe,side:position.side,quantity:position.quantity,entry:position.entry,sl:position.sl,tp:position.tp,exit:price,pnl:realized,reason:reason||'manual close',opened_at:position.opened_at,closed_at:new Date().toISOString(),entry_bar_time:position.entry_bar_time,exit_bar_time:metadata.exitBarTime||null,exit_source:metadata.exitSource||'manual_quote',execution_model:position.execution_model||'completed-bar'}].slice(-MAX_HISTORY);
+    return writeDurable({balance:state.balance+realized,position:null,history},`Closed ${reason||'manual close'} · realized ${realized>=0?'+':''}${realized.toFixed(2)} · durable paper runtime`);
+  }
+
   async function close(reason) {
-    if (!state.position) return;
-    if (state.position.symbol !== currentSymbol()) return setNote(`Switch to ${state.position.symbol} before closing.`);
+    const position = state.position;
+    if (!position) return;
+    if (position.symbol !== currentSymbol()) return setNote(`Switch to ${position.symbol} before closing.`);
     const price=currentPrice(); if(!Number.isFinite(price)) return setNote('Cannot close: no valid market quote.');
-    const realized=pnl(state.position,price), history=[...state.history,{id:`paper-${Date.now()}`,symbol:state.position.symbol,timeframe:state.position.timeframe,side:state.position.side,quantity:state.position.quantity,entry:state.position.entry,sl:state.position.sl,tp:state.position.tp,exit:price,pnl:realized,reason:reason||'manual close',opened_at:state.position.opened_at,closed_at:new Date().toISOString(),entry_bar_time:state.position.entry_bar_time,exit_bar_time:null,exit_source:'manual_quote',execution_model:state.position.execution_model||'completed-bar'}].slice(-MAX_HISTORY);
-    const next={balance:state.balance+realized,position:null,history};
-    await writeDurable(next,`Closed ${reason||'manual close'} · realized ${realized>=0?'+':''}${realized.toFixed(2)} · durable paper runtime`);
+    await closeAt(price, reason || 'manual close', {exitSource:'manual_quote'});
   }
 
   async function resetPaperAccount() {
@@ -253,7 +226,7 @@
       const cutoff=Number.isFinite(lastChecked)?Math.max(anchor,lastChecked):anchor;
       for(const bar of bars.filter(b=>timeValue(b.time)>cutoff)){
         const exit=window.WebariaPaperEngine?.barExit(position,bar);
-        if(exit){ await close(exit.reason); return; }
+        if(exit){ await closeAt(exit.price,exit.reason,{exitBarTime:bar.time,exitSource:'completed_bar'}); return; }
         position.last_checked_bar_time=bar.time;
       }
       if(bars.some(b=>timeValue(b.time)>cutoff)) await writeDurable({...state,position:{...position}},null);
