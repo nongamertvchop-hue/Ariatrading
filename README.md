@@ -58,6 +58,7 @@ The project is layered so every stage can be used together without duplicating s
 39. **Paper Trading Dashboard** — runtime lifecycle, balance/equity/P&L/drawdown, position, heartbeat, checkpoint status, event stream, equity curve, snapshot export, recovery controls, and explicit fault injection.
 40. **Massive Replay / Soak** — deterministic 10,000-bar replay harness with repeatability checks and both LONG/SHORT exit paths.
 41. **Failure Injection + Operational Review** — reproducible timeout, disconnect, reject, partial-fill, missing-position, duplicate-bar, out-of-order-bar, and checkpoint-corruption scenarios with a documented paper/demo release gate.
+42. **Production Bot 30-Component Contract** — explicit readiness map for Python, provider adapters, market data, realtime transport, secrets, deployment, persistence, rate limiting, strategy, backtesting, paper/demo, risk, exits, sizing, order semantics, observability, and Telegram alerting. MT5-first mappings are kept distinct from exchange-only concepts. See `docs/REAL_BOT_30_COMPONENTS.md`.
 
 ## Key modules
 
