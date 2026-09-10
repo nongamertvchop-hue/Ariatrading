@@ -14,8 +14,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install test runner
-        run: python -m pip install --upgrade pip pytest scikit-learn
+      - name: Install test runner and runtime dependencies
+        run: python -m pip install --upgrade pip pytest scikit-learn pandas
       - name: Download pinned real-market EURUSD 5m sample
         env:
           DATA_SHA: 665f2c90686b5a7fc5feb670ce2c3af9a3a060b8
