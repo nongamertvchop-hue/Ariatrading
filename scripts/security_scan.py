@@ -28,7 +28,7 @@ SKIP_PARTS = {".git", ".venv", "venv", "node_modules", "__pycache__"}
 
 def tracked_files() -> list[Path]:
     output = subprocess.check_output(["git", "ls-files", "-z"], text=False)
-    return [Path(raw) for raw in output.split(b"\0") if raw]
+    return [Path(raw.decode("utf-8")) for raw in output.split(b"\0") if raw]
 
 
 def looks_like_placeholder(value: str) -> bool:
