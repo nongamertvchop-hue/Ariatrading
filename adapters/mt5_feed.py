@@ -37,7 +37,7 @@ def _require_mt5() -> None:
 
 
 class MT5BarFeed:
-    """Read completed OHLC bars from a connected MetaTrader 5 terminal."""
+    """Read completed and forming OHLC bars from a connected MT5 terminal."""
 
     def __init__(
         self,
@@ -67,34 +67,47 @@ class MT5BarFeed:
         if self._manage_connection:
             self.mt5.shutdown()
 
+    def _timeframe(self, timeframe: str) -> Any:
+        if self.mt5 is None:
+            _require_mt5()
+        try:
+            return getattr(self.mt5, _TIMEFRAME_MAP[timeframe])
+        except KeyError as exc:
+            raise ValueError(f"unsupported timeframe: {timeframe}") from exc
+
+    @staticmethod
+    def _bar(row: Any) -> LiveBar:
+        return LiveBar(
+            time=datetime.fromtimestamp(int(row["time"]), tz=timezone.utc),
+            open=float(row["open"]),
+            high=float(row["high"]),
+            low=float(row["low"]),
+            close=float(row["close"]),
+        )
+
     def closed_bars(self, symbol: str, timeframe: str, count: int) -> list[LiveBar]:
         """Return only completed candles; the forming bar is excluded."""
         if self.mt5 is None:
             _require_mt5()
-        if timeframe not in _TIMEFRAME_MAP:
-            raise ValueError(f"unsupported timeframe: {timeframe}")
         if count < 1:
             raise ValueError("count must be positive")
 
-        tf = getattr(self.mt5, _TIMEFRAME_MAP[timeframe])
-        rates = self.mt5.copy_rates_from_pos(symbol, tf, 1, count)
+        rates = self.mt5.copy_rates_from_pos(symbol, self._timeframe(timeframe), 1, count)
         if rates is None:
             raise RuntimeError(f"MT5 rates request failed: {self.mt5.last_error()}")
 
-        bars = []
-        for row in rates:
-            ts = datetime.fromtimestamp(int(row["time"]), tz=timezone.utc)
-            bars.append(
-                LiveBar(
-                    time=ts,
-                    open=float(row["open"]),
-                    high=float(row["high"]),
-                    low=float(row["low"]),
-                    close=float(row["close"]),
-                )
-            )
+        bars = [self._bar(row) for row in rates]
         bars.sort(key=lambda b: b.time)
         return bars
+
+    def current_bar(self, symbol: str, timeframe: str) -> LiveBar:
+        """Return the currently forming candle for chart display only."""
+        if self.mt5 is None:
+            _require_mt5()
+        rates = self.mt5.copy_rates_from_pos(symbol, self._timeframe(timeframe), 0, 1)
+        if rates is None or len(rates) != 1:
+            raise RuntimeError(f"MT5 current bar request failed: {self.mt5.last_error()}")
+        return self._bar(rates[0])
 
     def last_tick(self, symbol: str) -> dict:
         """Return the latest tick for monitoring only; no order functionality."""
