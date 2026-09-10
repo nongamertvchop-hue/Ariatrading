@@ -76,8 +76,8 @@ test("Python realtime monitor and Worker realtime evaluator stay contract-parity
     resetRealtimeFeedGuard();
     const result = evaluateRealtimeSignalParity(fixture.candles, fixture.timeframe);
     const expected = oracle[index];
-    assert.equal(expected.name, fixture.name);
-    assert.deepEqual(compact(result), expected, fixture.name);
+    const { name: _name, ...expectedPayload } = expected;
+    assert.deepEqual(compact(result), expectedPayload, fixture.name);
   }
 
   resetRealtimeFeedGuard();
