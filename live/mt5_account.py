@@ -3,37 +3,31 @@
 The strategy must never infer whether the connected terminal is demo or real.
 The terminal is the source of truth, and a mismatch is a hard execution stop.
 
-LIVE execution is additionally disabled by default. It requires an explicit
-operator opt-in in the process environment so a copied command, stale config,
-or accidental mode change cannot silently reach a real account.
+LIVE execution additionally requires the Stage 1 deployment policy: explicit
+operator opt-in, exact account/server allowlisting, and a narrow execution
+profile. The production policy is intentionally separate from strategy logic.
 """
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
-
-_LIVE_OPT_IN_ENV = "ARIATRADING_ENABLE_LIVE"
-_LIVE_OPT_IN_VALUE = "I_UNDERSTAND_REAL_ORDERS"
+from live.production_stage1 import ProductionStage1Policy
 
 
 def validate_account_mode(mt5_module: Any, execution_mode: str) -> tuple[bool, str]:
-    """Verify the connected MT5 account type matches the requested execution mode.
-
-    MetaTrader 5 exposes the account trade mode through account_info().trade_mode.
-    The MQL5 enum values are DEMO=0, CONTEST=1, REAL=2. We read package constants
-    when available and use those documented enum values as compatibility fallbacks.
-
-    A real-account execution request also requires an explicit process-level
-    opt-in. This is intentionally independent of the broker account check.
-    """
+    """Verify the connected MT5 account type matches the requested execution mode."""
     mode = str(execution_mode).strip().upper()
     if mode not in {"DEMO", "LIVE"}:
         return True, "account mode is not applicable"
 
-    if mode == "LIVE" and os.environ.get(_LIVE_OPT_IN_ENV) != _LIVE_OPT_IN_VALUE:
-        return False, "LIVE execution is disabled by default; explicit operator opt-in is required"
+    if mode == "LIVE":
+        try:
+            policy = ProductionStage1Policy.from_env()
+        except RuntimeError as exc:
+            return False, str(exc)
+    else:
+        policy = None
 
     info = mt5_module.account_info()
     if info is None:
@@ -53,5 +47,11 @@ def validate_account_mode(mt5_module: Any, execution_mode: str) -> tuple[bool, s
         return False, "MT5 account does not allow trading"
     if not bool(getattr(info, "trade_expert", False)):
         return False, "MT5 Expert Advisor trading is disabled for this account"
+
+    if policy is not None:
+        try:
+            policy.validate_account_identity(info)
+        except RuntimeError as exc:
+            return False, str(exc)
 
     return True, f"account mode verified: {mode}"
