@@ -105,31 +105,31 @@ class PaperRuntimeEngine:
         self.events: list[RuntimeEvent] = []
         self._sequence = 0
         self._pending_order: dict | None = None
+        self._exit_levels: dict | None = None
 
     def start(self) -> RuntimeResult:
         if self.lifecycle is RuntimeLifecycle.HALT:
-            return self._result(False, "HALT", "runtime is halted; recover before start")
+            return self._emit(False, "HALT", "runtime is halted; recover before start")
         self.running = True
-        return self._result(True, "START", "continuous paper runtime started")
+        return self._emit(True, "START", "continuous paper runtime started")
 
     def stop(self) -> RuntimeResult:
         self.running = False
-        self.persist()
-        return self._result(True, "STOP", "continuous paper runtime stopped")
+        return self._emit(True, "STOP", "continuous paper runtime stopped")
 
     def set_failure_mode(self, mode: FailureMode) -> None:
         self.failure_mode = FailureMode(mode)
-        self.persist()
+        self._safe_persist()
 
     def process_bar(self, bar: RuntimeBar, signal: RuntimeSignal | dict | None = None) -> RuntimeResult:
         bar.validate()
         if not self.running:
-            return self._result(False, "NOOP", "runtime is not running")
+            return self._emit(False, "NOOP", "runtime is not running")
         if self.lifecycle is RuntimeLifecycle.HALT:
-            return self._result(False, "HALT", self.halt_reason)
+            return self._emit(False, "HALT", self.halt_reason)
         if self.last_processed_bar_time is not None:
             if bar.time == self.last_processed_bar_time:
-                return self._result(True, "NO_UPDATE", "duplicate completed bar ignored")
+                return self._emit(True, "NO_UPDATE", "duplicate completed bar ignored")
             if bar.time < self.last_processed_bar_time:
                 return self._halt("out-of-order completed bar rejected")
 
@@ -137,18 +137,17 @@ class PaperRuntimeEngine:
         if self.failure_mode is FailureMode.DISAPPEAR_POSITION and self.account.position is not None:
             return self._halt("broker position disappeared during reconciliation")
 
-        # Always mark to market before making a new decision.
         self.account.mark(price=bar.close, bar_time=bar.time)
 
-        if self.account.position is not None:
-            exit_reason = self._exit_reason(bar)
+        if self.account.position is not None and self._exit_levels is not None:
+            exit_reason = self._check_exit(bar)
             if exit_reason is not None:
-                position = self.account.position
                 trade = self.account.close_position(exit_price=exit_reason[0], bar_time=bar.time)
+                self._exit_levels = None
                 self.lifecycle = RuntimeLifecycle.FLAT
                 self.last_processed_bar_time = bar.time
-                self.persist()
-                return self._result(True, "CLOSED", exit_reason[1], pnl=trade.net_pnl)
+                self._safe_persist()
+                return self._emit(True, "CLOSED", exit_reason[1], pnl=trade.net_pnl)
 
         if self.account.position is None:
             normalized = self._normalize_signal(signal)
@@ -156,11 +155,11 @@ class PaperRuntimeEngine:
                 return self._enter(bar, normalized)
 
         self.last_processed_bar_time = bar.time
-        self.persist()
-        return self._result(True, "NO_UPDATE", "no executable setup on completed bar")
+        self._safe_persist()
+        return self._emit(True, "NO_UPDATE", "no executable setup on completed bar")
 
     def recover(self) -> RuntimeResult:
-        """Reload the last checkpoint and fail closed on corruption."""
+        """Reload checkpoint; corruption or unresolved execution always halts."""
         try:
             payload = load_checkpoint(self.checkpoint_path)
             self._restore(payload)
@@ -168,24 +167,18 @@ class PaperRuntimeEngine:
             self.running = False
             self.lifecycle = RuntimeLifecycle.HALT
             self.halt_reason = f"checkpoint recovery failed: {exc}"
-            return self._result(False, "HALT", self.halt_reason)
+            return self._emit_no_persist(False, "HALT", self.halt_reason)
 
         if self._pending_order is not None:
-            # A paper runtime has no safe source of truth outside its simulator.
-            # Unknown/pending execution must never be silently promoted to filled.
             self.running = False
             self.lifecycle = RuntimeLifecycle.HALT
             self.halt_reason = "pending paper order requires explicit reconciliation after restart"
-            return self._result(False, "HALT", self.halt_reason)
+            return self._emit_no_persist(False, "HALT", self.halt_reason)
 
-        if self.account.position is None:
-            self.lifecycle = RuntimeLifecycle.FLAT
-        else:
-            self.lifecycle = RuntimeLifecycle.OPEN
+        self.lifecycle = RuntimeLifecycle.OPEN if self.account.position is not None else RuntimeLifecycle.FLAT
         self.halt_reason = ""
         self.running = False
-        self.persist()
-        return self._result(True, "RECOVERED", "checkpoint and account state restored")
+        return self._emit(True, "RECOVERED", "checkpoint and account state restored")
 
     def persist(self) -> None:
         payload = {
@@ -199,6 +192,7 @@ class PaperRuntimeEngine:
             "failure_mode": self.failure_mode.value,
             "account": self.account.export_state(),
             "pending_order": self._pending_order,
+            "exit_levels": self._exit_levels,
             "events": [asdict(event) for event in self.events[-500:]],
             "sequence": self._sequence,
         }
@@ -207,44 +201,48 @@ class PaperRuntimeEngine:
     def _enter(self, bar: RuntimeBar, signal: RuntimeSignal) -> RuntimeResult:
         if signal.entry is None or signal.stop is None or signal.entry <= 0 or signal.stop <= 0 or signal.entry == signal.stop:
             self.last_processed_bar_time = bar.time
-            self.persist()
-            return self._result(False, "FLAT", "invalid paper entry/stop references")
+            self._safe_persist()
+            return self._emit(False, "FLAT", "invalid paper entry/stop references")
+        if signal.action not in {"LONG", "SHORT"}:
+            return self._emit(False, "FLAT", "unsupported paper direction")
 
         risk_distance = abs(signal.entry - signal.stop)
         quantity = (self.account.balance * self.risk_fraction) / risk_distance
         if not isfinite(quantity) or quantity <= 0:
             return self._halt("risk sizing produced an invalid paper quantity")
         quantity = round(quantity, 6)
-
         order_id = f"paper-{signal.action.lower()}-{bar.time}"
         self._pending_order = {"order_id": order_id, "bar_time": bar.time, "side": signal.action, "quantity": quantity, "entry": signal.entry}
         self.lifecycle = RuntimeLifecycle.UNKNOWN if self.failure_mode in {
             FailureMode.TIMEOUT_AFTER_ACCEPT,
             FailureMode.DISCONNECT_BEFORE_SUBMIT,
         } else RuntimeLifecycle.FLAT
-        self.persist()
+        self._safe_persist()
 
         if self.failure_mode is FailureMode.DISCONNECT_BEFORE_SUBMIT:
             return self._halt("submission boundary disconnected before broker acceptance")
         if self.failure_mode is FailureMode.TIMEOUT_AFTER_ACCEPT:
-            # Persist the accepted-but-unconfirmed state and stop. Recovery must reconcile,
-            # never assume that an accepted response means a fill.
             return self._halt("response lost after paper acceptance; recovery required")
         if self.failure_mode is FailureMode.REJECT:
             self._pending_order = None
             self.lifecycle = RuntimeLifecycle.FLAT
             self.last_processed_bar_time = bar.time
-            self.persist()
-            return self._result(True, "REJECTED", "paper broker rejected order", order_id=order_id)
+            self._safe_persist()
+            return self._emit(True, "REJECTED", "paper broker rejected order", order_id=order_id)
         if self.failure_mode is FailureMode.PARTIAL_FILL:
             return self._halt("partial paper fill requires explicit reconciliation")
 
         self._pending_order = None
         self.account.open_position(symbol="EURUSD", side=signal.action, quantity=quantity, entry_price=signal.entry, bar_time=bar.time)
+        self._exit_levels = {
+            "side": signal.action,
+            "stop": float(signal.stop),
+            "target": float(signal.entry + 2 * risk_distance) if signal.action == "LONG" else float(signal.entry - 2 * risk_distance),
+        }
         self.lifecycle = RuntimeLifecycle.OPEN
         self.last_processed_bar_time = bar.time
-        self.persist()
-        return self._result(True, "OPEN", "paper order filled and position reconciled", order_id=order_id)
+        self._safe_persist()
+        return self._emit(True, "OPEN", "paper order filled and position reconciled", order_id=order_id)
 
     @staticmethod
     def _normalize_signal(signal: RuntimeSignal | dict | None) -> RuntimeSignal:
@@ -262,33 +260,68 @@ class PaperRuntimeEngine:
             )
         raise TypeError("signal must be RuntimeSignal, dict or None")
 
-    @staticmethod
-    def _exit_reason(bar: RuntimeBar) -> tuple[float, str] | None:
-        # Exit levels are stored by the strategy/runtime caller in a minimal form.
-        # The runtime engine only provides deterministic bar-level handling when
-        # explicit levels exist on the current position object.
+    def _check_exit(self, bar: RuntimeBar) -> tuple[float, str] | None:
+        levels = self._exit_levels
+        if levels is None or self.account.position is None:
+            return None
+        side = levels["side"]
+        stop = float(levels["stop"])
+        target = float(levels["target"])
+        if side == "LONG":
+            if bar.low <= stop:
+                return stop, "stop loss"
+            if bar.high >= target:
+                return target, "take profit"
+        else:
+            if bar.high >= stop:
+                return stop, "stop loss"
+            if bar.low <= target:
+                return target, "take profit"
         return None
 
     def _halt(self, reason: str) -> RuntimeResult:
         self.running = False
         self.lifecycle = RuntimeLifecycle.HALT
         self.halt_reason = reason
-        self.persist()
-        return self._result(False, "HALT", reason)
+        self._safe_persist()
+        return self._emit_no_persist(False, "HALT", reason)
 
-    def _result(self, event_type: str, lifecycle: str, reason: str, *, order_id: str | None = None, pnl: float | None = None) -> RuntimeResult:
+    def _emit(self, accepted: bool, event_type: str, reason: str, *, order_id: str | None = None, pnl: float | None = None) -> RuntimeResult:
+        event = self._new_event(event_type, reason, order_id=order_id, pnl=pnl)
+        self._safe_persist()
+        return RuntimeResult(accepted, self._lifecycle_for_event(event_type), reason, event)
+
+    def _emit_no_persist(self, accepted: bool, event_type: str, reason: str, *, order_id: str | None = None, pnl: float | None = None) -> RuntimeResult:
+        event = self._new_event(event_type, reason, order_id=order_id, pnl=pnl)
+        return RuntimeResult(accepted, self._lifecycle_for_event(event_type), reason, event)
+
+    def _new_event(self, event_type: str, reason: str, *, order_id: str | None = None, pnl: float | None = None) -> RuntimeEvent:
         self._sequence += 1
-        event = RuntimeEvent(self._sequence, event_type, lifecycle, self.last_bar_time, reason, order_id, pnl)
+        event = RuntimeEvent(self._sequence, event_type, self.lifecycle.value, self.last_bar_time, reason, order_id, pnl)
         self.events.append(event)
         self.events = self.events[-500:]
-        if event_type not in {"HALT", "NOOP"}:
-            try:
-                self.persist()
-            except PaperCheckpointError:
-                self.running = False
-                self.lifecycle = RuntimeLifecycle.HALT
-                self.halt_reason = "runtime checkpoint persistence failed"
-        return RuntimeResult(event_type not in {"HALT", "NOOP"} or lifecycle == "START", RuntimeLifecycle(lifecycle) if lifecycle in RuntimeLifecycle._value2member_map_ else self.lifecycle, reason, event)
+        return event
+
+    def _safe_persist(self) -> None:
+        try:
+            self.persist()
+        except PaperCheckpointError:
+            self.running = False
+            self.lifecycle = RuntimeLifecycle.HALT
+            self.halt_reason = "runtime checkpoint persistence failed"
+
+    def _lifecycle_for_event(self, event_type: str) -> RuntimeLifecycle:
+        if event_type == "START":
+            return self.lifecycle
+        if event_type == "OPEN":
+            return RuntimeLifecycle.OPEN
+        if event_type == "CLOSED" or event_type == "REJECTED" or event_type == "NO_UPDATE":
+            return self.lifecycle
+        if event_type == "HALT":
+            return RuntimeLifecycle.HALT
+        if event_type == "RECOVERED":
+            return self.lifecycle
+        return self.lifecycle
 
     def _restore(self, payload: dict) -> None:
         if payload.get("version") != 1:
@@ -302,16 +335,9 @@ class PaperRuntimeEngine:
         self.failure_mode = FailureMode(payload.get("failure_mode", FailureMode.NONE.value))
         self.account = PaperAccounting.from_state(payload["account"])
         self._pending_order = payload.get("pending_order")
+        self._exit_levels = payload.get("exit_levels")
         self.events = [RuntimeEvent(**event) for event in payload.get("events", [])]
         self._sequence = int(payload.get("sequence", 0))
 
 
-__all__ = [
-    "RuntimeLifecycle",
-    "FailureMode",
-    "RuntimeBar",
-    "RuntimeSignal",
-    "RuntimeEvent",
-    "RuntimeResult",
-    "PaperRuntimeEngine",
-]
+__all__ = ["RuntimeLifecycle", "FailureMode", "RuntimeBar", "RuntimeSignal", "RuntimeEvent", "RuntimeResult", "PaperRuntimeEngine"]
