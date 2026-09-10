@@ -1,0 +1,10 @@
+# Production runtime/tooling for the 30-component bot implementation.
+# MT5 is the authoritative Forex provider; ccxt remains optional for other venues.
+MetaTrader5>=5.0.29
+pandas>=2.2,<3
+TA-Lib
+ccxt>=4,<5
+redis>=5,<7
+fastapi>=0.110,<1
+uvicorn[standard]>=0.29,<1
+python-dotenv>=1,<2
