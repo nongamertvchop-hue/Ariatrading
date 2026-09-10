@@ -22,6 +22,7 @@ class BodyguardConfig:
     max_lot_size: float = 1.0
     max_signal_age: timedelta = timedelta(minutes=5)
     allowed_symbols: frozenset[str] | None = None
+    halted: bool = False
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,7 @@ class SafetyRequest:
     stop_loss: float
     lot_size: float
     signal_time: datetime
+    take_profit: float | None = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,9 @@ class Bodyguard:
 
     def check(self, request: SafetyRequest, *, now: datetime | None = None) -> SafetyDecision:
         """Validate a request without performing any external side effects."""
+        if self.config.halted:
+            return SafetyDecision(False, "Bodyguard kill switch is active")
+
         try:
             mode = request.mode.strip().upper()
             symbol = request.symbol.strip().upper()
@@ -71,8 +76,10 @@ class Bodyguard:
             return SafetyDecision(False, "symbol is not allowlisted")
 
         numeric_values = (request.entry, request.stop_loss, request.lot_size)
+        if request.take_profit is not None:
+            numeric_values += (request.take_profit,)
         if not all(isinstance(value, (int, float)) and math.isfinite(float(value)) for value in numeric_values):
-            return SafetyDecision(False, "entry, stop loss, and lot size must be finite numbers")
+            return SafetyDecision(False, "prices and lot size must be finite numbers")
         if request.entry <= 0 or request.stop_loss <= 0:
             return SafetyDecision(False, "entry and stop loss must be positive")
         if request.lot_size <= 0:
@@ -84,6 +91,14 @@ class Bodyguard:
             return SafetyDecision(False, "LONG stop loss must be below entry")
         if direction == "SHORT" and request.stop_loss <= request.entry:
             return SafetyDecision(False, "SHORT stop loss must be above entry")
+
+        if request.take_profit is not None:
+            if request.take_profit <= 0:
+                return SafetyDecision(False, "take profit must be positive")
+            if direction == "LONG" and request.take_profit <= request.entry:
+                return SafetyDecision(False, "LONG take profit must be above entry")
+            if direction == "SHORT" and request.take_profit >= request.entry:
+                return SafetyDecision(False, "SHORT take profit must be below entry")
 
         if request.signal_time.tzinfo is None:
             return SafetyDecision(False, "signal time must be timezone-aware")
