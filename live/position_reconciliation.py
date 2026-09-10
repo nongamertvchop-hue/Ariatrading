@@ -76,10 +76,13 @@ def reconcile(
         else:
             reasons.append(f"multiple broker positions match intent {intent.get('intent_id', '<unknown>')}")
 
-    if any("malformed" in reason for reason in reasons):
-        state = ReconciliationState.AMBIGUOUS
-    elif any("no broker" in reason or "multiple broker" in reason or "duplicate" in reason for reason in reasons):
-        state = ReconciliationState.MISMATCH
+    if reasons:
+        if any("malformed" in reason for reason in reasons):
+            state = ReconciliationState.AMBIGUOUS
+        else:
+            state = ReconciliationState.MISMATCH
+    elif matched == len(active):
+        state = ReconciliationState.CLEAN
     else:
         state = ReconciliationState.UNFINISHED
     return ReconciliationReport(state, tuple(reasons), matched, len(observed))
