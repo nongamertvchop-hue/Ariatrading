@@ -51,10 +51,10 @@ class ForexSymbolContract:
 class ForexRiskLimits:
     """Hard risk limits for Forex execution."""
 
-    risk_per_trade_fraction: float = 0.01  # 1% per trade
-    max_daily_loss_fraction: float = 0.03   # 3% daily drawdown stop
+    risk_per_trade_fraction: float = 0.01
+    max_daily_loss_fraction: float = 0.03
     max_open_positions: int = 3
-    max_positions_per_currency: int = 2     # Max positions sharing a currency (e.g. USD)
+    max_positions_per_currency: int = 2
 
     def __post_init__(self) -> None:
         if not 0.0 < self.risk_per_trade_fraction <= 1.0:
@@ -139,7 +139,6 @@ def calculate_forex_lot_size(
         return 0.0
 
     raw_lots = risk_budget / risk_per_lot
-    # Floor to volume_step with epsilon to avoid float representation artifacts
     step = contract.volume_step
     num_steps = int((raw_lots + 1e-9) / step)
     floored_lots = num_steps * step
@@ -161,17 +160,20 @@ def evaluate_forex_risk(
         return ForexRiskDecision(False, "equity must be > 0")
     if daily_realized_loss >= equity * limits.max_daily_loss_fraction:
         return ForexRiskDecision(False, f"daily loss limit reached ({daily_realized_loss:.2f} >= {equity * limits.max_daily_loss_fraction:.2f})")
+
+    normalized_symbol = contract.symbol.strip().upper()
+    if any(str(sym).strip().upper() == normalized_symbol for sym in active_symbols):
+        return ForexRiskDecision(False, f"position already open for {normalized_symbol}")
+
     if len(active_symbols) >= limits.max_open_positions:
         return ForexRiskDecision(False, f"maximum open positions reached ({len(active_symbols)} >= {limits.max_open_positions})")
 
-    # Currency exposure
     exp_ok, exp_reason = check_currency_exposure(contract.symbol, active_symbols, limits.max_positions_per_currency)
     if not exp_ok:
         return ForexRiskDecision(False, exp_reason)
 
     price_dist = abs(entry - stop)
     sl_points = price_dist / contract.point
-    # For 5-digit and 3-digit broker quotes, 1 pip = 10 points
     sl_pips = sl_points / 10.0 if contract.digits in {3, 5} else sl_points
 
     lots = calculate_forex_lot_size(
