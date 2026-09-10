@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+import strategy.multitimeframe_runner as multitimeframe_runner
 from strategy.multitimeframe_runner import run_multitimeframe_research
 from strategy.timeframe import SUPPORTED_TIMEFRAMES
 
@@ -109,3 +110,24 @@ def test_runner_rejects_non_datetime_candle_time():
             history_bars=40,
             test_bars=10,
         )
+
+
+def test_runner_does_not_backtest_before_all_feeds_validate(monkeypatch):
+    dataset = make_dataset()
+    dataset["1D"][5]["high"] = dataset["1D"][5]["low"] - 0.1
+    calls = []
+
+    def unexpected_backtest(*args, **kwargs):
+        calls.append(args[1])
+        raise AssertionError("backtest executed before feed validation completed")
+
+    monkeypatch.setattr(multitimeframe_runner, "walk_forward_backtest", unexpected_backtest)
+
+    with pytest.raises(ValueError, match="feed integrity failed for 1D"):
+        run_multitimeframe_research(
+            dataset,
+            history_bars=40,
+            test_bars=10,
+        )
+
+    assert calls == []
