@@ -71,7 +71,7 @@ def test_runtime_preflight_blocks_unreconciled_journal(tmp_path):
         orchestrator=_Orchestrator(), feed=_Feed(datetime.now(timezone.utc)),
         executor=_Executor(datetime.now(timezone.utc)), journal=journal,
     )
-    with pytest.raises(RuntimeError, match="unreconciled"):
+    with pytest.raises(RuntimeError, match="reconciliation blocked"):
         runtime.preflight()
 
 
