@@ -36,10 +36,7 @@ async function resolveApi(request,env,ctx,pathname){
   }
   if(pathname==="/api/market"){
     const id=env.MT5_MARKET.idFromName("market");
-    const mt5=await env.MT5_MARKET.get(id).fetch(request);
-    if(mt5.ok)return mt5;
-    if(env.TWELVE_DATA_API_KEY)return marketRequest({request,env,ctx});
-    return mt5;
+    return env.MT5_MARKET.get(id).fetch(request);
   }
   if(!env.TWELVE_DATA_API_KEY){if(pathname==="/api/signal")return fallbackSignalResponse(request);if(pathname==="/api/price")return fallbackPriceResponse(request);if(pathname==="/api/live-candle")return fallbackCandleResponse(request);}
   if(pathname==="/api/signal")return handleSignalParityV2(request,env);
