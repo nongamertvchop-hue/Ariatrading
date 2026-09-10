@@ -30,6 +30,11 @@ def make_dataset():
     return {timeframe: make_candles(minutes) for timeframe, minutes in durations.items()}
 
 
+def add_gap(candles, start_index: int, gap: timedelta):
+    for index in range(start_index, len(candles)):
+        candles[index]["time"] += gap
+
+
 def test_runner_validates_all_supported_timeframes():
     result = run_multitimeframe_research(
         make_dataset(),
@@ -69,7 +74,7 @@ def test_runner_rejects_out_of_order_bars():
 
 def test_runner_allows_weekend_like_gaps_by_default():
     dataset = make_dataset()
-    dataset["15m"][20]["time"] += timedelta(hours=1)
+    add_gap(dataset["15m"], 20, timedelta(hours=1))
 
     # The structural feed is still chronological; default research mode does not
     # require every interval because FX feeds can contain legitimate session gaps.
@@ -83,7 +88,7 @@ def test_runner_allows_weekend_like_gaps_by_default():
 
 def test_runner_can_require_contiguous_feed():
     dataset = make_dataset()
-    dataset["15m"][20]["time"] += timedelta(hours=1)
+    add_gap(dataset["15m"], 20, timedelta(hours=1))
 
     with pytest.raises(ValueError, match="feed integrity failed for 15m"):
         run_multitimeframe_research(
