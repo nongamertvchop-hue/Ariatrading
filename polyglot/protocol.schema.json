@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ariatrading.local/polyglot/protocol.schema.json",
+  "title": "Ariatrading Polyglot Verification Message",
+  "type": "object",
+  "required": ["schema_version", "request_id", "task", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "request_id": {"type": "string", "minLength": 8, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$"},
+    "task": {"type": "string", "enum": ["validate_market_snapshot", "validate_signal", "validate_risk_plan", "research_metric", "deterministic_replay"]},
+    "payload": {"type": "object", "additionalProperties": true}
+  }
+}
