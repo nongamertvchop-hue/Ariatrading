@@ -100,14 +100,7 @@ def _time_key(value: str) -> float:
 class PaperRuntimeEngine:
     """Stateful continuous paper runtime with durable restart recovery."""
 
-    def __init__(
-        self,
-        *,
-        checkpoint_path: str | Path,
-        initial_balance: float = 10_000.0,
-        risk_fraction: float = 0.01,
-        fee_per_unit: float = 0.0,
-    ) -> None:
+    def __init__(self, *, checkpoint_path: str | Path, initial_balance: float = 10_000.0, risk_fraction: float = 0.01, fee_per_unit: float = 0.0) -> None:
         if not 0 < risk_fraction <= 1:
             raise ValueError("risk_fraction must be in (0, 1]")
         self.checkpoint_path = Path(checkpoint_path)
@@ -144,7 +137,6 @@ class PaperRuntimeEngine:
             return self._emit(False, "NOOP", "runtime is not running")
         if self.lifecycle is RuntimeLifecycle.HALT:
             return self._emit(False, "HALT", self.halt_reason)
-
         current_key = _time_key(bar.time)
         if self.last_processed_bar_time is not None:
             last_key = _time_key(self.last_processed_bar_time)
@@ -158,7 +150,6 @@ class PaperRuntimeEngine:
             return self._halt("broker position disappeared during reconciliation")
 
         self.account.mark(price=bar.close, bar_time=bar.time)
-
         if self.account.position is not None and self._exit_levels is not None:
             exit_reason = self._check_exit(bar)
             if exit_reason is not None:
@@ -166,7 +157,6 @@ class PaperRuntimeEngine:
                 self._exit_levels = None
                 self.lifecycle = RuntimeLifecycle.FLAT
                 self.last_processed_bar_time = bar.time
-                self._safe_persist()
                 return self._emit(True, "CLOSED", exit_reason[1], pnl=trade.net_pnl)
 
         if self.account.position is None:
@@ -175,11 +165,9 @@ class PaperRuntimeEngine:
                 return self._enter(bar, normalized)
 
         self.last_processed_bar_time = bar.time
-        self._safe_persist()
         return self._emit(True, "NO_UPDATE", "no executable setup on completed bar")
 
     def recover(self) -> RuntimeResult:
-        """Reload checkpoint; corruption or unresolved execution always halts."""
         try:
             payload = load_checkpoint(self.checkpoint_path)
             self._restore(payload)
@@ -188,13 +176,11 @@ class PaperRuntimeEngine:
             self.lifecycle = RuntimeLifecycle.HALT
             self.halt_reason = f"checkpoint recovery failed: {exc}"
             return self._emit_no_persist(False, "HALT", self.halt_reason)
-
         if self._pending_order is not None:
             self.running = False
             self.lifecycle = RuntimeLifecycle.HALT
             self.halt_reason = "pending paper order requires explicit reconciliation after restart"
             return self._emit_no_persist(False, "HALT", self.halt_reason)
-
         self.lifecycle = RuntimeLifecycle.OPEN if self.account.position is not None else RuntimeLifecycle.FLAT
         self.halt_reason = ""
         self.running = False
@@ -221,11 +207,9 @@ class PaperRuntimeEngine:
     def _enter(self, bar: RuntimeBar, signal: RuntimeSignal) -> RuntimeResult:
         if signal.entry is None or signal.stop is None or signal.entry <= 0 or signal.stop <= 0 or signal.entry == signal.stop:
             self.last_processed_bar_time = bar.time
-            self._safe_persist()
             return self._emit(False, "FLAT", "invalid paper entry/stop references")
         if signal.action not in {"LONG", "SHORT"}:
             return self._emit(False, "FLAT", "unsupported paper direction")
-
         risk_distance = abs(signal.entry - signal.stop)
         quantity = (self.account.balance * self.risk_fraction) / risk_distance
         if not isfinite(quantity) or quantity <= 0:
@@ -233,12 +217,8 @@ class PaperRuntimeEngine:
         quantity = round(quantity, 6)
         order_id = f"paper-{signal.action.lower()}-{bar.time}"
         self._pending_order = {"order_id": order_id, "bar_time": bar.time, "side": signal.action, "quantity": quantity, "entry": signal.entry}
-        self.lifecycle = RuntimeLifecycle.UNKNOWN if self.failure_mode in {
-            FailureMode.TIMEOUT_AFTER_ACCEPT,
-            FailureMode.DISCONNECT_BEFORE_SUBMIT,
-        } else RuntimeLifecycle.FLAT
+        self.lifecycle = RuntimeLifecycle.UNKNOWN if self.failure_mode in {FailureMode.TIMEOUT_AFTER_ACCEPT, FailureMode.DISCONNECT_BEFORE_SUBMIT} else RuntimeLifecycle.FLAT
         self._safe_persist()
-
         if self.failure_mode is FailureMode.DISCONNECT_BEFORE_SUBMIT:
             return self._halt("submission boundary disconnected before broker acceptance")
         if self.failure_mode is FailureMode.TIMEOUT_AFTER_ACCEPT:
@@ -247,21 +227,15 @@ class PaperRuntimeEngine:
             self._pending_order = None
             self.lifecycle = RuntimeLifecycle.FLAT
             self.last_processed_bar_time = bar.time
-            self._safe_persist()
             return self._emit(True, "REJECTED", "paper broker rejected order", order_id=order_id)
         if self.failure_mode is FailureMode.PARTIAL_FILL:
             return self._halt("partial paper fill requires explicit reconciliation")
 
         self._pending_order = None
         self.account.open_position(symbol="EURUSD", side=signal.action, quantity=quantity, entry_price=signal.entry, bar_time=bar.time)
-        self._exit_levels = {
-            "side": signal.action,
-            "stop": float(signal.stop),
-            "target": float(signal.entry + 2 * risk_distance) if signal.action == "LONG" else float(signal.entry - 2 * risk_distance),
-        }
+        self._exit_levels = {"side": signal.action, "stop": float(signal.stop), "target": float(signal.entry + 2 * risk_distance) if signal.action == "LONG" else float(signal.entry - 2 * risk_distance)}
         self.lifecycle = RuntimeLifecycle.OPEN
         self.last_processed_bar_time = bar.time
-        self._safe_persist()
         return self._emit(True, "OPEN", "paper order filled and position reconciled", order_id=order_id)
 
     @staticmethod
@@ -271,13 +245,7 @@ class PaperRuntimeEngine:
         if isinstance(signal, RuntimeSignal):
             return signal
         if isinstance(signal, dict):
-            return RuntimeSignal(
-                action=str(signal.get("action", signal.get("signal", "WAIT"))),
-                entry=signal.get("entry", signal.get("entry_reference")),
-                stop=signal.get("stop", signal.get("stop_reference")),
-                reason=str(signal.get("reason", "")),
-                score=signal.get("score"),
-            )
+            return RuntimeSignal(action=str(signal.get("action", signal.get("signal", "WAIT"))), entry=signal.get("entry", signal.get("entry_reference")), stop=signal.get("stop", signal.get("stop_reference")), reason=str(signal.get("reason", "")), score=signal.get("score"))
         raise TypeError("signal must be RuntimeSignal, dict or None")
 
     def _check_exit(self, bar: RuntimeBar) -> tuple[float, str] | None:
@@ -309,11 +277,11 @@ class PaperRuntimeEngine:
     def _emit(self, accepted: bool, event_type: str, reason: str, *, order_id: str | None = None, pnl: float | None = None) -> RuntimeResult:
         event = self._new_event(event_type, reason, order_id=order_id, pnl=pnl)
         self._safe_persist()
-        return RuntimeResult(accepted, self._lifecycle_for_event(event_type), reason, event)
+        return RuntimeResult(accepted, self.lifecycle, reason, event)
 
     def _emit_no_persist(self, accepted: bool, event_type: str, reason: str, *, order_id: str | None = None, pnl: float | None = None) -> RuntimeResult:
         event = self._new_event(event_type, reason, order_id=order_id, pnl=pnl)
-        return RuntimeResult(accepted, self._lifecycle_for_event(event_type), reason, event)
+        return RuntimeResult(accepted, self.lifecycle, reason, event)
 
     def _new_event(self, event_type: str, reason: str, *, order_id: str | None = None, pnl: float | None = None) -> RuntimeEvent:
         self._sequence += 1
@@ -329,14 +297,6 @@ class PaperRuntimeEngine:
             self.running = False
             self.lifecycle = RuntimeLifecycle.HALT
             self.halt_reason = "runtime checkpoint persistence failed"
-
-    @staticmethod
-    def _lifecycle_for_event(event_type: str) -> RuntimeLifecycle:
-        mapping = {
-            "OPEN": RuntimeLifecycle.OPEN,
-            "HALT": RuntimeLifecycle.HALT,
-        }
-        return mapping.get(event_type, RuntimeLifecycle.FLAT)
 
     def _restore(self, payload: dict) -> None:
         if payload.get("version") != 1:
