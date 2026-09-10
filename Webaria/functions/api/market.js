@@ -1,92 +1,128 @@
-// functions/api/market.js
-//
-// Cloudflare Pages Function — runs on the server every time the page calls
-// fetch('/api/market'). Right now it returns realistic MOCK candle data so
-// the chart and signal panel have something to render immediately.
-//
-// ── NEXT STEPS (in order) ───────────────────────────────────────────────
-// 1. Replace `getCandles()` with a real fetch() to a forex OHLC data
-//    provider (e.g. one that gives M15 candles for EURUSD). Store the API
-//    key as a Cloudflare Pages environment variable (Settings → Environment
-//    variables) and read it here via `env.FOREX_API_KEY` — never hardcode
-//    a key in this file.
-// 2. Replace `computeSignal()` with the real strategy logic ported from
-//    the Ariatrading Python repo (structural bias, zone quality, candle
-//    pressure, setup scoring).
-// ──────────────────────────────────────────────────────────────────────
+// Canonical live market-data endpoint for the Webaria chart.
+// This endpoint never fabricates candles. Provider failure is surfaced as 503.
 
-const SYMBOL = 'EUR/USD';
-const TIMEFRAME = 'M15';
-const CANDLE_COUNT = 120;
+const CONFIG = Object.freeze({
+  "1m": { interval: "1min", seconds: 60 },
+  "5m": { interval: "5min", seconds: 300 },
+  "15m": { interval: "15min", seconds: 900 },
+  "30m": { interval: "30min", seconds: 1800 },
+  "1h": { interval: "1h", seconds: 3600 },
+  "4h": { interval: "4h", seconds: 14400 },
+  "1D": { interval: "1day", seconds: 86400 },
+});
 
-export async function onRequestGet(context) {
-  // const { env } = context; // will hold FOREX_API_KEY etc. once real data is wired in
-
-  const candles = getCandles(CANDLE_COUNT);
-  const lastClose = candles[candles.length - 1].close;
-  const firstClose = candles[0].close;
-  const changePct = ((lastClose - firstClose) / firstClose) * 100;
-
-  const signal = computeSignal(candles);
-
-  const payload = {
-    symbol: SYMBOL,
-    timeframe: TIMEFRAME,
-    price: lastClose,
-    changePct,
-    candles,
-    signal,
-    updatedAt: Date.now(),
-  };
-
-  return new Response(JSON.stringify(payload), {
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
     headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-store',
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate",
     },
   });
 }
 
-// ── MOCK DATA (replace with real API call) ──────────────────────────────
-function getCandles(count) {
-  const candles = [];
-  let price = 1.0850;
-  const now = Math.floor(Date.now() / 1000);
-  const stepSeconds = 15 * 60; // M15
+function validateCandle(raw) {
+  const candle = {
+    datetime: String(raw.datetime || ""),
+    open: Number(raw.open),
+    high: Number(raw.high),
+    low: Number(raw.low),
+    close: Number(raw.close),
+  };
 
-  for (let i = count; i > 0; i--) {
-    const time = now - i * stepSeconds;
-    const open = price;
-    const drift = (Math.random() - 0.5) * 0.0018;
-    const close = +(open + drift).toFixed(5);
-    const high = +(Math.max(open, close) + Math.random() * 0.0008).toFixed(5);
-    const low = +(Math.min(open, close) - Math.random() * 0.0008).toFixed(5);
-
-    candles.push({ time, open, high, low, close });
-    price = close;
+  if (![candle.open, candle.high, candle.low, candle.close].every(Number.isFinite)) {
+    throw new Error("provider returned invalid OHLC");
   }
-
-  return candles;
+  if (
+    candle.high < Math.max(candle.open, candle.close)
+    || candle.low > Math.min(candle.open, candle.close)
+    || candle.high < candle.low
+  ) {
+    throw new Error("provider returned invalid OHLC relationship");
+  }
+  return candle;
 }
 
-// ── MOCK SIGNAL (replace with the real Ariatrading scoring engine) ─────
-function computeSignal(candles) {
-  const last = candles[candles.length - 1];
-  const prev = candles[candles.length - 2];
-  const bullish = last.close > prev.close;
+async function fetchMarket(symbol, timeframe, apiKey) {
+  const config = CONFIG[timeframe];
+  const url = new URL("https://api.twelvedata.com/time_series");
+  url.searchParams.set("symbol", symbol.replace("/", ""));
+  url.searchParams.set("interval", config.interval);
+  url.searchParams.set("outputsize", "100");
+  url.searchParams.set("timezone", "UTC");
+  url.searchParams.set("apikey", apiKey);
 
-  // Placeholder scoring — swap for the real setup-score logic.
-  const score = Math.round(40 + Math.random() * 40);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`provider HTTP ${response.status}`);
+    const payload = await response.json();
+    if (payload.status === "error" || !Array.isArray(payload.values)) {
+      throw new Error(payload.message || "invalid provider response");
+    }
 
-  let direction = 'WAIT';
-  let reason = 'โครงสร้างยังไม่ชัดเจนพอ รอสัญญาณที่แข็งแรงกว่านี้';
+    const values = payload.values.map(validateCandle);
+    if (values.length < 21) throw new Error("provider returned too few candles");
 
-  if (score >= 70) {
-    direction = bullish ? 'LONG' : 'SHORT';
-    reason = bullish
-      ? 'แนวโน้มระยะสั้นเป็นขาขึ้น และราคาหลุดโซนแนวต้านล่าสุด'
-      : 'แนวโน้มระยะสั้นเป็นขาลง และราคาหลุดโซนแนวรับล่าสุด';
+    // Twelve Data returns newest first. Keep the current forming candle
+    // separate from completed history so strategy code never gets look-ahead.
+    const liveCandle = values[0];
+    const completed = values.slice(1, 101).reverse();
+
+    return {
+      candles: completed,
+      live_candle: liveCandle,
+      price: liveCandle.close,
+      source: "twelve-data",
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function onRequestGet(context) {
+  const url = new URL(context.request.url);
+  const symbol = (url.searchParams.get("symbol") || "EUR/USD").trim().toUpperCase();
+  const timeframe = (url.searchParams.get("timeframe") || "15m").trim();
+
+  if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)) {
+    return json({ error: "bad_request", message: "symbol must look like EUR/USD" }, 400);
+  }
+  if (!Object.prototype.hasOwnProperty.call(CONFIG, timeframe)) {
+    return json({ error: "bad_request", message: `unsupported timeframe: ${timeframe}` }, 400);
   }
 
-  return { direction, score, reason };
+  const apiKey = context.env?.TWELVE_DATA_API_KEY;
+  if (!apiKey) {
+    return json({
+      error: "live_data_unavailable",
+      message: "TWELVE_DATA_API_KEY is not configured",
+      symbol,
+      timeframe,
+      source: "unavailable",
+      execution: "NONE",
+    }, 503);
+  }
+
+  try {
+    const market = await fetchMarket(symbol, timeframe, apiKey);
+    return json({
+      symbol,
+      timeframe,
+      ...market,
+      candles_used: market.candles.length,
+      generated_at: new Date().toISOString(),
+      execution: "NONE",
+    });
+  } catch (error) {
+    return json({
+      error: "live_data_unavailable",
+      message: error?.message || "market data provider unavailable",
+      symbol,
+      timeframe,
+      source: "unavailable",
+      execution: "NONE",
+    }, 503);
+  }
 }
