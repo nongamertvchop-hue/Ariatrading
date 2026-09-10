@@ -6,21 +6,27 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install test runner and runtime dependencies
-        run: python -m pip install --upgrade pip pytest scikit-learn pandas
+      - name: Install test and research dependencies
+        run: python -m pip install --upgrade pip pytest scikit-learn pandas torch
       - name: Run tests
         run: python -m pytest -q
 
   worker-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,6 +38,7 @@ jobs:
 
   worker-syntax:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,6 +49,7 @@ jobs:
 
   polyglot-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
