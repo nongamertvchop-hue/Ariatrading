@@ -31,6 +31,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from adapters.mt5_feed import MT5BarFeed
 from live.execution_guard import ExecutionJournal, build_intent
+from live.mt5_account import validate_account_mode
 from live.mt5_executor import MT5LiveExecutor, ORDER_BUY, ORDER_SELL
 from live.notifier import Notifier
 from strategy.engine import EngineSignal, LONG, WAIT
@@ -319,9 +320,13 @@ def main() -> None:
         try:
             executor = MT5LiveExecutor()
             executor.connect()
-            logger.info("MT5 %s executor connected.", args.mode)
+            ok, reason = validate_account_mode(executor.mt5, args.mode)
+            if not ok:
+                raise RuntimeError(reason)
+            logger.info("MT5 %s executor connected and account verified.", args.mode)
         except Exception as e:
-            logger.error("Failed to connect MT5 %s executor: %s", args.mode, e)
+            logger.error("Failed to connect/verify MT5 %s executor: %s", args.mode, e)
+            executor = None
 
     orchestrator = ForexLiveOrchestrator(
         symbols=symbols,
