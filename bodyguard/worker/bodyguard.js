@@ -1,8 +1,9 @@
 /**
  * Bodyguard(Aria) v0.05.1 — aegis-shield
  *
- * Enforcement, audit counters, alert thresholds, prototype pollution protection,
- * execution boundary isolation, strict CORS defense, and bounded in-memory state.
+ * Enforcement, audit counters, real-time security event telemetry,
+ * alert thresholds, prototype pollution protection, execution boundary
+ * isolation, strict CORS defense, and bounded in-memory state.
  */
 
 export const BODYGUARD_VERSION = "0.05.1";
@@ -15,6 +16,7 @@ const DEFAULTS = Object.freeze({
   maxRateBuckets: 4096,
   maxOffenseBuckets: 4096,
   maxSoftBans: 4096,
+  maxRecentEvents: 50,
   symbolPattern: /^[A-Z]{3}\/[A-Z]{3}$/,
   allowedTimeframes: new Set(["1m", "5m", "15m", "30m", "1h", "4h", "1D"]),
   allowedApiPaths: new Set([
@@ -61,6 +63,8 @@ const DEFAULTS = Object.freeze({
 const rateBuckets = new Map();
 const offenseBuckets = new Map();
 const softBans = new Map();
+const recentSecurityEvents = [];
+let nextEventId = 1;
 
 const audit = {
   startedAt: new Date().toISOString(),
@@ -105,17 +109,52 @@ function evictOldest(map, maxSize) {
   if (oldest !== undefined) map.delete(oldest);
 }
 
+function classifySecurityEvent(reason) {
+  if (/execution/i.test(reason)) return { category: "EXECUTION", severity: "CRITICAL" };
+  if (/cors/i.test(reason)) return { category: "CORS", severity: "MEDIUM" };
+  if (/rate|quota/i.test(reason)) return { category: "ABUSE", severity: "MEDIUM" };
+  if (/soft.?ban/i.test(reason)) return { category: "ABUSE", severity: "HIGH" };
+  if (/prototype|payload/i.test(reason)) return { category: "PAYLOAD", severity: "HIGH" };
+  if (/probe|traversal|xss|sql|malformed|control/i.test(reason)) return { category: "PROBE", severity: "MEDIUM" };
+  if (/scanner|bot/i.test(reason)) return { category: "BOT", severity: "LOW" };
+  return { category: "INCIDENT", severity: "INFO" };
+}
+
+function safeEventExtra(extra) {
+  const allowed = new Set(["path", "method", "action", "count", "rule", "evidence_ref", "origin"]);
+  const clean = {};
+  for (const [key, value] of Object.entries(extra)) {
+    if (!allowed.has(key)) continue;
+    if (typeof value === "string") clean[key] = value.slice(0, 200);
+    else if (typeof value === "number" && Number.isFinite(value)) clean[key] = value;
+  }
+  return clean;
+}
+
 export function securityEvent(level, reason, extra = {}) {
+  const classification = classifySecurityEvent(reason);
   const row = {
+    event_id: `BG-EVT-${String(nextEventId++).padStart(8, "0")}`,
     guard: "Bodyguard(Aria)",
     version: BODYGUARD_VERSION,
     level,
+    severity: classification.severity,
+    category: classification.category,
     reason,
     at: new Date().toISOString(),
-    ...extra,
+    ...safeEventExtra(extra),
   };
+
+  recentSecurityEvents.push(row);
+  if (recentSecurityEvents.length > DEFAULTS.maxRecentEvents) recentSecurityEvents.shift();
+
   console.log(JSON.stringify(row));
   return row;
+}
+
+export function getRecentSecurityEvents(limit = 20) {
+  const boundedLimit = Math.max(1, Math.min(DEFAULTS.maxRecentEvents, Number(limit) || 20));
+  return recentSecurityEvents.slice(-boundedLimit).reverse();
 }
 
 function noteOffense(key, reason) {
@@ -132,7 +171,7 @@ function noteOffense(key, reason) {
     evictOldest(softBans, DEFAULTS.maxSoftBans);
     softBans.set(key, now + DEFAULTS.softBan.banMs);
     audit.softBans += 1;
-    securityEvent("block", "soft_ban_applied", { count: bucket.count });
+    securityEvent("block", "soft_ban_applied", { count: bucket.count, action: "SOFT_BAN" });
   }
 }
 
@@ -165,7 +204,7 @@ export function handleCorsPreflight(request) {
 
   if (!DEFAULTS.allowedOrigins.has(origin.trim())) {
     audit.corsBlocked += 1;
-    securityEvent("block", "cors_origin_rejected", { origin: origin.trim().slice(0, 200) });
+    securityEvent("block", "cors_origin_rejected", { origin: origin.trim().slice(0, 200), action: "BLOCK" });
     return publicError(403, "cors_origin_rejected");
   }
 
@@ -290,7 +329,8 @@ export function checkRateLimit(request, opts = {}) {
   bucket.count += 1;
   if (bucket.count > max) {
     audit.rateLimited += 1;
-    securityEvent("block", "rate_limited", { path: new URL(request.url).pathname, count: bucket.count });
+    const path = new URL(request.url).pathname;
+    securityEvent("block", "rate_limited", { path, count: bucket.count, action: "RATE_LIMIT" });
     return { ok: false, status: 429, reason: "rate_limited" };
   }
   return { ok: true, status: 200, reason: "ok", remaining: Math.max(0, max - bucket.count) };
@@ -362,7 +402,14 @@ export function getStatusPayload() {
     started_at: audit.startedAt,
     counters,
     alerts: buildAlerts(counters),
-    note: "Aggregate counters only. No IPs, secrets, or personal data.",
+    recent_events: getRecentSecurityEvents(20),
+    telemetry: {
+      delivery: "RUNTIME_CONSOLE_AND_STATUS",
+      freshness: "NEAR_REAL_TIME",
+      persistence: "EPHEMERAL_WORKER_MEMORY",
+      guarantee: "BEST_EFFORT",
+    },
+    note: "Aggregate and sanitized events only. No IPs, secrets, request bodies, or personal data.",
   };
 }
 
@@ -386,7 +433,7 @@ export function guardPublicRequest(request) {
   }
 
   if (isSoftBanned(key)) {
-    securityEvent("block", "soft_banned", { path: url.pathname });
+    securityEvent("block", "soft_banned", { path: url.pathname, action: "SOFT_BAN" });
     return publicError(403, "soft_banned");
   }
 
@@ -394,19 +441,19 @@ export function guardPublicRequest(request) {
   if (!probe.ok) {
     audit.probes += 1;
     noteOffense(key, probe.reason);
-    securityEvent("block", probe.reason, { path: url.pathname });
+    securityEvent("block", probe.reason, { path: url.pathname, method: request.method, action: "BLOCK" });
     return publicError(probe.status, probe.reason);
   }
 
   const ua = scoreUserAgent(request);
   if (ua.risk === "high" && url.pathname.startsWith("/api/")) {
-    securityEvent("warn", ua.reason, { path: url.pathname });
+    securityEvent("warn", ua.reason, { path: url.pathname, method: request.method, action: "OBSERVE" });
   }
 
   const basic = validatePublicApiRequest(request, url);
   if (!basic.ok) {
     noteOffense(key, basic.reason);
-    securityEvent("block", basic.reason, { path: url.pathname, method: request.method });
+    securityEvent("block", basic.reason, { path: url.pathname, method: request.method, action: "BLOCK" });
     return publicError(basic.status, basic.reason);
   }
 
