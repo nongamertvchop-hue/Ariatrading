@@ -1,6 +1,10 @@
 /* Webaria UI interaction contract.
  * Every visible control must either mutate chart/UI state or explicitly report
  * why it cannot act. This layer never places broker orders.
+ *
+ * Chart data controls (symbol, timeframe, Fit, Refresh, Crosshair, Reset and
+ * drawing tools) are owned by trading.js. Keeping a single owner prevents
+ * double handlers, duplicate requests and toggle actions cancelling themselves.
  */
 (function (root) {
   'use strict';
@@ -11,10 +15,6 @@
   function note(message) {
     const node = $('status');
     if (node) node.textContent = message;
-  }
-
-  function redraw() {
-    if (typeof root.draw === 'function') root.draw();
   }
 
   function changeTimeframe(tf) {
@@ -28,53 +28,6 @@
     select.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  function refreshMarket() {
-    if (typeof root.load === 'function') {
-      void root.load();
-      return;
-    }
-    if (root.WebariaLiveMarket && typeof root.WebariaLiveMarket.poll === 'function') {
-      void root.WebariaLiveMarket.poll();
-      return;
-    }
-    note('Refresh unavailable: market data controller is not loaded.');
-  }
-
-  function fitChart() {
-    if (!state) {
-      note('Fit unavailable: chart state is not initialized.');
-      return;
-    }
-    state.offset = 0;
-    state._userViewport = false;
-    if (typeof root.fitVisibleBars === 'function') root.fitVisibleBars();
-    redraw();
-    note(`Chart fitted · ${state.symbol || 'market'} · ${state.tf || '15m'}`);
-  }
-
-  function toggleCrosshair(button) {
-    if (!state) return;
-    state.cross = !Boolean(state.cross);
-    if (button) {
-      button.classList.toggle('active', state.cross);
-      button.setAttribute('aria-pressed', String(state.cross));
-    }
-    redraw();
-    note(`Crosshair ${state.cross ? 'ON' : 'OFF'}`);
-  }
-
-  function resetView() {
-    if (!state) return;
-    state.offset = 0;
-    state.dragging = false;
-    state.draft = null;
-    state.selectedDrawing = null;
-    state._userViewport = false;
-    if (typeof root.fitVisibleBars === 'function') root.fitVisibleBars();
-    redraw();
-    note('Chart view reset.');
-  }
-
   function togglePanel(button) {
     const panel = $('right');
     if (!panel) return;
@@ -83,17 +36,6 @@
       button.setAttribute('aria-expanded', String(open));
       button.textContent = open ? 'Panel' : 'Show Panel';
     }
-  }
-
-  function setTool(tool, button) {
-    if (!state) return;
-    state.tool = tool;
-    document.querySelectorAll('.tool[data-tool]').forEach(node => {
-      node.classList.toggle('active', node === button);
-      node.setAttribute('aria-pressed', String(node === button));
-    });
-    note(`Chart tool: ${tool}`);
-    redraw();
   }
 
   function renderDetails() {
@@ -116,10 +58,8 @@
       void root.updateWatch();
       return;
     }
-    if (state && typeof state.watch === 'object') {
-      const box = $('watch');
-      if (box) box.textContent = 'Watchlist controller is unavailable; refresh market data.';
-    }
+    const box = $('watch');
+    if (box) box.textContent = 'Watchlist controller is unavailable; refresh market data.';
   }
 
   function bindTabs() {
@@ -138,22 +78,9 @@
   }
 
   function bind() {
-    const fit = $('fit');
-    const cross = $('cross');
-    const refresh = $('refresh');
     const mobile = $('mobile');
-    const reset = $('reset');
 
-    fit?.addEventListener('click', fitChart);
-    cross?.addEventListener('click', () => toggleCrosshair(cross));
-    refresh?.addEventListener('click', refreshMarket);
     mobile?.addEventListener('click', () => togglePanel(mobile));
-    reset?.addEventListener('click', resetView);
-
-    document.querySelectorAll('.tool[data-tool]').forEach(button => {
-      button.setAttribute('aria-pressed', String(button.classList.contains('active')));
-      button.addEventListener('click', () => setTool(button.dataset.tool || 'cursor', button));
-    });
 
     document.querySelectorAll('.bottom [data-tf]').forEach(button => {
       button.addEventListener('click', () => {
@@ -170,7 +97,6 @@
     });
 
     bindTabs();
-    cross?.setAttribute('aria-pressed', String(Boolean(state?.cross)));
   }
 
   if (document.readyState === 'loading') {
@@ -179,5 +105,5 @@
     bind();
   }
 
-  root.WebariaUIControls = Object.freeze({ fitChart, refreshMarket, resetView, changeTimeframe });
+  root.WebariaUIControls = Object.freeze({ changeTimeframe });
 })(typeof window !== 'undefined' ? window : globalThis);
