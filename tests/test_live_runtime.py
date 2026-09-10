@@ -5,17 +5,28 @@ import pytest
 
 from live.live_runtime import DailyCircuitBreaker, LiveRuntime, RuntimeLimits
 from live.execution_guard import ExecutionJournal
+from live.mt5_executor import AccountIdentity
 
 
 class _Executor:
-    def __init__(self, tick_time, deals=None, *, broker_evidence=None, login=1):
+    def __init__(self, tick_time, deals=None, *, broker_evidence=None, login=1, server="DemoServer", company="DemoBroker", trade_mode=2):
         self.tick_time = tick_time
         self.deals = deals or []
         self.broker_evidence = broker_evidence or {}
         self.login = login
+        self.server = server
+        self.company = company
+        self.trade_mode = trade_mode
         self.magic_number = 8808
         self.mt5 = SimpleNamespace(
-            account_info=lambda: SimpleNamespace(trade_mode=2, trade_allowed=True, trade_expert=True),
+            account_info=lambda: SimpleNamespace(
+                login=self.login,
+                server=self.server,
+                company=self.company,
+                trade_mode=self.trade_mode,
+                trade_allowed=True,
+                trade_expert=True,
+            ),
             last_error=lambda: (0, "ok"),
             DEAL_ENTRY_OUT=1,
             DEAL_ENTRY_OUT_BY=3,
@@ -26,6 +37,14 @@ class _Executor:
             history_deals_get=lambda start, end: self.deals,
             positions_get=lambda symbol=None: self.broker_evidence.get("positions", []),
             history_orders_get=lambda start, end: self.broker_evidence.get("orders", []),
+        )
+
+    def get_account_identity(self):
+        return AccountIdentity(
+            login=self.login,
+            server=self.server,
+            company=self.company,
+            trade_mode=self.trade_mode,
         )
 
     def get_account_snapshot(self):
@@ -67,16 +86,17 @@ class _Orchestrator:
 def _runtime(tmp_path, *, now=None, tick_time=None, bar_time=None, deals=None, limits=None, login=1):
     now = now or datetime.now(timezone.utc)
     orchestrator = _Orchestrator()
+    executor = _Executor(tick_time if tick_time is not None else now, deals=deals, login=login)
     runtime = LiveRuntime(
         orchestrator=orchestrator,
         feed=_Feed(bar_time if bar_time is not None else now - timedelta(seconds=1)),
-        executor=_Executor(tick_time if tick_time is not None else now, deals=deals, login=login),
+        executor=executor,
         journal=ExecutionJournal(tmp_path / "execution.json"),
         limits=limits,
         clock=lambda: now,
     )
     runtime.preflight = lambda: None
-    runtime._bound_account_login = login
+    runtime._bound_account_identity = executor.get_account_identity()
     return runtime, orchestrator
 
 
@@ -207,6 +227,24 @@ def test_runtime_blocks_account_switch_after_preflight(tmp_path):
     runtime, orchestrator = _runtime(tmp_path, now=now, login=1)
     runtime.executor.login = 2
 
-    with pytest.raises(RuntimeError, match="account changed during runtime"):
+    with pytest.raises(RuntimeError, match="account identity changed during runtime"):
+        runtime.process_once()
+    assert orchestrator.calls == 0
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("server", "OtherDemoServer"),
+        ("company", "OtherBroker"),
+        ("trade_mode", 0),
+    ],
+)
+def test_runtime_blocks_non_login_account_identity_drift(tmp_path, field, value):
+    now = datetime(2026, 9, 10, 12, tzinfo=timezone.utc)
+    runtime, orchestrator = _runtime(tmp_path, now=now)
+    setattr(runtime.executor, field, value)
+
+    with pytest.raises(RuntimeError, match="account identity changed during runtime"):
         runtime.process_once()
     assert orchestrator.calls == 0
