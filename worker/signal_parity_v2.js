@@ -1,10 +1,11 @@
 /**
  * Worker signal adapter that follows the Python realtime engine contract.
  *
- * The low-level primitives live in signal_parity.js. This adapter fixes the
- * orchestration semantics: empty support/resistance sets are valid WAIT states,
- * every candidate zone is evaluated, history excludes the current candle for
- * zone/structure context, and zone centers follow PriceZone.center exactly.
+ * The low-level primitives live in signal_parity.js. This adapter keeps the
+ * orchestration semantics aligned with strategy/realtime.py: empty
+ * support/resistance sets are valid WAIT states, all candidate zones are
+ * evaluated, history excludes the current candle for zone/structure context,
+ * and zone selection uses PriceZone.center semantics.
  */
 
 import {
@@ -35,46 +36,46 @@ function json(data, status = 200) {
 }
 
 function bestSignal(candidates, direction, timeframe, emptyReason) {
-  if (!candidates.length) return { action: WAIT, reason: emptyReason, timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT };
-  return [...candidates].sort((a, b) => {
-    const aKey = [a.result.action === direction ? 1 : 0, a.score?.total ?? -1, a.result.entryReference ?? 0];
-    const bKey = [b.result.action === direction ? 1 : 0, b.score?.total ?? -1, b.result.entryReference ?? 0];
-    for (let i = 0; i < aKey.length; i += 1) {
-      if (aKey[i] !== bKey[i]) return bKey[i] - aKey[i];
-    }
-    return 0;
-  })[0];
+  if (!candidates.length) {
+    return { action: WAIT, reason: emptyReason, timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT };
+  }
+
+  const directional = candidates.filter((candidate) => candidate.result.action === direction);
+  if (!directional.length) {
+    // Match Python RealtimeMonitor._best_signal(): preserve the first evaluated
+    // WAIT result when zones exist so diagnostics do not collapse into "no zone".
+    return candidates[0].result;
+  }
+
+  return [...directional].sort((a, b) => {
+    const aScore = a.score?.total ?? -1;
+    const bScore = b.score?.total ?? -1;
+    return bScore - aScore;
+  })[0].result;
 }
 
 function selectSignal(longSignal, shortSignal, timeframe) {
-  const longOk = longSignal.action === LONG;
-  const shortOk = shortSignal.action === SHORT;
-  if (longOk && !shortOk) return longSignal;
-  if (shortOk && !longOk) return shortSignal;
-  if (longOk && shortOk) {
-    const longScore = longSignal.score?.total ?? -1;
-    const shortScore = shortSignal.score?.total ?? -1;
-    if (longScore !== shortScore) return longScore > shortScore ? longSignal : shortSignal;
+  if (longSignal.action !== WAIT && shortSignal.action === WAIT) return longSignal;
+  if (shortSignal.action !== WAIT && longSignal.action === WAIT) return shortSignal;
+  if (longSignal.action === WAIT && shortSignal.action === WAIT) {
+    return { action: WAIT, reason: "no directional setup", timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT };
   }
-  return { action: WAIT, reason: "no unambiguous realtime setup", timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT };
+
+  // Python uses `>` and therefore resolves an exact score tie in favor of
+  // the short-side candidate. Keep that deterministic rule across runtimes.
+  const longScore = longSignal.score?.total ?? -1;
+  const shortScore = shortSignal.score?.total ?? -1;
+  return longScore > shortScore ? longSignal : shortSignal;
 }
 
 function nearestSupport(price, zones) {
-  const candidates = zones.filter((zone) => zone.center <= price || (zone.low <= price && price <= zone.high));
-  return candidates.sort((a, b) => {
-    const ad = a.low <= price && price <= a.high ? 0 : price - a.high;
-    const bd = b.low <= price && price <= b.high ? 0 : price - b.high;
-    return ad !== bd ? ad - bd : b.touches - a.touches;
-  })[0] ?? null;
+  const candidates = zones.filter((zone) => zone.center <= price);
+  return candidates.sort((a, b) => (price - a.center) - (price - b.center))[0] ?? null;
 }
 
 function nearestResistance(price, zones) {
-  const candidates = zones.filter((zone) => zone.center >= price || (zone.low <= price && price <= zone.high));
-  return candidates.sort((a, b) => {
-    const ad = a.low <= price && price <= a.high ? 0 : a.low - price;
-    const bd = b.low <= price && price <= b.high ? 0 : b.low - price;
-    return ad !== bd ? ad - bd : b.touches - a.touches;
-  })[0] ?? null;
+  const candidates = zones.filter((zone) => zone.center >= price);
+  return candidates.sort((a, b) => (a.center - price) - (b.center - price))[0] ?? null;
 }
 
 function stopReference(zone, direction, history, timeframe) {
@@ -127,15 +128,15 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
   const selectedScore = strategySignal.action === LONG || strategySignal.action === SHORT ? strategySignal.score ?? null : null;
   return {
     signal: finalSignal.action,
-    state: finalSignal.result?.state ?? "APPROACH",
+    state: finalSignal.state ?? "APPROACH",
     reason: finalSignal.reason,
     price: currentPrice,
     bar_time: candles[candles.length - 1].datetime ?? candles[candles.length - 1].time ?? null,
     structure_bias: finalSignal.structureBias ?? structure.bias,
     zone: finalSignal.zone ?? null,
-    entry_reference: finalSignal.result?.entryReference ?? null,
+    entry_reference: finalSignal.entryReference ?? null,
     stop_reference: finalSignal.zone && finalSignal.action !== WAIT ? stopReference(finalSignal.zone, finalSignal.action, history, timeframe) : null,
-    breakout_state: finalSignal.result?.breakoutState ?? finalSignal.breakoutState ?? NO_BREAKOUT,
+    breakout_state: finalSignal.breakoutState ?? NO_BREAKOUT,
     protection: finalSignal.protection ?? "SAFE",
     score: selectedScore,
     support,

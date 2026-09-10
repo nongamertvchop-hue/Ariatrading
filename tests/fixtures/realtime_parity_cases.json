@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "description": "Deterministic closed-candle cases used to compare the Python realtime monitor and Worker realtime parity evaluator.",
+  "cases": [
+    {
+      "name": "range_wait",
+      "symbol": "EUR/USD",
+      "timeframe": "15m",
+      "candles": [
+        {"time":"2026-09-08T19:00:00Z","open":1.1000,"high":1.1010,"low":1.0995,"close":1.1005},
+        {"time":"2026-09-08T19:15:00Z","open":1.1005,"high":1.1015,"low":1.1000,"close":1.1010},
+        {"time":"2026-09-08T19:30:00Z","open":1.1010,"high":1.1020,"low":1.1002,"close":1.1014},
+        {"time":"2026-09-08T19:45:00Z","open":1.1014,"high":1.1020,"low":1.0990,"close":1.0995},
+        {"time":"2026-09-08T20:00:00Z","open":1.0995,"high":1.1005,"low":1.0985,"close":1.0990},
+        {"time":"2026-09-08T20:15:00Z","open":1.0990,"high":1.1010,"low":1.0980,"close":1.1007},
+        {"time":"2026-09-08T20:30:00Z","open":1.1007,"high":1.1022,"low":1.1000,"close":1.1018},
+        {"time":"2026-09-08T20:45:00Z","open":1.1018,"high":1.1030,"low":1.1008,"close":1.1026},
+        {"time":"2026-09-08T21:00:00Z","open":1.1026,"high":1.1032,"low":1.1005,"close":1.1010},
+        {"time":"2026-09-08T21:15:00Z","open":1.1010,"high":1.1015,"low":1.0990,"close":1.1000}
+      ]
+    },
+    {
+      "name": "repeated_support_reaction",
+      "symbol": "EUR/USD",
+      "timeframe": "15m",
+      "candles": [
+        {"time":"2026-09-08T19:00:00Z","open":1.1060,"high":1.1070,"low":1.1045,"close":1.1055},
+        {"time":"2026-09-08T19:15:00Z","open":1.1055,"high":1.1060,"low":1.1025,"close":1.1030},
+        {"time":"2026-09-08T19:30:00Z","open":1.1030,"high":1.1045,"low":1.1020,"close":1.1040},
+        {"time":"2026-09-08T19:45:00Z","open":1.1040,"high":1.1080,"low":1.1035,"close":1.1070},
+        {"time":"2026-09-08T20:00:00Z","open":1.1070,"high":1.1080,"low":1.1050,"close":1.1060},
+        {"time":"2026-09-08T20:15:00Z","open":1.1060,"high":1.1065,"low":1.1020,"close":1.1035},
+        {"time":"2026-09-08T20:30:00Z","open":1.1035,"high":1.1050,"low":1.1025,"close":1.1045},
+        {"time":"2026-09-08T20:45:00Z","open":1.1045,"high":1.1080,"low":1.1038,"close":1.1075},
+        {"time":"2026-09-08T21:00:00Z","open":1.1075,"high":1.1085,"low":1.1055,"close":1.1060},
+        {"time":"2026-09-08T21:15:00Z","open":1.1060,"high":1.1062,"low":1.1018,"close":1.1022},
+        {"time":"2026-09-08T21:30:00Z","open":1.1022,"high":1.1048,"low":1.1019,"close":1.1045},
+        {"time":"2026-09-08T21:45:00Z","open":1.1045,"high":1.1068,"low":1.1038,"close":1.1062}
+      ]
+    }
+  ]
+}
