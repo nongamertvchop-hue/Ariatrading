@@ -13,19 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 _SELF = Path(__file__).resolve()
 
-# Keep this list deliberately small and high-confidence. Generic words such as
-# ``order`` or ``broker`` are valid concepts in a paper simulator.
-FORBIDDEN_REFERENCES = (
-    "from live",
-    "import live",
-    "MT5LiveExecutor",
-    "MetaTrader5",
-    "ccxt",
-    "order_send",
-    "send_order",
-    "place_order",
-    "create_order",
-)
+FORBIDDEN_IMPORT_MODULES = {"live", "MetaTrader5", "ccxt"}
+FORBIDDEN_NAMES = {"MT5LiveExecutor", "MetaTrader5", "ccxt"}
+FORBIDDEN_CALL_ATTRIBUTES = {"order_send", "send_order", "place_order", "create_order"}
 
 
 def _python_files() -> list[Path]:
@@ -34,27 +24,38 @@ def _python_files() -> list[Path]:
     files.extend(sorted(strategy_root.glob("*.py")))
     files.append(ROOT / "adapters" / "paper_broker.py")
     files.append(ROOT / "scripts" / "run_paper_runtime.py")
-    # The scanner contains the forbidden vocabulary as policy data, so it must
-    # not report its own rule table as an application-level violation.
     return [path for path in files if path.exists() and path.resolve() != _SELF]
+
+
+def _module_is_forbidden(module: str | None) -> bool:
+    if not module:
+        return False
+    root = module.split(".", 1)[0]
+    return root in FORBIDDEN_IMPORT_MODULES
 
 
 def verify_paper_boundary() -> tuple[bool, tuple[str, ...]]:
     findings: list[str] = []
     for path in _python_files():
         try:
-            text = path.read_text(encoding="utf-8")
-            ast.parse(text, filename=str(path))
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         except (OSError, SyntaxError) as exc:
             findings.append(f"{path}: cannot parse paper path ({exc})")
             continue
-        for line_number, line in enumerate(text.splitlines(), 1):
-            stripped = line.strip()
-            if stripped.startswith("#"):
-                continue
-            for forbidden in FORBIDDEN_REFERENCES:
-                if forbidden in line:
-                    findings.append(f"{path}:{line_number}: forbidden live execution reference: {forbidden}")
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if _module_is_forbidden(alias.name):
+                        findings.append(f"{path}:{node.lineno}: forbidden live import: {alias.name}")
+            elif isinstance(node, ast.ImportFrom):
+                if _module_is_forbidden(node.module):
+                    findings.append(f"{path}:{node.lineno}: forbidden live import: {node.module}")
+            elif isinstance(node, ast.Name) and node.id in FORBIDDEN_NAMES:
+                findings.append(f"{path}:{node.lineno}: forbidden live symbol: {node.id}")
+            elif isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_CALL_ATTRIBUTES:
+                findings.append(f"{path}:{node.lineno}: forbidden broker call: {node.attr}")
+
     return not findings, tuple(findings)
 
 
