@@ -21,7 +21,7 @@ from typing import Callable
 from live.broker_reconciliation import find_execution_evidence, is_unambiguous_execution
 from live.execution_guard import ExecutionJournal
 from live.mt5_account import validate_account_mode
-from live.mt5_executor import MT5LiveExecutor
+from live.mt5_executor import AccountIdentity, MT5LiveExecutor
 from live.runner import ForexLiveOrchestrator
 from strategy.forex_risk import ForexSymbolContract
 
@@ -130,7 +130,22 @@ class LiveRuntime:
         self.limits = limits or RuntimeLimits()
         self.circuit_breaker = circuit_breaker
         self.clock = clock or (lambda: datetime.now(timezone.utc))
-        self._bound_account_login: int | None = None
+        self._bound_account_identity: AccountIdentity | None = None
+
+    def _assert_account_identity(self) -> AccountIdentity:
+        """Verify the terminal is still attached to the exact preflight account."""
+        current = self.executor.get_account_identity()
+        bound = self._bound_account_identity
+        if bound is None:
+            raise RuntimeError("MT5 account identity is not bound; preflight is required before processing")
+        if current != bound:
+            raise RuntimeError(
+                "MT5 account identity changed during runtime: "
+                f"expected login={bound.login}, server={bound.server!r}, company={bound.company!r}, "
+                f"trade_mode={bound.trade_mode}; got login={current.login}, server={current.server!r}, "
+                f"company={current.company!r}, trade_mode={current.trade_mode}"
+            )
+        return current
 
     def _daily_realized_loss(self, now: datetime) -> float:
         """Return today's realized loss for this strategy; fail closed on history errors."""
@@ -201,25 +216,30 @@ class LiveRuntime:
         if self.journal.recoverable_intents():
             raise RuntimeError("execution journal contains unreconciled intents; broker evidence was insufficient")
 
+        identity = self.executor.get_account_identity()
         account = self.executor.get_account_snapshot()
+        if account.login != identity.login:
+            raise RuntimeError("MT5 account identity changed while binding runtime")
         if not account.trade_allowed or not account.trade_expert:
             raise RuntimeError("MT5 trading permissions are not enabled")
-        self._bound_account_login = account.login
+        self._bound_account_identity = identity
         if self.circuit_breaker is not None:
             ok, reason = self.circuit_breaker.check(account.equity, now)
             if not ok:
                 raise RuntimeError(reason)
-        logger.info("Live runtime preflight passed: mode=%s account=%s", self.orchestrator.mode, account.login)
+        logger.info(
+            "Live runtime preflight passed: mode=%s account=%s server=%s",
+            self.orchestrator.mode,
+            identity.login,
+            identity.server,
+        )
 
     def process_once(self) -> int:
         """Process one completed-bar cycle. Returns number of evaluated symbols."""
+        identity = self._assert_account_identity()
         account = self.executor.get_account_snapshot()
-        if self._bound_account_login is None:
-            raise RuntimeError("MT5 account is not bound; preflight is required before processing")
-        if account.login != self._bound_account_login:
-            raise RuntimeError(
-                f"MT5 account changed during runtime: expected {self._bound_account_login}, got {account.login}"
-            )
+        if account.login != identity.login:
+            raise RuntimeError("MT5 account identity changed while reading account snapshot")
         now = _require_utc(self.clock(), "runtime clock")
         if self.circuit_breaker is not None:
             ok, reason = self.circuit_breaker.check(account.equity, now)
