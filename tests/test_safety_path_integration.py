@@ -163,7 +163,7 @@ def test_new_entry_requires_both_local_and_broker_flat():
     blocked = new_entry_allowed(local, [], broker_contract=CONTRACT)
     assert blocked.action == HALT
     assert blocked.safe is False
-    assert "existing position" in blocked.reason
+    assert "local state has position but broker is flat" in blocked.reason
 
 
 def test_reconciliation_halts_duplicate_broker_positions():
@@ -188,5 +188,5 @@ def test_replay_is_causal_and_repeatable():
 def test_replay_rejects_duplicated_timestamps():
     candles = make_candles(12)
     candles[5]["time"] = candles[4]["time"]
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="unique candle timestamps"):
         replay_realtime_monitor(candles, "EURUSD", "1m", lookback=10)
