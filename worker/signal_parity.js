@@ -59,7 +59,7 @@ export function validateCandle(raw) {
   if (high < Math.max(open, close) || low > Math.min(open, close) || high < low) {
     throw new BadRequest("invalid OHLC relationship");
   }
-  return { open, high, low, close, datetime: raw.datetime ?? raw.time ?? null };
+  return { open, high, low, close, datetime: raw.datetime ?? null };
 }
 
 export function candlePressure(candle) {
