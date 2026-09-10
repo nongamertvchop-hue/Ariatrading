@@ -414,6 +414,10 @@ def main() -> None:
         if not ok:
             executor.disconnect()
             raise RuntimeError(reason)
+        # Bind the exact verified identity before the legacy loop can reach
+        # the broker boundary. A later account switch is re-checked by the
+        # executor immediately before any order operation.
+        executor.bind_account_identity(executor.get_account_identity())
         logger.info("MT5 %s executor connected and account verified", args.mode)
 
     feed = MT5BarFeed()
