@@ -87,20 +87,26 @@ def build_deterministic_dataset(count: int = 10_000, *, start_price: float = 100
     price = float(start_price)
     origin = datetime(2026, 1, 1, tzinfo=timezone.utc)
     for index in range(count):
-        cycle = index % 6
-        delta = (2.0, 3.0, 4.0, -2.0, -3.0, -4.0)[cycle]
-        open_price = price
-        close = price + delta
-        high = max(open_price, close) + 1.0
-        low = min(open_price, close) - 1.0
-        time = (origin + timedelta(minutes=index)).isoformat().replace("+00:00", "Z")
-        bars.append(RuntimeBar(time, open_price, high, low, close))
+        cycle = index % 4
         if cycle == 0:
-            signals.append(RuntimeSignal("LONG", close, close - 5.0, "soak long"))
-        elif cycle == 3:
-            signals.append(RuntimeSignal("SHORT", close, close + 5.0, "soak short"))
+            close = price
+            high, low = close + 0.5, close - 0.5
+            signal = RuntimeSignal("LONG", close, close - 2.0, "soak long")
+        elif cycle == 1:
+            close = price
+            high, low = price + 5.0, price - 0.5
+            signal = RuntimeSignal()
+        elif cycle == 2:
+            close = price
+            high, low = close + 0.5, close - 0.5
+            signal = RuntimeSignal("SHORT", close, close + 2.0, "soak short")
         else:
-            signals.append(RuntimeSignal())
+            close = price
+            high, low = price + 0.5, price - 5.0
+            signal = RuntimeSignal()
+        time = (origin + timedelta(minutes=index)).isoformat().replace("+00:00", "Z")
+        bars.append(RuntimeBar(time, price, high, low, close))
+        signals.append(signal)
         price = close
     return ReplayCase("deterministic-10000", tuple(bars), tuple(signals))
 
