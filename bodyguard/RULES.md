@@ -1,4 +1,4 @@
-# Bodyguard(Aria) Rules — v0.05.0
+# Bodyguard(Aria) Rules — v0.05.1
 
 Comprehensive defensive security rules for Ariatrading, Webaria, and Cloudflare Worker layers.
 
@@ -48,22 +48,49 @@ Clients that accumulate repeated policy violations within a short window are pla
 ### R14 — Observability without exposure
 Status and audit surfaces (`/api/bodyguard/status`, `/bodyguard.html`) may expose only aggregate counters and version metadata. They must never disclose IPs, tokens, or request bodies.
 
----
+### R15 — Payload & Request Body Integrity
+Incoming JSON payloads are checked against bounded byte size, nesting depth, and dangerous object properties such as `__proto__`, `constructor`, `prototype`, and `$where`.
 
-## New in v0.05.0
+### R16 — Execution Boundary & Command Isolation
+The public Worker and Web layer have zero broker execution authority. Public requests targeting execution surfaces must be rejected. Broker interaction remains isolated inside the protected runtime boundary.
 
-### R15 — Payload & Request Body Integrity (new)
-Any incoming JSON payload is checked against:
-1. Maximum byte limit (8KB default).
-2. Maximum nesting depth (5 levels).
-3. **Prototype Pollution Protection**: Automatic rejection of dangerous object properties (`__proto__`, `constructor`, `prototype`, `$where`).
+### R17 — CORS & Origin Protection
+CORS enforces explicit origin allowlists. Wildcard `Access-Control-Allow-Origin: *` is prohibited on authenticated or stateful surfaces, and pre-flight requests are validated defensively.
 
-### R16 — Execution Boundary & Command Isolation (new)
-The public Worker and Web layer have zero execution authority:
-- Any incoming request targeting trading endpoints (`/api/order`, `/api/execute`, `order_send`, `buy`, `sell`) is strictly blocked.
-- Broker interaction is isolated inside the protected local/server `live/` runtime boundary and cannot be triggered via public HTTP endpoints.
+### R18 — Real-Time Security Incident Reporting
+Security events detected at runtime must be emitted immediately through the active telemetry path and be available to the monitoring/status surface as soon as the event is observed.
 
-### R17 — CORS & Origin Protection (new)
-Cross-Origin Resource Sharing (CORS) enforces strict origin allowlists:
-- Wildcard `Access-Control-Allow-Origin: *` is prohibited on authenticated or stateful surfaces.
-- Pre-flight `OPTIONS` requests are handled defensively with explicit allowed headers and methods.
+R18 requirements:
+1. Detect → enforce → emit security event in the same request path whenever practical.
+2. Record category, severity, timestamp, rule, endpoint class, action, count, and evidence reference.
+3. Prefer near-real-time delivery; do not claim zero latency or guaranteed 100% delivery across provider/network failures.
+4. Never silently discard a security event without an observable failure signal.
+5. Runtime events must be sanitized before logging/persistence.
+6. Durable reports in `bodyguard/Report/` are incident memory/evidence indexes, not a substitute for live telemetry.
+7. Never attribute an attack to a specific person or organization without independent evidence.
+8. Never fabricate attack events, counters, or incidents for dashboard/demo purposes.
+
+## Incident workflow
+
+```text
+DETECT
+  -> CLASSIFY
+  -> BLOCK / RATE-LIMIT / SOFT-BAN / ALLOW
+  -> EMIT TELEMETRY
+  -> ALERT / STATUS SURFACE
+  -> DURABLE INCIDENT REPORT
+  -> INVESTIGATE
+  -> RESOLVE + REGRESSION TEST
+```
+
+## Reporting boundary
+
+The Bodyguard security status UI may expose aggregate and operationally useful information such as:
+- current posture (`HEALTHY`, `ELEVATED`, `UNDER_ATTACK`)
+- event categories and counts
+- severity
+- latest detection timestamp
+- blocked/rate-limited/soft-banned totals
+- incident/evidence references that contain no secrets or PII
+
+It must not expose raw request bodies, credentials, permanent IP addresses, access tokens, filesystem paths, or internal stack traces.
