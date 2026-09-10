@@ -39,6 +39,9 @@ function sanitizeState(raw) {
   if (!["FLAT", "SIGNAL", "APPROVED", "SUBMITTING", "ACKNOWLEDGED", "OPEN", "EXIT_PENDING", "CLOSED", "UNKNOWN", "HALT"].includes(state.lifecycle)) {
     throw new Error("invalid lifecycle");
   }
+  if (state.heartbeat != null && !Number.isFinite(Date.parse(String(state.heartbeat)))) {
+    throw new Error("invalid heartbeat");
+  }
   return state;
 }
 
@@ -49,14 +52,21 @@ export class PaperRuntimeStore {
     const url = new URL(request.url);
     if (request.method === "GET") {
       const stored = await this.state.storage.get("snapshot");
-      const snapshot = stored || DEFAULT_STATE;
+      const snapshot = stored || { ...DEFAULT_STATE, updatedAt: new Date().toISOString() };
       return Response.json({ ...snapshot, source: "durable-object" }, { headers: { "cache-control": "no-store" } });
     }
     if (request.method === "POST") {
       const body = await request.json();
       if (body.action === "recover") {
-        const snapshot = (await this.state.storage.get("snapshot")) || DEFAULT_STATE;
+        const snapshot = (await this.state.storage.get("snapshot")) || { ...DEFAULT_STATE, updatedAt: new Date().toISOString() };
         return Response.json({ ...snapshot, recovered: true, source: "durable-object" }, { headers: { "cache-control": "no-store" } });
+      }
+      if (body.action === "heartbeat") {
+        const snapshot = (await this.state.storage.get("snapshot")) || { ...DEFAULT_STATE };
+        const heartbeat = new Date().toISOString();
+        const next = { ...snapshot, contract: "aria.paper-runtime.v1", mode: "PAPER", heartbeat, updatedAt: heartbeat };
+        await this.state.storage.put("snapshot", next);
+        return Response.json({ ...next, source: "durable-object" }, { headers: { "cache-control": "no-store" } });
       }
       const snapshot = sanitizeState(body);
       await this.state.storage.put("snapshot", snapshot);
