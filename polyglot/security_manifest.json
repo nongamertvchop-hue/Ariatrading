@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "name": "Ariatrading Polyglot Security Fabric",
+  "policy": "Only verified implementations may participate in security evidence. Missing or unavailable validators fail closed.",
+  "implemented_languages": {
+    "Python": {"status": "operational", "role": ["orchestration", "inventory", "policy", "evidence"]},
+    "JavaScript": {"status": "operational", "role": ["edge_bodyguard", "cors", "request_validation", "web_boundary"]},
+    "C++": {"status": "operational", "role": ["independent_ohlc_integrity", "numeric_boundary"]},
+    "Go": {"status": "operational", "role": ["independent_ohlc_integrity", "stream_validation"]},
+    "Java": {"status": "operational", "role": ["independent_ohlc_integrity", "strict_parsing"]},
+    "Rust": {"status": "operational", "role": ["independent_ohlc_integrity", "memory_safe_validation"]}
+  },
+  "registry_only_languages": "polyglot/languages.json",
+  "security_layers": {
+    "L1": "language_inventory_and_runtime_attestation",
+    "L2": "independent_market_data_validation_quorum",
+    "L3": "edge_request_bodyguard",
+    "L4": "cross_implementation_disagreement_detection",
+    "L5": "fail_closed_worker_timeout_and_exit_handling",
+    "L6": "no_credentials_passed_to_polyglot_workers",
+    "L7": "execution_surface_isolation",
+    "L8": "CI_toolchain_and_regression_verification"
+  },
+  "quorum": {"required_validators": 4, "minimum_agreement": 4},
+  "worker_contract": "Existing market validators remain unchanged; the security gate invokes them only as an independent data-integrity evidence layer."
+}
