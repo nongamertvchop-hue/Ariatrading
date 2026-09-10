@@ -2,9 +2,10 @@ const TIMEFRAME_SECONDS = Object.freeze({"1m":60,"5m":300,"15m":900,"30m":1800,"
 const MAX_CANDLES = 500;
 const MAX_AGE_SECONDS = 90;
 const MAX_INGEST_BYTES = 256 * 1024;
+const MARKET_CONTRACT_VERSION = "mt5-market-v4";
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: { "content-type":"application/json; charset=utf-8", "cache-control":"no-store" } });
+function json(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), { status, headers: { "content-type":"application/json; charset=utf-8", "cache-control":"no-store", "x-webaria-market-contract": MARKET_CONTRACT_VERSION, ...extraHeaders } });
 }
 function key(symbol, timeframe) { return `${symbol}:${timeframe}`; }
 function validateCandle(raw) {
@@ -40,7 +41,7 @@ export class Mt5MarketStore {
     const url=new URL(request.url), symbol=(url.searchParams.get("symbol")||"EUR/USD").trim().toUpperCase(), timeframe=(url.searchParams.get("timeframe")||"15m").trim();
     if(request.method==="POST") return this.ingest(request);
     if(request.method!=="GET") return json({error:"method_not_allowed"},405);
-    if(!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)||!Object.prototype.hasOwnProperty.call(TIMEFRAME_SECONDS,timeframe)) return json({error:"bad_request",message:"invalid symbol or timeframe"},400);
+    if(!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)||!Object.prototype.hasOwnProperty.call(TIMEFRAME_SECONDS,timeframe)) return json({error:"bad_request",message:"invalid symbol or timeframe",source:"mt5"},400);
     const stored=await this.state.storage.get(key(symbol,timeframe));
     if(!stored) return json({error:"mt5_feed_unavailable",message:"no MT5 data received",source:"mt5"},503);
     const age=Math.max(0,Math.floor(Date.now()/1000)-stored.received_at);
@@ -62,4 +63,4 @@ export class Mt5MarketStore {
     } catch(error) { return json({error:"bad_request",message:error?.message||"invalid MT5 payload"},400); }
   }
 }
-export { TIMEFRAME_SECONDS };
+export { TIMEFRAME_SECONDS, MARKET_CONTRACT_VERSION };
