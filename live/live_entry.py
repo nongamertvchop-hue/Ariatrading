@@ -17,6 +17,7 @@ from live.mt5_account import validate_account_mode
 from live.mt5_executor import MT5LiveExecutor
 from live.runner import ForexLiveOrchestrator
 from live.runtime_controls import KillSwitch, RuntimeSafetyConfig
+from live.telemetry import RuntimeTelemetry
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -37,6 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--journal", default=str(PROJECT_ROOT / "data" / "execution_journal.json"))
     parser.add_argument("--circuit-state", default=str(PROJECT_ROOT / "data" / "daily_circuit_breaker.json"))
     parser.add_argument("--kill-switch", default=str(PROJECT_ROOT / "data" / "KILL_SWITCH"))
+    parser.add_argument("--heartbeat", default=str(PROJECT_ROOT / "data" / "runtime_heartbeat.json"))
+    parser.add_argument("--events", default=str(PROJECT_ROOT / "data" / "runtime_events.jsonl"))
     parser.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
     return parser
 
@@ -82,6 +85,7 @@ def main() -> None:
             limits=limits,
             circuit_breaker=DailyCircuitBreaker(args.circuit_state, limits.max_daily_drawdown_fraction),
             kill_switch=KillSwitch(args.kill_switch),
+            telemetry=RuntimeTelemetry(args.heartbeat, args.events),
         )
         runtime.run_forever(args.interval)
     finally:

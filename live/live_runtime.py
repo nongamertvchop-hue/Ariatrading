@@ -25,6 +25,7 @@ from live.runtime_controls import (
     exposure_counts,
     validate_runtime_configuration,
 )
+from live.telemetry import RuntimeTelemetry
 
 logger = logging.getLogger("ariatrading.live_runtime")
 
@@ -93,6 +94,7 @@ class LiveRuntime:
         limits: RuntimeSafetyConfig | None = None,
         circuit_breaker: DailyCircuitBreaker | None = None,
         kill_switch: KillSwitch | None = None,
+        telemetry: RuntimeTelemetry | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.orchestrator = orchestrator
@@ -102,6 +104,7 @@ class LiveRuntime:
         self.limits = limits or RuntimeSafetyConfig()
         self.circuit_breaker = circuit_breaker
         self.kill_switch = kill_switch
+        self.telemetry = telemetry
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     def preflight(self) -> None:
@@ -115,20 +118,38 @@ class LiveRuntime:
             raise RuntimeError("LiveRuntime requires DEMO or LIVE execution mode")
         ok, reason = validate_account_mode(self.executor.mt5, self.orchestrator.mode)
         if not ok:
+            if self.telemetry:
+                self.telemetry.heartbeat(status="BLOCKED", mode=self.orchestrator.mode, reason=reason)
+                self.telemetry.event("preflight_blocked", reason=reason)
             raise RuntimeError(reason)
         if self.journal.recoverable_intents():
-            raise RuntimeError("execution journal contains unreconciled intents; manual reconciliation required")
+            reason = "execution journal contains unreconciled intents; manual reconciliation required"
+            if self.telemetry:
+                self.telemetry.heartbeat(status="BLOCKED", mode=self.orchestrator.mode, reason=reason)
+                self.telemetry.event("preflight_blocked", reason=reason)
+            raise RuntimeError(reason)
         ok, reason = self.kill_switch.check() if self.kill_switch is not None else (True, "kill switch not configured")
         if not ok:
+            if self.telemetry:
+                self.telemetry.heartbeat(status="BLOCKED", mode=self.orchestrator.mode, reason=reason)
+                self.telemetry.event("kill_switch_engaged", reason=reason)
             raise RuntimeError(reason)
 
         account = self.executor.get_account_snapshot()
         if not account.trade_allowed or not account.trade_expert:
-            raise RuntimeError("MT5 trading permissions are not enabled")
+            reason = "MT5 trading permissions are not enabled"
+            if self.telemetry:
+                self.telemetry.heartbeat(status="BLOCKED", mode=self.orchestrator.mode, account=account.login, reason=reason)
+            raise RuntimeError(reason)
         if self.circuit_breaker is not None:
             ok, reason = self.circuit_breaker.check(account.equity, self.clock())
             if not ok:
+                if self.telemetry:
+                    self.telemetry.heartbeat(status="BLOCKED", mode=self.orchestrator.mode, account=account.login, reason=reason)
                 raise RuntimeError(reason)
+        if self.telemetry:
+            self.telemetry.heartbeat(status="READY", mode=self.orchestrator.mode, account=account.login)
+            self.telemetry.event("preflight_passed", mode=self.orchestrator.mode, account=account.login)
         logger.info("Live runtime preflight passed: mode=%s account=%s", self.orchestrator.mode, account.login)
 
     def _daily_realized_loss(self) -> float:
@@ -163,6 +184,10 @@ class LiveRuntime:
             ok, reason = self.kill_switch.check()
             if not ok:
                 logger.error(reason)
+                if self.telemetry:
+                    account = self.executor.get_account_snapshot()
+                    self.telemetry.heartbeat(status="BLOCKED", mode=self.orchestrator.mode, account=account.login, reason=reason)
+                    self.telemetry.event("kill_switch_engaged", reason=reason, account=account.login)
                 return 0
 
         account = self.executor.get_account_snapshot()
@@ -170,12 +195,19 @@ class LiveRuntime:
             ok, reason = self.circuit_breaker.check(account.equity, self.clock())
             if not ok:
                 logger.error(reason)
+                if self.telemetry:
+                    self.telemetry.heartbeat(status="BLOCKED", mode=self.orchestrator.mode, account=account.login, reason=reason)
+                    self.telemetry.event("circuit_breaker", reason=reason, account=account.login)
                 return 0
 
         positions = self.executor.get_open_positions()
         total_positions, per_symbol = exposure_counts(positions)
         if total_positions > self.limits.max_positions:
-            logger.error("Global position cap breached: %d > %d; no new entries", total_positions, self.limits.max_positions)
+            reason = f"global position cap breached: {total_positions} > {self.limits.max_positions}"
+            logger.error(reason)
+            if self.telemetry:
+                self.telemetry.heartbeat(status="BLOCKED", mode=self.orchestrator.mode, account=account.login, reason=reason)
+                self.telemetry.event("position_cap", reason=reason, account=account.login)
             return 0
 
         daily_loss = self._daily_realized_loss()
@@ -201,6 +233,8 @@ class LiveRuntime:
                 clock_ok, clock_reason = check_clock_skew(tick_time, now, self.limits.max_clock_skew_seconds)
                 if not clock_ok:
                     logger.warning("%s: %s", symbol, clock_reason)
+                    if self.telemetry:
+                        self.telemetry.event("clock_skew", symbol=symbol, reason=clock_reason)
                     continue
                 tick_age = (now - tick_time.astimezone(timezone.utc)).total_seconds()
                 if tick_age < 0:
@@ -208,6 +242,8 @@ class LiveRuntime:
                     continue
                 if tick_age > self.limits.max_tick_age_seconds:
                     logger.warning("%s: stale tick %.3fs", symbol, tick_age)
+                    if self.telemetry:
+                        self.telemetry.event("stale_tick", symbol=symbol, tick_age_seconds=tick_age)
                     continue
 
                 contract = self.executor.get_symbol_contract(symbol)
@@ -217,6 +253,8 @@ class LiveRuntime:
                 spread_points = (ask - bid) / contract.point
                 if not math.isfinite(spread_points) or spread_points > self.limits.max_spread_points:
                     logger.info("%s: spread %.1f points exceeds %.1f", symbol, spread_points, self.limits.max_spread_points)
+                    if self.telemetry:
+                        self.telemetry.event("spread_gate", symbol=symbol, spread_points=spread_points)
                     continue
 
                 if not bars:
@@ -233,6 +271,8 @@ class LiveRuntime:
                 max_candle_age = _TIMEFRAME_SECONDS[self.orchestrator.timeframe] + 10.0
                 if candle_age < 0 or candle_age > max_candle_age:
                     logger.warning("%s: stale completed candle %.3fs", symbol, candle_age)
+                    if self.telemetry:
+                        self.telemetry.event("stale_candle", symbol=symbol, candle_age_seconds=candle_age)
                     continue
 
                 self.orchestrator.process_symbol(
@@ -246,8 +286,14 @@ class LiveRuntime:
                     daily_realized_loss=daily_loss,
                 )
                 processed += 1
-            except Exception:
+            except Exception as exc:
                 logger.exception("%s: runtime gate/cycle failed; no order sent for this symbol", symbol)
+                if self.telemetry:
+                    self.telemetry.event("cycle_error", symbol=symbol, error=str(exc))
+
+        if self.telemetry:
+            self.telemetry.heartbeat(status="RUNNING", mode=self.orchestrator.mode, account=account.login, processed=processed)
+            self.telemetry.event("cycle_completed", account=account.login, processed=processed)
         return processed
 
     def run_forever(self, interval_seconds: float = 5.0) -> None:
@@ -261,8 +307,16 @@ class LiveRuntime:
                 self.process_once()
             except KeyboardInterrupt:
                 logger.info("Live runtime stopped by operator")
+                if self.telemetry:
+                    account = self.executor.get_account_snapshot()
+                    self.telemetry.heartbeat(status="STOPPED", mode=self.orchestrator.mode, account=account.login, reason="operator interrupt")
+                    self.telemetry.event("runtime_stopped", account=account.login, reason="operator interrupt")
                 raise
-            except Exception:
+            except Exception as exc:
                 logger.exception("Live runtime cycle failed closed; no blind retry")
+                if self.telemetry:
+                    account = self.executor.get_account_snapshot()
+                    self.telemetry.heartbeat(status="ERROR", mode=self.orchestrator.mode, account=account.login, reason=str(exc))
+                    self.telemetry.event("runtime_error", account=account.login, error=str(exc))
             elapsed = time.monotonic() - started
             time.sleep(max(0.0, interval_seconds - elapsed))
