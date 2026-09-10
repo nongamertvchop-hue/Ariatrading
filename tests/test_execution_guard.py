@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import multiprocessing
 
 import pytest
 
@@ -15,6 +16,12 @@ def _intent(bar_hour=7):
         tp=1.1075,
         lot_size=0.01,
     )
+
+
+def _reserve_worker(path, bar_hour, start_event, result_queue):
+    journal = ExecutionJournal(path)
+    start_event.wait(timeout=10)
+    result_queue.put(journal.reserve(_intent(bar_hour)))
 
 
 def test_intent_id_is_deterministic():
@@ -82,3 +89,25 @@ def test_corrupt_journal_fails_closed(tmp_path):
     journal = ExecutionJournal(path)
     with pytest.raises(RuntimeError, match="cannot be read safely"):
         journal.get("anything")
+
+
+def test_concurrent_processes_cannot_both_reserve_new_intents(tmp_path):
+    path = tmp_path / "execution.json"
+    start_event = multiprocessing.Event()
+    result_queue = multiprocessing.Queue()
+    context = multiprocessing.get_context("spawn")
+    processes = [
+        context.Process(target=_reserve_worker, args=(path, 7, start_event, result_queue)),
+        context.Process(target=_reserve_worker, args=(path, 8, start_event, result_queue)),
+    ]
+
+    for process in processes:
+        process.start()
+    start_event.set()
+    results = [result_queue.get(timeout=15) for _ in processes]
+    for process in processes:
+        process.join(timeout=15)
+
+    assert all(process.exitcode == 0 for process in processes)
+    assert sorted(results) == [False, True]
+    assert len(ExecutionJournal(path).recoverable_intents()) == 1
