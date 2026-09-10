@@ -19,7 +19,7 @@ test("allows the supported market API route", () => {
 });
 
 test("blocks broker execution paths", () => {
-  for (const path of ["/api/order", "/api/execute", "/api/trade", "/api/buy", "/api/sell", "/api/mt5"]) {
+  for (const path of ["/api/order", "/api/execute", "/api/trade", "/api/buy", "/api/sell", "/api/mt5", "/api/mt5/ingest", "/api/mt5/market"]) {
     const request = makeRequest(`https://ariatrading.pages.dev${path}`);
     const decision = validatePublicApiRequest(request);
     assert.equal(decision.ok, false);
@@ -35,9 +35,13 @@ test("blocks traversal and encoded probes", () => {
   assert.equal(detectProbe(encoded).ok, false);
 });
 
-test("blocks prototype-pollution keys at every nested level", () => {
-  assert.equal(detectPrototypePollution({ safe: { nested: { __proto__: "x" } } }).ok, true);
-  assert.equal(detectPrototypePollution({ safe: { nested: { constructor: { prototype: {} } } } }).ok, false);
+test("detects prototype-pollution keys at nested levels", () => {
+  const payload = JSON.parse('{"safe":{"nested":{"__proto__":"x"}}}');
+  assert.equal(Object.prototype.hasOwnProperty.call(payload.safe.nested, "__proto__"), true);
+  assert.equal(detectPrototypePollution(payload).ok, false);
+
+  const constructorPayload = JSON.parse('{"safe":{"nested":{"constructor":{"prototype":{}}}}}');
+  assert.equal(detectPrototypePollution(constructorPayload).ok, false);
 });
 
 test("rejects unsupported methods and oversized queries", () => {
