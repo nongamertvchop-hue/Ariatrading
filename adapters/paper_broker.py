@@ -119,6 +119,10 @@ class PaperBrokerSimulator:
             raise ValueError("noise must be finite and >= 0")
         self._volume_noise = noise
 
+    def clear_positions(self) -> None:
+        """Simulate an externally missing broker position for reconciliation tests."""
+        self._positions.clear()
+
     def submit(
         self,
         request: PaperOrderRequest,
