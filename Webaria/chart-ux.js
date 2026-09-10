@@ -6,64 +6,69 @@
   const state = window.WebariaChartState;
   if (!canvas || !wrap || !state) return;
 
-  const MIN_BARS = 20;
-  const MAX_BARS = 120;
-  const TARGET_PX_PER_BAR = 10.5;
-  const PLOT_LEFT = 12;
+  // Keep candle cells comfortably separated on both desktop and narrow screens.
+  // This is deliberately larger than the previous 10.5px target because the
+  // old viewport still looked compressed even after zoom was restored.
+  const MIN_BARS = 16;
+  const MAX_BARS = 110;
+  const TARGET_PX_PER_BAR = 15;
+  const LEFT = 12;
+  const MIN_RIGHT_AXIS = 62;
 
   let userZoomed = false;
   let preferredVisible = null;
   let preferredOffset = null;
-  let lastCandleCount = -1;
+  let lastCount = 0;
   let lastWidth = 0;
   let lastHeight = 0;
-  let wheelBusy = false;
   let pan = null;
+  let wheelFrame = false;
 
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
-  const totalBars = () => Array.isArray(state.candles) ? state.candles.length : 0;
+  const count = () => Array.isArray(state.candles) ? state.candles.length : 0;
+  const rightAxis = width => Math.max(MIN_RIGHT_AXIS, Math.min(92, width * 0.075));
+  const plotWidth = width => Math.max(1, width - LEFT - rightAxis(width));
   const redraw = () => {
     if (typeof window.draw === 'function') window.draw();
   };
 
-  function fitBarsToWidth() {
-    const count = totalBars();
-    const width = wrap.clientWidth;
-    if (!count || !width) return;
+  function normalizeViewport() {
+    const total = count();
+    if (!total) return;
 
-    const rightAxis = Math.max(62, Math.min(92, width * 0.075));
-    const usable = Math.max(180, width - PLOT_LEFT - rightAxis);
-    const target = clamp(Math.round(usable / TARGET_PX_PER_BAR), MIN_BARS, MAX_BARS);
-
-    state.visibleBars = Math.min(count, target);
-    state.offset = 0;
-    preferredVisible = state.visibleBars;
-    preferredOffset = 0;
-  }
-
-  function clampViewport() {
-    const count = totalBars();
-    if (!count) return;
-
-    const visible = clamp(Math.round(Number(state.visibleBars) || MIN_BARS), MIN_BARS, Math.min(MAX_BARS, count));
-    state.visibleBars = visible;
-    const maxOffset = Math.max(0, count - visible);
+    const maxVisible = Math.min(MAX_BARS, total);
+    state.visibleBars = clamp(Math.round(Number(state.visibleBars) || maxVisible), MIN_BARS, maxVisible);
+    const maxOffset = Math.max(0, total - state.visibleBars);
     state.offset = clamp(Math.round(Number(state.offset) || 0), 0, maxOffset);
   }
 
-  function rememberViewport() {
-    clampViewport();
+  function fit() {
+    const total = count();
+    const width = wrap.clientWidth;
+    if (!total || width < 1) return;
+
+    const target = Math.round(plotWidth(width) / TARGET_PX_PER_BAR);
+    state.visibleBars = clamp(target, MIN_BARS, Math.min(MAX_BARS, total));
+    // Keep the newest candle at the right edge, like a normal trading chart.
+    state.offset = 0;
+    preferredVisible = state.visibleBars;
+    preferredOffset = 0;
+    redraw();
+  }
+
+  function remember() {
+    normalizeViewport();
     preferredVisible = state.visibleBars;
     preferredOffset = state.offset;
   }
 
-  function restoreUserViewport() {
+  function restore() {
     if (!userZoomed || preferredVisible == null) return false;
     const beforeVisible = state.visibleBars;
     const beforeOffset = state.offset;
     state.visibleBars = preferredVisible;
     state.offset = preferredOffset ?? 0;
-    clampViewport();
+    normalizeViewport();
     preferredVisible = state.visibleBars;
     preferredOffset = state.offset;
     return beforeVisible !== state.visibleBars || beforeOffset !== state.offset;
@@ -81,141 +86,132 @@
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
       const context = canvas.getContext('2d');
-      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (context) context.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
-    const resizedMeaningfully = Math.abs(width - lastWidth) > 4 || Math.abs(height - lastHeight) > 4;
-    if (!userZoomed && resizedMeaningfully) fitBarsToWidth();
-
+    const changed = Math.abs(width - lastWidth) > 2 || Math.abs(height - lastHeight) > 2;
+    if (changed && !userZoomed) fit();
     lastWidth = width;
     lastHeight = height;
     redraw();
   }
 
   function zoomAt(clientX, factor) {
-    const total = totalBars();
+    const total = count();
     if (!total) return;
 
+    normalizeViewport();
     const rect = canvas.getBoundingClientRect();
     const width = Math.max(1, rect.width);
     const x = clamp(clientX - rect.left, 0, width);
-    const rightAxis = Math.max(62, Math.min(92, width * 0.075));
-    const plotWidth = Math.max(1, width - PLOT_LEFT - rightAxis);
-    const ratio = clamp((x - PLOT_LEFT) / plotWidth, 0, 1);
+    const pw = plotWidth(width);
+    const ratio = clamp((x - LEFT) / pw, 0, 1);
 
-    const oldCount = clamp(Math.round(Number(state.visibleBars) || MIN_BARS), 1, total);
-    const oldOffset = clamp(Math.round(Number(state.offset) || 0), 0, Math.max(0, total - oldCount));
+    const oldVisible = state.visibleBars;
+    const oldOffset = state.offset;
     const oldEnd = total - oldOffset;
-    const oldStart = Math.max(0, oldEnd - oldCount);
-    const anchor = oldStart + ratio * oldCount;
+    const oldStart = Math.max(0, oldEnd - oldVisible);
+    const anchor = oldStart + ratio * Math.max(1, oldVisible - 1);
 
-    const requested = Math.round(oldCount * factor);
-    const newCount = clamp(requested, MIN_BARS, Math.min(MAX_BARS, total));
-    const maxStart = Math.max(0, total - newCount);
-    const newStart = clamp(Math.round(anchor - ratio * newCount), 0, maxStart);
+    const requested = Math.round(oldVisible * factor);
+    const newVisible = clamp(requested, MIN_BARS, Math.min(MAX_BARS, total));
+    const maxStart = Math.max(0, total - newVisible);
+    const newStart = clamp(Math.round(anchor - ratio * Math.max(1, newVisible - 1)), 0, maxStart);
 
-    state.visibleBars = newCount;
-    state.offset = total - (newStart + newCount);
+    state.visibleBars = newVisible;
+    state.offset = total - (newStart + newVisible);
     userZoomed = true;
-    rememberViewport();
+    remember();
     redraw();
   }
 
-  function panByPixels(dx) {
-    const total = totalBars();
+  function panPixels(dx) {
+    const total = count();
     if (!total) return;
+    normalizeViewport();
 
-    const visible = clamp(Math.round(Number(state.visibleBars) || MIN_BARS), 1, total);
-    const plotWidth = Math.max(1, canvas.clientWidth - PLOT_LEFT - Math.max(62, Math.min(92, canvas.clientWidth * 0.075)));
-    const barsPerPixel = visible / plotWidth;
-    state.offset = clamp(Math.round((Number(state.offset) || 0) + dx * barsPerPixel), 0, Math.max(0, total - visible));
+    const barsPerPixel = state.visibleBars / plotWidth(canvas.clientWidth);
+    state.offset = clamp(
+      Math.round(state.offset + dx * barsPerPixel),
+      0,
+      Math.max(0, total - state.visibleBars)
+    );
     userZoomed = true;
-    rememberViewport();
+    remember();
     redraw();
   }
 
-  // Own the wheel gesture in capture phase so the older chart handler cannot fight it.
-  canvas.addEventListener('wheel', (event) => {
+  // Prevent the browser/page from stealing chart gestures.
+  canvas.style.touchAction = 'none';
+  canvas.style.userSelect = 'none';
+  canvas.style.webkitUserSelect = 'none';
+
+  canvas.addEventListener('wheel', event => {
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (wheelBusy) return;
-    wheelBusy = true;
-    zoomAt(event.clientX, event.deltaY > 0 ? 1.18 : 0.847);
-    requestAnimationFrame(() => { wheelBusy = false; });
-  }, { passive: false, capture: true });
+    if (wheelFrame) return;
+    wheelFrame = true;
+    zoomAt(event.clientX, event.deltaY > 0 ? 1.16 : 0.862);
+    requestAnimationFrame(() => { wheelFrame = false; });
+  }, {capture: true, passive: false});
 
-  // Desktop drag-to-pan. Drawing tools remain owned by trading.js.
-  canvas.addEventListener('pointerdown', (event) => {
-    if (state.tool !== 'cursor' || state.pointers?.size > 1) return;
-    pan = { pointerId: event.pointerId, x: event.clientX, moved: false };
-  }, { capture: true });
+  canvas.addEventListener('pointerdown', event => {
+    if (state.tool !== 'cursor') return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (state.pointers && state.pointers.size > 1) return;
+    pan = {id: event.pointerId, x: event.clientX};
+    try { canvas.setPointerCapture(event.pointerId); } catch {}
+  }, {capture: true});
 
-  canvas.addEventListener('pointermove', (event) => {
-    if (!pan || pan.pointerId !== event.pointerId || state.tool !== 'cursor' || state.draft != null) return;
+  canvas.addEventListener('pointermove', event => {
+    if (!pan || pan.id !== event.pointerId || state.tool !== 'cursor') return;
     const dx = pan.x - event.clientX;
-    if (Math.abs(dx) < 2) return;
-    pan.moved = true;
+    if (Math.abs(dx) < 1) return;
     pan.x = event.clientX;
-    panByPixels(dx);
+    panPixels(dx);
+    event.preventDefault();
     event.stopImmediatePropagation();
-  }, { capture: true });
+  }, {capture: true});
 
-  const endPan = (event) => {
-    if (!pan || (event && pan.pointerId !== event.pointerId)) return;
+  const endPan = event => {
+    if (!pan || (event && pan.id !== event.pointerId)) return;
+    try { canvas.releasePointerCapture(pan.id); } catch {}
     pan = null;
   };
-  canvas.addEventListener('pointerup', endPan, { capture: true });
-  canvas.addEventListener('pointercancel', endPan, { capture: true });
-
-  const ro = new ResizeObserver(resizeCanvas);
-  ro.observe(wrap);
-  window.addEventListener('resize', resizeCanvas, { passive: true });
+  canvas.addEventListener('pointerup', endPan, {capture: true});
+  canvas.addEventListener('pointercancel', endPan, {capture: true});
+  canvas.addEventListener('lostpointercapture', () => { pan = null; }, {capture: true});
 
   window.WebariaChartUX = {
-    fit: () => {
-      userZoomed = false;
-      fitBarsToWidth();
-      redraw();
-    },
-    resetZoom: () => {
-      userZoomed = false;
-      fitBarsToWidth();
-      redraw();
-    },
-    zoomIn: () => zoomAt(canvas.clientWidth / 2, 0.82),
-    zoomOut: () => zoomAt(canvas.clientWidth / 2, 1.22)
+    fit: () => { userZoomed = false; fit(); },
+    resetZoom: () => { userZoomed = false; fit(); },
+    zoomIn: () => zoomAt(canvas.getBoundingClientRect().left + canvas.clientWidth / 2, 0.80),
+    zoomOut: () => zoomAt(canvas.getBoundingClientRect().left + canvas.clientWidth / 2, 1.25)
   };
 
-  // trading.js refreshes market data periodically and resets visibleBars to 90.
-  // Restore the user's viewport immediately after such a refresh, without polling redraws.
+  const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(resizeCanvas) : null;
+  if (ro) ro.observe(wrap);
+  window.addEventListener('resize', resizeCanvas, {passive: true});
+
+  // trading.js still initializes its viewport to 90 bars on each data refresh.
+  // Keep this compatibility guard very tight so there is no visible 90-bar flash.
   setInterval(() => {
-    const count = totalBars();
-    if (!count) return;
+    const total = count();
+    if (!total) return;
 
-    if (count !== lastCandleCount) {
-      lastCandleCount = count;
-      if (userZoomed) restoreUserViewport();
-      else fitBarsToWidth();
-      redraw();
+    if (total !== lastCount) {
+      lastCount = total;
+      if (userZoomed) restore();
+      else fit();
       return;
     }
 
-    if (userZoomed) {
-      if (restoreUserViewport()) redraw();
-      return;
-    }
+    if (userZoomed) restore();
+  }, 50);
 
-    const width = wrap.clientWidth;
-    if (width && Math.abs(width - lastWidth) > 1) {
-      fitBarsToWidth();
-      lastWidth = width;
-      redraw();
-    }
-  }, 250);
-
+  // First paint: wait until trading.js has populated candles, then fit once.
   setTimeout(() => {
     resizeCanvas();
-    if (!userZoomed && totalBars()) fitBarsToWidth();
-    redraw();
+    if (count() && !userZoomed) fit();
   }, 0);
 })();
