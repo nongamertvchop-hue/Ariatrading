@@ -11,9 +11,9 @@ HTTPS/reverse-proxy or a private tunnel before exposing it to Cloudflare.
 from __future__ import annotations
 
 import json
+import math
 import os
 import secrets
-import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -69,13 +69,16 @@ def _timeframe(raw: str) -> str:
 
 def _candle(row: Any) -> dict[str, Any]:
     values = {field: float(getattr(row, field)) for field in ("open", "high", "low", "close")}
-    if not all(value == value and abs(value) != float("inf") for value in values.values()):
+    if not all(math.isfinite(value) for value in values.values()):
         raise ValueError("MT5 returned non-finite OHLC")
     high = values["high"]
     low = values["low"]
     if high < max(values["open"], values["close"]) or low > min(values["open"], values["close"]) or high < low:
         raise ValueError("MT5 returned inconsistent OHLC")
-    return {"time": int(getattr(row, "time")), **values}
+    timestamp = int(getattr(row, "time"))
+    if timestamp <= 0:
+        raise ValueError("MT5 returned invalid candle timestamp")
+    return {"time": timestamp, **values}
 
 
 def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
@@ -83,26 +86,22 @@ def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
         raise RuntimeError(f"MT5 symbol_select failed for {symbol}: {mt5.last_error()}")
 
     rates = mt5.copy_rates_from_pos(symbol, TIMEFRAME_MAP[timeframe], 1, count)
-    if rates is None:
+    live_rates = mt5.copy_rates_from_pos(symbol, TIMEFRAME_MAP[timeframe], 0, 1)
+    if rates is None or live_rates is None:
         raise RuntimeError(f"MT5 copy_rates_from_pos failed: {mt5.last_error()}")
+
     completed = [_candle(row) for row in rates]
     completed.sort(key=lambda row: row["time"])
+    live = _candle(live_rates[-1]) if len(live_rates) else None
     tick = mt5.symbol_info_tick(symbol)
     if tick is None:
         raise RuntimeError(f"MT5 symbol_info_tick failed: {mt5.last_error()}")
 
     bid = float(tick.bid)
     ask = float(tick.ask)
-    if not (bid > 0 and ask > 0 and ask >= bid):
+    if not (math.isfinite(bid) and math.isfinite(ask) and bid > 0 and ask > 0 and ask >= bid):
         raise RuntimeError("MT5 tick is invalid")
     midpoint = (bid + ask) / 2.0
-    live = dict(completed[-1]) if completed else None
-    if live is not None:
-        live["close"] = midpoint
-        live["time"] = int(tick.time)
-        live["open"] = live["open"]
-        live["high"] = max(live["high"], midpoint)
-        live["low"] = min(live["low"], midpoint)
 
     return {
         "symbol": symbol,
