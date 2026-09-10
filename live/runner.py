@@ -4,15 +4,14 @@ Coordinates the multi-symbol live lifecycle:
 1. Feeds: Polls completed candles from MT5 or feed adapter.
 2. Signal: Evaluates Sequence, S/R Levels, and Realtime Supervisor.
 3. Gates: Forex Market Conditions (Session, Rollover, Spread) + Forex Risk Sizing.
-4. Action: Broadcasts alerts (Telegram/Webhook) and routes orders to MT5LiveExecutor.
+4. Action: Broadcasts alerts and, in DEMO mode only, routes orders to MT5.
 
 Supported modes:
-- ALERT_ONLY: Monitor and send Telegram alerts without placing broker orders.
-- DEMO: Execute on MT5 demo account with hard SL/TP and slippage control.
+- ALERT_ONLY: Monitor and send alerts without placing broker orders.
+- DEMO: Execute on an MT5 demo account with hard SL/TP and slippage control.
 
-LIVE execution is intentionally disabled in this repository build. Keeping the
-broker boundary fail-closed prevents an accidental configuration from turning
-research/demo infrastructure into a real-capital execution path.
+LIVE execution is intentionally disabled in this repository build. The execution
+journal is also fail-closed: an ambiguous broker response is never retried blindly.
 """
 
 from __future__ import annotations
@@ -30,6 +29,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from adapters.mt5_feed import MT5BarFeed
+from live.execution_guard import ExecutionJournal, build_intent
 from live.mt5_executor import MT5LiveExecutor, ORDER_BUY, ORDER_SELL
 from live.notifier import Notifier
 from strategy.engine import EngineSignal, LONG, WAIT
@@ -71,6 +71,7 @@ class ForexLiveOrchestrator:
         executor: MT5LiveExecutor | None = None,
         notifier: Notifier | None = None,
         session_config: ForexSessionConfig | None = None,
+        execution_journal: ExecutionJournal | None = None,
     ) -> None:
         self.symbols = [s.strip().upper() for s in symbols]
         self.mode = mode.upper()
@@ -86,6 +87,9 @@ class ForexLiveOrchestrator:
         self.executor = executor
         self.notifier = notifier or Notifier()
         self.session_config = session_config or ForexSessionConfig()
+        self.execution_journal = execution_journal or ExecutionJournal(
+            _PROJECT_ROOT / "data" / "demo_execution_journal.json"
+        )
         self._last_processed_bar_time: dict[str, datetime] = {}
 
     def process_symbol(
@@ -114,9 +118,9 @@ class ForexLiveOrchestrator:
         ]
         two_setups = evaluate_two_setups(candle_dicts, timeframe=self.timeframe)
         sig: EngineSignal = two_setups.signal
-        self._last_processed_bar_time[symbol] = latest_bar.time
 
         if sig.action == WAIT or sig.protection != "SAFE":
+            self._last_processed_bar_time[symbol] = latest_bar.time
             logger.debug("%s: signal is %s (protection=%s)", symbol, sig.action, sig.protection)
             return None
 
@@ -132,6 +136,7 @@ class ForexLiveOrchestrator:
         entry_price = ask if sig.action == LONG else bid
 
         if not cond.allowed:
+            self._last_processed_bar_time[symbol] = latest_bar.time
             logger.info("Gate rejected %s %s: %s", symbol, direction_str, cond.reason)
             self.notifier.notify_rejection(symbol=symbol, direction=direction_str, reason=cond.reason)
             return None
@@ -152,6 +157,7 @@ class ForexLiveOrchestrator:
             active_symbols=active_symbols,
         )
         if not risk_dec.allowed:
+            self._last_processed_bar_time[symbol] = latest_bar.time
             logger.info("Risk rejected %s %s: %s", symbol, direction_str, risk_dec.reason)
             self.notifier.notify_rejection(symbol=symbol, direction=direction_str, reason=risk_dec.reason)
             return None
@@ -184,16 +190,72 @@ class ForexLiveOrchestrator:
             mode=self.mode,
         )
 
-        if self.mode == "DEMO" and self.executor is not None:
-            exec_res = self.executor.send_market_order(
+        if self.mode == "DEMO":
+            self._last_processed_bar_time[symbol] = latest_bar.time
+            if self.executor is None:
+                self.notifier.notify_system(
+                    title="Demo Execution Blocked",
+                    details=f"Symbol: {candidate.symbol}\nReason: executor unavailable; fail-closed.",
+                    alert_level="ERROR",
+                )
+                return candidate
+
+            intent = build_intent(
                 symbol=candidate.symbol,
-                direction=ORDER_BUY if candidate.direction == "BUY" else ORDER_SELL,
-                volume=candidate.lot_size,
+                direction=candidate.direction,
+                bar_time=latest_bar.time,
+                entry=candidate.entry,
                 sl=candidate.sl,
                 tp=candidate.tp,
-                comment="Aria-DEMO",
+                lot_size=candidate.lot_size,
             )
+            try:
+                if not self.execution_journal.reserve(intent):
+                    existing = self.execution_journal.get(intent.intent_id) or {}
+                    logger.warning(
+                        "Duplicate demo execution suppressed for %s (state=%s)",
+                        candidate.symbol,
+                        existing.get("state", "UNKNOWN"),
+                    )
+                    return candidate
+            except (OSError, RuntimeError, KeyError) as exc:
+                logger.error("Demo execution blocked: journal unavailable: %s", exc)
+                self.notifier.notify_system(
+                    title="Demo Execution Blocked",
+                    details=f"Symbol: {candidate.symbol}\nReason: execution journal unavailable; fail-closed.\nError: {exc}",
+                    alert_level="ERROR",
+                )
+                return candidate
+
+            try:
+                self.execution_journal.transition(intent.intent_id, "SUBMITTED")
+                exec_res = self.executor.send_market_order(
+                    symbol=candidate.symbol,
+                    direction=ORDER_BUY if candidate.direction == "BUY" else ORDER_SELL,
+                    volume=candidate.lot_size,
+                    sl=candidate.sl,
+                    tp=candidate.tp,
+                    comment=f"Aria-DEMO-{intent.intent_id[:12]}",
+                )
+            except Exception as exc:
+                # A transport exception is ambiguous: the broker may have accepted
+                # the request before the client observed the failure. Never retry blindly.
+                self.execution_journal.transition(intent.intent_id, "AMBIGUOUS", error=str(exc))
+                logger.exception("Demo order outcome is ambiguous for %s", candidate.symbol)
+                self.notifier.notify_system(
+                    title="Demo Order Ambiguous",
+                    details=f"Symbol: {candidate.symbol}\nIntent: {intent.intent_id}\nReason: {exc}\nManual reconciliation required before retry.",
+                    alert_level="ERROR",
+                )
+                return candidate
+
             if exec_res.success:
+                self.execution_journal.transition(
+                    intent.intent_id,
+                    "SUCCEEDED",
+                    ticket=exec_res.ticket,
+                    broker_retcode=exec_res.retcode,
+                )
                 logger.info("Demo order executed #%d for %s", exec_res.ticket, candidate.symbol)
                 self.notifier.notify_execution(
                     symbol=candidate.symbol,
@@ -204,12 +266,21 @@ class ForexLiveOrchestrator:
                     comment=exec_res.comment,
                 )
             else:
+                self.execution_journal.transition(
+                    intent.intent_id,
+                    "FAILED",
+                    broker_retcode=exec_res.retcode,
+                    error=exec_res.error_message,
+                )
                 logger.error("Demo order placement failed for %s: %s", candidate.symbol, exec_res.error_message)
                 self.notifier.notify_system(
                     title="Demo Order Failed",
                     details=f"Symbol: {candidate.symbol}\nError: {exec_res.error_message}",
                     alert_level="ERROR",
                 )
+
+        else:
+            self._last_processed_bar_time[symbol] = latest_bar.time
 
         return candidate
 
