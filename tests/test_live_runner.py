@@ -49,14 +49,15 @@ def test_orchestrator_initialization():
     assert orchestrator.mode == "ALERT_ONLY"
 
 
-def test_orchestrator_rejects_live_mode():
-    with pytest.raises(ValueError, match="LIVE is fail-closed"):
-        ForexLiveOrchestrator(symbols=["EURUSD"], mode="LIVE")
+def test_orchestrator_rejects_unknown_mode():
+    with pytest.raises(ValueError, match="Unsupported execution mode"):
+        ForexLiveOrchestrator(symbols=["EURUSD"], mode="UNKNOWN")
 
 
-def test_cli_exposes_only_safe_execution_modes():
+def test_cli_exposes_alert_demo_and_live_execution_modes():
     mode_action = next(action for action in build_arg_parser()._actions if action.dest == "mode")
-    assert mode_action.choices == ["ALERT_ONLY", "DEMO"]
+    assert mode_action.choices == ["ALERT_ONLY", "DEMO", "LIVE"]
+    assert mode_action.default == "ALERT_ONLY"
 
 
 def test_orchestrator_insufficient_bars(eurusd_contract):
@@ -131,7 +132,8 @@ class _Notifier:
         self.events.append(("system", kwargs))
 
 
-def test_demo_execution_is_journaled_and_duplicate_is_suppressed(monkeypatch, tmp_path, eurusd_contract):
+@pytest.mark.parametrize("mode", ["DEMO", "LIVE"])
+def test_execution_is_journaled_and_duplicate_is_suppressed(monkeypatch, tmp_path, eurusd_contract, mode):
     _patch_trade_pipeline(monkeypatch)
     notifier = _Notifier()
 
@@ -146,14 +148,13 @@ def test_demo_execution_is_journaled_and_duplicate_is_suppressed(monkeypatch, tm
     executor = _Executor()
     journal = ExecutionJournal(tmp_path / "execution.json")
     orchestrator = ForexLiveOrchestrator(
-        symbols=["EURUSD"], mode="DEMO", executor=executor, notifier=notifier, execution_journal=journal
+        symbols=["EURUSD"], mode=mode, executor=executor, notifier=notifier, execution_journal=journal
     )
     bars = generate_bars(count=50)
 
     orchestrator.process_symbol("EURUSD", bars, 1.1000, 1.1001, eurusd_contract, 10000.0)
-    # A new orchestrator simulates a process restart with the same durable journal.
     restarted = ForexLiveOrchestrator(
-        symbols=["EURUSD"], mode="DEMO", executor=executor, notifier=notifier, execution_journal=journal
+        symbols=["EURUSD"], mode=mode, executor=executor, notifier=notifier, execution_journal=journal
     )
     restarted.process_symbol("EURUSD", bars, 1.1000, 1.1001, eurusd_contract, 10000.0)
 
@@ -161,7 +162,7 @@ def test_demo_execution_is_journaled_and_duplicate_is_suppressed(monkeypatch, tm
     assert len(journal.recoverable_intents()) == 0
 
 
-def test_demo_transport_exception_becomes_ambiguous(monkeypatch, tmp_path, eurusd_contract):
+def test_live_transport_exception_becomes_ambiguous(monkeypatch, tmp_path, eurusd_contract):
     _patch_trade_pipeline(monkeypatch)
     notifier = _Notifier()
 
@@ -171,7 +172,7 @@ def test_demo_transport_exception_becomes_ambiguous(monkeypatch, tmp_path, eurus
 
     journal = ExecutionJournal(tmp_path / "execution.json")
     orchestrator = ForexLiveOrchestrator(
-        symbols=["EURUSD"], mode="DEMO", executor=_Executor(), notifier=notifier, execution_journal=journal
+        symbols=["EURUSD"], mode="LIVE", executor=_Executor(), notifier=notifier, execution_journal=journal
     )
     bars = generate_bars(count=50)
     orchestrator.process_symbol("EURUSD", bars, 1.1000, 1.1001, eurusd_contract, 10000.0)
@@ -179,4 +180,4 @@ def test_demo_transport_exception_becomes_ambiguous(monkeypatch, tmp_path, eurus
     intents = journal.recoverable_intents()
     assert len(intents) == 1
     assert intents[0]["state"] == "AMBIGUOUS"
-    assert any(event[0] == "system" and event[1]["title"] == "Demo Order Ambiguous" for event in notifier.events)
+    assert any(event[0] == "system" and event[1]["title"] == "LIVE Order Ambiguous" for event in notifier.events)
