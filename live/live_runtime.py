@@ -81,6 +81,13 @@ class DailyCircuitBreaker:
         return True, "daily drawdown within limit"
 
 
+def _require_utc(value: datetime, field_name: str) -> datetime:
+    """Reject naive timestamps instead of silently interpreting them in local time."""
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise RuntimeError(f"{field_name} must be timezone-aware")
+    return value.astimezone(timezone.utc)
+
+
 class LiveRuntime:
     """Drive MT5 data -> strategy/risk -> execution for a connected terminal."""
 
@@ -102,6 +109,30 @@ class LiveRuntime:
         self.limits = limits or RuntimeLimits()
         self.circuit_breaker = circuit_breaker
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+
+    def _daily_realized_loss(self, now: datetime) -> float:
+        """Return today's realized loss for this strategy; fail closed on history errors."""
+        mt5 = self.executor.mt5
+        if mt5 is None:
+            raise RuntimeError("MT5 module unavailable")
+        current = _require_utc(now, "runtime clock")
+        start = datetime(current.year, current.month, current.day, tzinfo=timezone.utc)
+        deals = mt5.history_deals_get(start, current)
+        if deals is None:
+            raise RuntimeError(f"MT5 deal history unavailable: {mt5.last_error()}")
+
+        total = 0.0
+        entry_out = getattr(mt5, "DEAL_ENTRY_OUT", 1)
+        entry_out_by = getattr(mt5, "DEAL_ENTRY_OUT_BY", 3)
+        for deal in deals:
+            if int(getattr(deal, "magic", 0)) != self.executor.magic_number:
+                continue
+            if int(getattr(deal, "entry", -1)) not in {entry_out, entry_out_by}:
+                continue
+            total += float(getattr(deal, "profit", 0.0))
+            total += float(getattr(deal, "swap", 0.0))
+            total += float(getattr(deal, "commission", 0.0))
+        return max(0.0, -total)
 
     def preflight(self) -> None:
         """Refuse to start if the requested execution environment is inconsistent."""
@@ -125,15 +156,16 @@ class LiveRuntime:
     def process_once(self) -> int:
         """Process one completed-bar cycle. Returns number of evaluated symbols."""
         account = self.executor.get_account_snapshot()
+        now = _require_utc(self.clock(), "runtime clock")
         if self.circuit_breaker is not None:
-            ok, reason = self.circuit_breaker.check(account.equity, self.clock())
+            ok, reason = self.circuit_breaker.check(account.equity, now)
             if not ok:
                 raise RuntimeError(reason)
+        daily_realized_loss = self._daily_realized_loss(now)
 
         positions = self.executor.get_open_positions()
         active_symbols = sorted({position.symbol for position in positions})
         processed = 0
-        now = self.clock()
 
         for symbol in self.orchestrator.symbols:
             bars = self.feed.closed_bars(symbol, self.orchestrator.timeframe, self.orchestrator.candle_history)
@@ -141,12 +173,18 @@ class LiveRuntime:
             if bid <= 0 or ask <= 0 or ask < bid:
                 logger.warning("%s: invalid tick bid=%s ask=%s", symbol, bid, ask)
                 continue
+            tick_time = _require_utc(tick_time, f"{symbol} tick timestamp")
             tick_age = (now - tick_time).total_seconds()
+            if tick_age < 0:
+                logger.warning("%s: future tick timestamp %.3fs; skipping", symbol, -tick_age)
+                continue
             if tick_age > self.limits.max_tick_age_seconds:
                 logger.warning("%s: stale tick %.3fs", symbol, tick_age)
                 continue
 
             contract: ForexSymbolContract = self.executor.get_symbol_contract(symbol)
+            if contract.point <= 0:
+                raise RuntimeError(f"{symbol}: broker point must be positive")
             spread_points = (ask - bid) / contract.point
             if spread_points > self.limits.max_spread_points:
                 logger.info("%s: spread %.1f points exceeds %.1f", symbol, spread_points, self.limits.max_spread_points)
@@ -154,9 +192,12 @@ class LiveRuntime:
 
             if not bars:
                 continue
-            latest = bars[-1].time
+            latest = _require_utc(bars[-1].time, f"{symbol} candle timestamp")
             max_candle_age = _TIMEFRAME_SECONDS[self.orchestrator.timeframe] + 10.0
             candle_age = (now - latest).total_seconds()
+            if candle_age < 0:
+                logger.warning("%s: future completed candle timestamp %.3fs; skipping", symbol, -candle_age)
+                continue
             if candle_age > max_candle_age:
                 logger.warning("%s: stale completed candle %.3fs", symbol, candle_age)
                 continue
@@ -169,6 +210,7 @@ class LiveRuntime:
                 contract=contract,
                 equity=account.equity,
                 active_symbols=active_symbols,
+                daily_realized_loss=daily_realized_loss,
             )
             processed += 1
         return processed
