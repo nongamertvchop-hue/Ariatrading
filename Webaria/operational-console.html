@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ARIA Operational Console</title>
+  <style>
+    :root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}*{box-sizing:border-box}body{margin:0;background:#080b10;color:#edf2f7}main{max-width:1300px;margin:auto;padding:24px}h1{margin:0 0 4px}.muted{color:#8d98a8}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px}.card{background:#111722;border:1px solid #273142;border-radius:12px;padding:16px}.label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8d98a8}.value{font-size:22px;font-weight:700;margin-top:8px}.healthy{color:#72daa8}.warn{color:#e3c477}.halt{color:#f17878}.wide{grid-column:span 2}.full{grid-column:1/-1}.row{display:flex;gap:8px;flex-wrap:wrap}.button{background:#192333;border:1px solid #364257;color:#fff;padding:9px 12px;border-radius:9px;cursor:pointer}.events{max-height:460px;overflow:auto}.event{display:grid;grid-template-columns:160px 110px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid #202a37;font-size:13px}.event b{font-weight:700}.status{display:inline-flex;align-items:center;gap:8px}.dot{width:9px;height:9px;border-radius:50%;background:#707b89}.dot.healthy{background:#72daa8}.dot.halt{background:#f17878}.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}.check{padding:10px;border:1px solid #273142;border-radius:9px}.eq{width:100%;height:130px;background:#0b0f16;border:1px solid #263040;border-radius:10px}@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){main{padding:16px}.grid{grid-template-columns:1fr}.wide{grid-column:auto}.event{grid-template-columns:1fr}.checks{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main>
+  <h1>ARIA Operational Console</h1>
+  <div class="muted">Paper/demo runtime observability · no live broker execution</div>
+  <div class="row" style="margin-top:14px">
+    <button class="button" id="recover">Recover checkpoint</button>
+    <button class="button" id="refresh">Refresh</button>
+    <button class="button" id="export">Export snapshot</button>
+  </div>
+
+  <section class="grid">
+    <div class="card"><div class="label">Health</div><div class="value status"><i id="healthDot" class="dot"></i><span id="health">UNKNOWN</span></div></div>
+    <div class="card"><div class="label">Lifecycle</div><div class="value" id="lifecycle">FLAT</div></div>
+    <div class="card"><div class="label">Heartbeat</div><div class="value" id="heartbeat">—</div></div>
+    <div class="card"><div class="label">Last completed bar</div><div class="value" id="bar">—</div></div>
+    <div class="card"><div class="label">Balance</div><div class="value" id="balance">—</div></div>
+    <div class="card"><div class="label">Equity</div><div class="value" id="equity">—</div></div>
+    <div class="card"><div class="label">Realized P/L</div><div class="value" id="realized">—</div></div>
+    <div class="card"><div class="label">Unrealized P/L</div><div class="value" id="unrealized">—</div></div>
+    <div class="card"><div class="label">Peak equity</div><div class="value" id="peak">—</div></div>
+    <div class="card"><div class="label">Drawdown</div><div class="value" id="dd">—</div></div>
+    <div class="card"><div class="label">Trade count</div><div class="value" id="trades">—</div></div>
+    <div class="card"><div class="label">Win rate</div><div class="value" id="winrate">—</div></div>
+    <div class="card wide"><div class="label">Position</div><div class="value" id="position">FLAT</div></div>
+    <div class="card wide"><div class="label">Halt / alert</div><div class="value" id="alert">—</div></div>
+
+    <div class="card full">
+      <div class="label">Release gate</div>
+      <div id="checks" class="checks"></div>
+    </div>
+
+    <div class="card full">
+      <div class="label">Equity history</div>
+      <canvas id="equityChart" class="eq"></canvas>
+    </div>
+
+    <div class="card full">
+      <div class="label">Recent events</div>
+      <div id="events" class="events"></div>
+    </div>
+  </section>
+</main>
+<script>
+(function(){
+  'use strict';
+  const KEY='webaria-paper-runtime-v1';
+  const $=id=>document.getElementById(id);
+  function load(){try{return JSON.parse(localStorage.getItem(KEY)||'null')}catch(_){return null}}
+  function health(state){if(!state)return ['UNKNOWN',''];if(state.halted)return ['HALT','halt'];if(state.running)return ['HEALTHY','healthy'];return ['STOPPED','warn']}
+  function money(v){return Number.isFinite(Number(v))?Number(v).toFixed(2):'—'}
+  function render(){
+    const state=load();
+    if(!state){$('health').textContent='NO CHECKPOINT';$('healthDot').className='dot warn';return}
+    const [h,hc]=health(state);$('health').textContent=h;$('health').className=`value ${hc}`;$('healthDot').className=`dot ${hc}`;
+    $('lifecycle').textContent=state.lifecycle||'FLAT';$('heartbeat').textContent=state.events?.at(-1)?.timestamp||'—';$('bar').textContent=state.lastProcessedBarTime||'—';
+    $('balance').textContent=money(state.balance);$('equity').textContent=money(state.equity ?? state.balance);$('realized').textContent=money(state.realizedPnl);
+    $('unrealized').textContent=money(state.unrealizedPnl);$('peak').textContent=money(state.peakEquity);$('dd').textContent=money(state.drawdown);
+    $('trades').textContent=String(state.tradeCount ?? state.orders?.filter(o=>o.status==='FILLED').length ?? 0);$('winrate').textContent=Number.isFinite(Number(state.winRate))?`${Number(state.winRate).toFixed(2)}%`:'—';
+    $('position').textContent=state.position?`${state.position.side} ${money(state.position.quantity)} @ ${money(state.position.entry)}`:'FLAT';$('alert').textContent=state.haltReason||'No active halt';
+    const checks=Array.isArray(state.releaseGate?.checks)?state.releaseGate.checks:[];$('checks').innerHTML=checks.length?checks.map(c=>`<div class="check"><b>${escapeHtml(c.name)}</b> · <span class="${c.passed?'healthy':'halt'}">${c.passed?'PASS':'FAIL'}</span><div class="muted">${escapeHtml(c.detail||'')}</div></div>`).join(''):'<div class="muted">Release-gate report not attached to this browser checkpoint.</div>';
+    $('events').innerHTML=(state.events||[]).slice(-100).reverse().map(e=>`<div class="event"><span>${escapeHtml(e.timestamp||'')}</span><b>${escapeHtml(e.type||e.event_type||'EVENT')}</b><span>${escapeHtml(e.reason||'')}</span></div>`).join('')||'<div class="muted">No events recorded.</div>';
+    draw(state.equityHistory||[]);
+  }
+  function escapeHtml(v){return String(v).replace(/[&<>"]/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s]))}
+  function draw(points){const canvas=$('equityChart'),ratio=window.devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;canvas.width=w*ratio;canvas.height=h*ratio;const ctx=canvas.getContext('2d');ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,w,h);if(!points.length)return;const ys=points.map(p=>Number(p.equity)).filter(Number.isFinite);if(!ys.length)return;const min=Math.min(...ys),max=Math.max(...ys)||min+1;ctx.beginPath();ys.forEach((y,i)=>{const x=i*(w-8)/Math.max(1,ys.length-1)+4;const py=h-4-((y-min)/(max-min||1))*(h-8);i?ctx.lineTo(x,py):ctx.moveTo(x,py)});ctx.strokeStyle='white';ctx.lineWidth=1.5;ctx.stroke()}
+  function exportSnapshot(){const state=load();if(!state)return;const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`aria-paper-snapshot-${Date.now()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+  $('refresh').onclick=render;$('recover').onclick=()=>{window.opener?.WebariaPaperRuntime?.recover?.();setTimeout(render,100)};$('export').onclick=exportSnapshot;render();setInterval(render,2000);window.addEventListener('resize',render);
+})();
+</script>
+</body>
+</html>
