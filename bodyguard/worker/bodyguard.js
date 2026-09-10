@@ -1,17 +1,20 @@
 /**
- * Bodyguard(Aria) v0.05.0 — aegis-shield
+ * Bodyguard(Aria) v0.05.1 — aegis-shield
  *
  * Enforcement, audit counters, alert thresholds, prototype pollution protection,
- * execution boundary isolation, and strict CORS defense.
+ * execution boundary isolation, strict CORS defense, and bounded in-memory state.
  */
 
-export const BODYGUARD_VERSION = "0.05.0";
+export const BODYGUARD_VERSION = "0.05.1";
 
 const DEFAULTS = Object.freeze({
   allowedMethods: ["GET", "HEAD", "OPTIONS"],
   maxQueryLength: 512,
   maxBodyBytes: 8192,
   maxNestingDepth: 5,
+  maxRateBuckets: 4096,
+  maxOffenseBuckets: 4096,
+  maxSoftBans: 4096,
   symbolPattern: /^[A-Z]{3}\/[A-Z]{3}$/,
   allowedTimeframes: new Set(["1m", "5m", "15m", "30m", "1h", "4h", "1D"]),
   allowedApiPaths: new Set([
@@ -73,9 +76,41 @@ const audit = {
 
 const PROBE_RE = /(\.\.|%2e%2e|%252e|\/etc\/passwd|\/proc\/|\/win(dows)?\/|<|>|javascript:|onerror=|onload=|union\s+select|drop\s+table|insert\s+into|\bexec\b|xp_cmdshell|\$\{|\{\{|%3c%3c|%00)/i;
 const PROTO_POLLUTION_RE = /(__proto__|constructor|prototype|\$where)/i;
+const PUBLIC_MESSAGES = Object.freeze({
+  cors_origin_rejected: "origin not permitted",
+  soft_banned: "temporarily blocked",
+  rate_limited: "too many requests",
+  probe_pattern_blocked: "request rejected",
+  double_encoded_probe_blocked: "request rejected",
+  malformed_uri_sequence: "request rejected",
+  control_chars_in_query: "request rejected",
+  prototype_pollution_blocked: "request rejected",
+  payload_nesting_too_deep: "request rejected",
+  method_not_allowed: "method not allowed",
+  query_too_long: "request rejected",
+  execution_surface_forbidden: "request rejected",
+  api_route_not_found: "not found",
+  invalid_symbol: "invalid symbol",
+  invalid_timeframe: "invalid timeframe",
+});
 
 function clientKey(request) {
   return request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "unknown";
+}
+
+function evictOldest(map, maxSize) {
+  while (map.size >= maxSize) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
+}
+
+function pruneExpired(map, now, isExpired, maxSize) {
+  for (const [key, value] of map) {
+    if (isExpired(value, now)) map.delete(key);
+  }
+  evictOldest(map, maxSize);
 }
 
 export function securityEvent(level, reason, extra = {}) {
@@ -93,14 +128,23 @@ export function securityEvent(level, reason, extra = {}) {
 
 function noteOffense(key, reason) {
   const now = Date.now();
+  pruneExpired(
+    offenseBuckets,
+    now,
+    (bucket, current) => current - bucket.start > DEFAULTS.softBan.windowMs,
+    DEFAULTS.maxOffenseBuckets,
+  );
   let bucket = offenseBuckets.get(key);
-  if (!bucket || now - bucket.start > DEFAULTS.softBan.windowMs) {
+  if (!bucket) {
+    evictOldest(offenseBuckets, DEFAULTS.maxOffenseBuckets);
     bucket = { start: now, count: 0, lastReason: reason };
     offenseBuckets.set(key, bucket);
   }
   bucket.count += 1;
   bucket.lastReason = reason;
   if (bucket.count >= DEFAULTS.softBan.blockThreshold) {
+    pruneExpired(softBans, now, (until, current) => current > until, DEFAULTS.maxSoftBans);
+    evictOldest(softBans, DEFAULTS.maxSoftBans);
     softBans.set(key, now + DEFAULTS.softBan.banMs);
     audit.softBans += 1;
     securityEvent("block", "soft_ban_applied", { count: bucket.count });
@@ -136,8 +180,8 @@ export function handleCorsPreflight(request) {
 
   if (!DEFAULTS.allowedOrigins.has(origin.trim())) {
     audit.corsBlocked += 1;
-    securityEvent("block", "cors_origin_rejected", { origin });
-    return publicError(403, "cors_origin_rejected", "origin not permitted");
+    securityEvent("block", "cors_origin_rejected", { origin: origin.trim().slice(0, 200) });
+    return publicError(403, "cors_origin_rejected");
   }
 
   return new Response(null, {
@@ -171,7 +215,6 @@ export function detectProbe(request, url = new URL(request.url)) {
   const hay = `${url.pathname}?${url.search}`;
   if (PROBE_RE.test(hay)) return { ok: false, status: 403, reason: "probe_pattern_blocked" };
 
-  // Double URL-encoding detection
   try {
     const once = decodeURIComponent(hay);
     const twice = decodeURIComponent(once);
@@ -179,7 +222,6 @@ export function detectProbe(request, url = new URL(request.url)) {
       return { ok: false, status: 403, reason: "double_encoded_probe_blocked" };
     }
   } catch (_) {
-    // Malformed URI sequence is hostile
     return { ok: false, status: 400, reason: "malformed_uri_sequence" };
   }
 
@@ -223,7 +265,6 @@ export function validatePublicApiRequest(request, url = new URL(request.url)) {
     return { ok: false, status: 414, reason: "query_too_long" };
   }
 
-  // R16: Strict execution boundary isolation
   for (const forbidden of DEFAULTS.forbiddenExecutionPaths) {
     if (url.pathname.toLowerCase().startsWith(forbidden)) {
       audit.executionAttempts += 1;
@@ -255,8 +296,10 @@ export function checkRateLimit(request, opts = {}) {
   const max = opts.max ?? DEFAULTS.rateMax;
   const key = `${clientKey(request)}:${new URL(request.url).pathname}`;
   const now = Date.now();
+  pruneExpired(rateBuckets, now, (bucket, current) => current - bucket.start > windowMs, DEFAULTS.maxRateBuckets);
   let bucket = rateBuckets.get(key);
-  if (!bucket || now - bucket.start > windowMs) {
+  if (!bucket) {
+    evictOldest(rateBuckets, DEFAULTS.maxRateBuckets);
     bucket = { start: now, count: 0 };
     rateBuckets.set(key, bucket);
   }
@@ -269,11 +312,12 @@ export function checkRateLimit(request, opts = {}) {
   return { ok: true, status: 200, reason: "ok", remaining: Math.max(0, max - bucket.count) };
 }
 
-export function publicError(status, reason, message) {
+export function publicError(status, reason) {
   audit.blocked += 1;
+  const safeMessage = PUBLIC_MESSAGES[reason] || "request rejected";
   return new Response(JSON.stringify({
     error: reason,
-    message: String(message || reason).slice(0, 240),
+    message: safeMessage,
     guard: "Bodyguard(Aria)",
     version: BODYGUARD_VERSION,
   }), {
@@ -353,14 +397,13 @@ export function guardPublicRequest(request) {
   const url = new URL(request.url);
   const key = clientKey(request);
 
-  // Handle CORS Pre-flight
   if (request.method === "OPTIONS") {
     return handleCorsPreflight(request);
   }
 
   if (isSoftBanned(key)) {
     securityEvent("block", "soft_banned", { path: url.pathname });
-    return publicError(403, "soft_banned", "temporarily blocked");
+    return publicError(403, "soft_banned");
   }
 
   const probe = detectProbe(request, url);
@@ -368,7 +411,7 @@ export function guardPublicRequest(request) {
     audit.probes += 1;
     noteOffense(key, probe.reason);
     securityEvent("block", probe.reason, { path: url.pathname });
-    return publicError(probe.status, probe.reason, probe.reason);
+    return publicError(probe.status, probe.reason);
   }
 
   const ua = scoreUserAgent(request);
@@ -380,14 +423,14 @@ export function guardPublicRequest(request) {
   if (!basic.ok) {
     noteOffense(key, basic.reason);
     securityEvent("block", basic.reason, { path: url.pathname, method: request.method });
-    return publicError(basic.status, basic.reason, basic.reason);
+    return publicError(basic.status, basic.reason);
   }
 
   if (url.pathname.startsWith("/api/")) {
     const rate = checkRateLimit(request);
     if (!rate.ok) {
       noteOffense(key, rate.reason);
-      return publicError(rate.status, rate.reason, "too many requests");
+      return publicError(rate.status, rate.reason);
     }
   }
 
