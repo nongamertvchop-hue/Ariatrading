@@ -58,6 +58,16 @@ class AccountSnapshot:
     trade_expert: bool
 
 
+@dataclass(frozen=True)
+class AccountIdentity:
+    """Stable broker/account identity used to prevent runtime account drift."""
+
+    login: int
+    server: str
+    company: str
+    trade_mode: int
+
+
 def _resolve_filling_mode(mt5_mod: Any, symbol_info: Any) -> int:
     """Determine the first filling mode explicitly supported by the broker."""
     flags = int(getattr(symbol_info, "filling_mode", 0))
@@ -93,6 +103,22 @@ class MT5LiveExecutor:
         if self.mt5 is not None and self._connected:
             self.mt5.shutdown()
             self._connected = False
+
+    def get_account_identity(self) -> AccountIdentity:
+        """Read the broker/account identity and fail closed on missing fields."""
+        if not self._connected:
+            raise RuntimeError("MT5 executor is not connected.")
+        info = self.mt5.account_info()
+        if info is None:
+            raise RuntimeError(f"MT5 account_info unavailable: {self.mt5.last_error()}")
+
+        login = int(getattr(info, "login", 0))
+        server = str(getattr(info, "server", "")).strip()
+        company = str(getattr(info, "company", "")).strip()
+        trade_mode = int(getattr(info, "trade_mode", -1))
+        if login <= 0 or not server or not company or trade_mode < 0:
+            raise RuntimeError("MT5 account identity is incomplete; refusing execution")
+        return AccountIdentity(login=login, server=server, company=company, trade_mode=trade_mode)
 
     def get_account_snapshot(self) -> AccountSnapshot:
         if not self._connected:
