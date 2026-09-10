@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ariatrading.local/schema/market-data-v1.json",
+  "title": "Ariatrading Canonical OHLC Candle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["time", "open", "high", "low", "close"],
+  "properties": {
+    "time": { "type": "integer", "minimum": 1 },
+    "open": { "type": "number", "exclusiveMinimum": 0 },
+    "high": { "type": "number", "exclusiveMinimum": 0 },
+    "low": { "type": "number", "exclusiveMinimum": 0 },
+    "close": { "type": "number", "exclusiveMinimum": 0 },
+    "volume": { "type": "number", "minimum": 0 }
+  },
+  "description": "Canonical OHLC record. Runtime adapters must also enforce finite values and candle geometry: high >= max(open, close) and low <= min(open, close)."
+}

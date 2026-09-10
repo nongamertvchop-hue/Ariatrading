@@ -37,4 +37,43 @@ jobs:
         with:
           node-version: "22"
       - name: Check Worker, Pages signal, and chart JavaScript syntax
-        run: node --check worker/index.js && node --check worker/entry.js && node --check worker/signal_parity.js && node --check Webaria/functions/api/signal.js && node --check Webaria/chart-data-compat.js
+        run: node --check worker/index.js && node --check worker/entry.js && node --check worker/signal_parity.js && node --check Webaria/functions/api/signal.js && node --check Webaria/chart-data-compat.js && node --check Webaria/trading.js
+
+  polyglot-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+      - name: Verify native toolchains
+        run: |
+          g++ --version
+          go version
+          java -version
+          rustc --version
+          cargo --version
+      - name: Build C++ validator
+        run: g++ -std=c++17 -O2 -Wall -Wextra -pedantic polyglot/cpp/main.cpp -o /tmp/ariatrading-cpp-validator
+      - name: Build Go validator
+        working-directory: polyglot/go-validator
+        run: go build -o /tmp/ariatrading-go-validator .
+      - name: Build Java validator
+        working-directory: polyglot/java-validator
+        run: javac MarketDataValidator.java
+      - name: Build Rust validator
+        working-directory: polyglot/rust-validator
+        run: cargo build --release
+      - name: Smoke test all validators
+        shell: bash
+        run: |
+          printf '1725900000\t1.1000\t1.1020\t1.0990\t1.1010\n1725900060\t1.1010\t1.1030\t1.1000\t1.1020\n' > /tmp/ariatrading-sample.tsv
+          for cmd in "/tmp/ariatrading-cpp-validator" "/tmp/ariatrading-go-validator" "java -cp polyglot/java-validator MarketDataValidator" "polyglot/rust-validator/target/release/ariatrading-market-validator"; do
+            echo "== $cmd =="
+            bash -lc "$cmd < /tmp/ariatrading-sample.tsv | tee /tmp/validator.out"
+            grep -q '"ok":true' /tmp/validator.out
+          done
