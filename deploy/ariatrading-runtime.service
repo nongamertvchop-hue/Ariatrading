@@ -1,0 +1,22 @@
+[Unit]
+Description=Ariatrading runtime API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ariatrading
+Group=ariatrading
+WorkingDirectory=/opt/Ariatrading
+EnvironmentFile=/opt/Ariatrading/.env
+ExecStart=/opt/Ariatrading/.venv/bin/python scripts/run_runtime_api.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/Ariatrading/data
+
+[Install]
+WantedBy=multi-user.target
