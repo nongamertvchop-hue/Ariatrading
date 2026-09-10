@@ -1,14 +1,15 @@
 """CLI entrypoint for the guarded MT5 runtime.
 
-This entrypoint owns one MT5 connection and shares it between the executor and
-read-only feed. It intentionally supports only DEMO/LIVE; ALERT_ONLY remains
-available through the research/orchestrator runner.
+LIVE execution is selected by the explicit environment stage policy. DEMO keeps
+its existing behavior; LIVE fails closed unless a numbered production stage is
+armed with its exact account/server allowlist and bounded limits.
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import os
 from pathlib import Path
 
 from adapters.mt5_feed import MT5BarFeed
@@ -17,10 +18,20 @@ from live.live_runtime import DailyCircuitBreaker, LiveRuntime, RuntimeLimits
 from live.mt5_account import validate_account_mode
 from live.mt5_executor import MT5LiveExecutor
 from live.production_stage1 import ProductionStage1Policy
+from live.production_stage2 import ProductionStage2Policy
 from live.runner import ForexLiveOrchestrator
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 logger = logging.getLogger("ariatrading.runtime_cli")
+
+
+def _live_policy():
+    stage = os.getenv("ARIATRADING_LIVE_STAGE", "0").strip()
+    if stage == "1":
+        return ProductionStage1Policy.from_env()
+    if stage == "2":
+        return ProductionStage2Policy.from_env()
+    raise RuntimeError("LIVE production stage is not armed: set ARIATRADING_LIVE_STAGE to 1 or 2")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -28,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--symbols", default="EURUSD")
     parser.add_argument("--mode", choices=["DEMO", "LIVE"], default="DEMO")
     parser.add_argument("--timeframe", choices=["1m", "5m", "15m", "30m", "1h", "4h", "1D"], default="15m")
-    parser.add_argument("--risk", type=float, default=0.0025)
+    parser.add_argument("--risk", type=float, default=0.005)
     parser.add_argument("--interval", type=float, default=5.0)
     parser.add_argument("--terminal-path", default=None)
     return parser
@@ -41,7 +52,7 @@ def main() -> None:
     if not symbols:
         raise SystemExit("--symbols must contain at least one symbol")
 
-    policy = ProductionStage1Policy.from_env() if args.mode == "LIVE" else None
+    policy = _live_policy() if args.mode == "LIVE" else None
     if policy is not None:
         policy.validate_symbols(symbols)
         policy.validate_runtime_limits(
@@ -59,8 +70,6 @@ def main() -> None:
         if not ok:
             raise RuntimeError(reason)
 
-        # Borrow the executor's already-connected MT5 session. Two independent
-        # initialize()/shutdown() calls can otherwise invalidate each other.
         feed = MT5BarFeed(mt5_module=executor.mt5, manage_connection=False)
         journal = ExecutionJournal(PROJECT_ROOT / "data" / "execution_journal.json")
         orchestrator = ForexLiveOrchestrator(
@@ -72,14 +81,10 @@ def main() -> None:
             executor=executor,
             execution_journal=journal,
         )
-        limits = (
-            RuntimeLimits(
-                max_tick_age_seconds=policy.max_tick_age_seconds,
-                max_spread_points=policy.max_spread_points,
-                max_daily_drawdown_fraction=policy.max_daily_drawdown,
-            )
-            if policy is not None
-            else RuntimeLimits()
+        limits = RuntimeLimits(
+            max_tick_age_seconds=policy.max_tick_age_seconds if policy is not None else 10.0,
+            max_spread_points=policy.max_spread_points if policy is not None else 30.0,
+            max_daily_drawdown_fraction=policy.max_daily_drawdown if policy is not None else 0.02,
         )
         runtime = LiveRuntime(
             orchestrator=orchestrator,
@@ -94,8 +99,6 @@ def main() -> None:
         )
         runtime.run_forever(args.interval)
     finally:
-        # LiveRuntime performs normal shutdown. This is a defensive cleanup for
-        # failures during setup or preflight before run_forever starts.
         if feed is not None:
             feed.close()
         executor.disconnect()
