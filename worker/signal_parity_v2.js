@@ -35,30 +35,41 @@ function json(data, status = 200) {
   });
 }
 
-function bestSignal(candidates, direction, timeframe, emptyReason) {
+function decorateCandidate(candidate, structureBias) {
+  return {
+    ...candidate.result,
+    zone: candidate.zone ?? null,
+    score: candidate.score ?? null,
+    protection: candidate.result.protection ?? "SAFE",
+    structureBias: candidate.result.structureBias ?? structureBias,
+  };
+}
+
+function bestSignal(candidates, direction, timeframe, emptyReason, structureBias) {
   if (!candidates.length) {
-    return { action: WAIT, reason: emptyReason, timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT };
+    return { action: WAIT, reason: emptyReason, timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT, structureBias };
   }
 
   const directional = candidates.filter((candidate) => candidate.result.action === direction);
   if (!directional.length) {
     // Match Python RealtimeMonitor._best_signal(): preserve the first evaluated
     // WAIT result when zones exist so diagnostics do not collapse into "no zone".
-    return candidates[0].result;
+    return decorateCandidate(candidates[0], structureBias);
   }
 
-  return [...directional].sort((a, b) => {
+  const selected = [...directional].sort((a, b) => {
     const aScore = a.score?.total ?? -1;
     const bScore = b.score?.total ?? -1;
     return bScore - aScore;
-  })[0].result;
+  })[0];
+  return decorateCandidate(selected, structureBias);
 }
 
-function selectSignal(longSignal, shortSignal, timeframe) {
+function selectSignal(longSignal, shortSignal, timeframe, structureBias) {
   if (longSignal.action !== WAIT && shortSignal.action === WAIT) return longSignal;
   if (shortSignal.action !== WAIT && longSignal.action === WAIT) return shortSignal;
   if (longSignal.action === WAIT && shortSignal.action === WAIT) {
-    return { action: WAIT, reason: "no directional setup", timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT };
+    return { action: WAIT, reason: "no directional setup", timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT, structureBias };
   }
 
   // Python uses `>` and therefore resolves an exact score tie in favor of
@@ -106,9 +117,9 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
     return { direction: SHORT, zone, result, score: result.action === SHORT ? scoreSetup(SHORT, zone.touches, structure.bias, result.breakoutState, 20) : null };
   });
 
-  const longSignal = bestSignal(longCandidates, LONG, timeframe, "no support zone");
-  const shortSignal = bestSignal(shortCandidates, SHORT, timeframe, "no resistance zone");
-  const strategySignal = selectSignal(longSignal, shortSignal, timeframe);
+  const longSignal = bestSignal(longCandidates, LONG, timeframe, "no support zone", structure.bias);
+  const shortSignal = bestSignal(shortCandidates, SHORT, timeframe, "no resistance zone", structure.bias);
+  const strategySignal = selectSignal(longSignal, shortSignal, timeframe, structure.bias);
   const currentPrice = candles[candles.length - 1].close;
   const support = nearestSupport(currentPrice, supports);
   const resistance = nearestResistance(currentPrice, resistances);
