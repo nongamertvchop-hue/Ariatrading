@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.17.1**
+Current version: **0.18.0**
 
 ## Versioning rule
 
@@ -8,24 +8,32 @@ Every meaningful strategy or architecture change must update this file and the v
 
 Use semantic versioning:
 - **MAJOR**: incompatible strategy/architecture change.
-- **MINOR**: new strategy capability that remains backward compatible.
+- **MINOR**: new strategy capability or execution capability that remains backward compatible.
 - **PATCH**: bug fix, test improvement, documentation, or non-strategy correction.
 
-## Current milestone — 0.17.1 — final paper certification
+## Current milestone — 0.18.0 — LIVE Stage 2 controlled execution
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
-- Backtest/realtime/paper decision semantics are certified through one normalized three-way decision stream.
-- A real child-process termination test verifies durable checkpoint + restart recovery; unknown execution remains fail-closed HALT.
-- A 10,000-bar deterministic paper soak remains required, plus a 10,000-bar shadow run over pinned real EURUSD 5-minute historical data.
-- The Operational Console reads the `aria.paper-runtime.v1` contract from a Durable Object and refuses to treat browser-local state as authoritative.
-- The durable contract carries lifecycle, heartbeat, account/equity, position, pending state, alerts, history, events, recovery snapshot and export data.
-- The runtime publishing page remains PAPER/DEMO only; the supported configuration rejects `BOT_MODE=live`.
-- No real broker order path is enabled by the release gate or supported bot configuration.
+- PAPER/DEMO research semantics remain unchanged.
+- LIVE Stage 2 adds a separately numbered, explicitly armed production envelope instead of weakening the Stage 1 controls.
+- Stage 2 allows 1–2 explicitly allow-listed symbols on the operator's MT5 account.
+- Stage 2 caps risk at 0.50% per trade, daily equity drawdown at 2%, spread at 30 points and broker tick age at 10 seconds.
+- LIVE still requires exact MT5 login/server identity, explicit operator opt-in and non-secret host configuration.
+- LIVE still uses completed candles, broker-contract validation, mandatory Stop Loss, `order_check`, deterministic execution journaling, reconciliation and fail-closed ambiguous outcomes.
+- Both hardened runtime entry points select the numbered LIVE stage from `ARIATRADING_LIVE_STAGE` and fail closed for an unsupported or unarmed stage.
+- CI remains the verification boundary; CI does not send real broker orders.
+- No credentials or private account identifiers are committed to Git.
 
 ## Release interpretation
 
-A 0.17.1 PASS means the tested engineering properties held for the selected code revision and historical fixture. It does not establish profitability, future performance, or authorization to use real money.
+A 0.18.0 PASS means the tested engineering properties held for the selected code revision. It does not establish profitability, future performance, or low financial risk.
 
-## Promotion boundary
+## Stage 2 activation boundary
 
-Real-money execution is outside the supported runtime in this repository. Further promotion requires a separately reviewed architecture, independent risk controls, compliance/eligibility review, and a safe execution environment; it is not enabled by the paper release gate.
+Stage 2 is a narrow production execution tier for controlled forward operation. The repository supplies the execution code and hard policy; actual activation requires an eligible MT5 execution host and operator-supplied account credentials/identity outside source control.
+
+## Next milestone
+
+### Production Stage 3 — only after Stage 2 evidence
+- Require measured Stage 2 stability and execution evidence before any further increase in symbols, risk or operational limits.
+- Keep strategy changes and execution-policy changes isolated.
