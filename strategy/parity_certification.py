@@ -44,7 +44,12 @@ class ParityCertificate:
 
 
 def _fingerprint(records: Sequence[DecisionRecord]) -> str:
-    payload = json.dumps([asdict(record) for record in records], sort_keys=True, separators=(",", ":"))
+    """Fingerprint decision semantics, intentionally excluding event IDs."""
+    payload = json.dumps(
+        [{"bar_time": r.bar_time, "action": r.action, "entry": r.entry, "stop": r.stop} for r in records],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -98,16 +103,11 @@ def _paper_replay(candles: Sequence[dict], realtime_records: Sequence[DecisionRe
 
 
 def certify_three_way_parity(*, candles: Sequence[dict], symbol: str, timeframe: str, checkpoint_path: str | Path, start_index: int | None = None) -> ParityCertificate:
-    """Create a deterministic certificate over the canonical decision stream.
-
-    Backtest, realtime replay and paper runtime must agree on action/entry/stop
-    for the same closed candle. The paper engine must consume exactly the
-    realtime records and finish without HALT; its accounting snapshot is
-    recorded as supporting evidence, not as a profitability claim.
-    """
+    """Create a deterministic certificate over the canonical decision stream."""
     if not candles:
         return ParityCertificate(False, 0, 0, ("no candles supplied",), "", "", "", 0, 0.0, 0.0, 0.0)
-    first = max(0 if start_index is None else start_index, 100)
+    # Match the backtest's normal warmup boundary for the current 5m configuration.
+    first = max(102, 0 if start_index is None else start_index)
     if first >= len(candles):
         raise ValueError("start_index leaves no replay candles")
 
@@ -118,12 +118,16 @@ def certify_three_way_parity(*, candles: Sequence[dict], symbol: str, timeframe:
 
     mismatches: list[str] = []
     compared = 0
+    common_rt: list[DecisionRecord] = []
+    common_bt: list[DecisionRecord] = []
     for bar_time, realtime in rt_by_time.items():
         backtest = bt_by_time.get(bar_time)
         if backtest is None:
             mismatches.append(f"{bar_time}: realtime decision missing from backtest")
             continue
         compared += 1
+        common_rt.append(realtime)
+        common_bt.append(backtest)
         if (backtest.action, backtest.entry, backtest.stop) != (realtime.action, realtime.entry, realtime.stop):
             mismatches.append(
                 f"{bar_time}: backtest={(backtest.action, backtest.entry, backtest.stop)!r} "
@@ -131,17 +135,13 @@ def certify_three_way_parity(*, candles: Sequence[dict], symbol: str, timeframe:
             )
 
     runtime, consumed, snapshot = _paper_replay(candles, rt, Path(checkpoint_path))
-    paper_mismatches = []
     if tuple((r.bar_time, r.action, r.entry, r.stop) for r in consumed) != tuple((r.bar_time, r.action, r.entry, r.stop) for r in rt):
-        paper_mismatches.append("paper runtime did not consume the exact realtime decision stream")
-    mismatches.extend(paper_mismatches)
+        mismatches.append("paper runtime did not consume the exact realtime decision stream")
 
-    realtime_fp = _fingerprint(rt)
+    backtest_fp = _fingerprint(common_bt)
+    realtime_fp = _fingerprint(common_rt)
     paper_fp = _fingerprint(consumed)
-    backtest_common = tuple(record for record in bt if record.bar_time in rt_by_time)
-    backtest_fp = _fingerprint(backtest_common)
-    fingerprints_match = backtest_fp == realtime_fp == paper_fp
-    if not fingerprints_match:
+    if backtest_fp != realtime_fp or realtime_fp != paper_fp:
         mismatches.append("decision fingerprints differ across backtest/realtime/paper")
     if runtime.lifecycle is RuntimeLifecycle.HALT:
         mismatches.append(f"paper runtime halted: {runtime.halt_reason}")
