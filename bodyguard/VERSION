@@ -1,5 +1,5 @@
 Bodyguard(Aria)
-version: 0.05.0
+version: 0.05.1
 codename: aegis-shield
-status: enforced-hardened-observable-isolated
+status: enforced-hardened-observable-isolated-realtime
 scope: defensive-only
