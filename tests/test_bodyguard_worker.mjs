@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { detectProbe, detectPrototypePollution, getCorsHeaders, publicError, validatePublicApiRequest } from "../bodyguard/worker/bodyguard.js";
+import { detectProbe, detectPrototypePollution, getCorsHeaders, getRecentSecurityEvents, publicError, securityEvent, validatePublicApiRequest } from "../bodyguard/worker/bodyguard.js";
 import { sanitizeForBoundary, REDACTED } from "../bodyguard/worker/redaction.js";
 const makeRequest=(url,options={})=>new Request(url,options);
 test("allows the supported market API route",()=>{const request=makeRequest("https://ariatrading.pages.dev/api/market?symbol=EUR/USD&timeframe=15m");assert.equal(validatePublicApiRequest(request).ok,true);});
@@ -12,3 +12,4 @@ test("allows only configured CORS origins",()=>{const allowed=makeRequest("https
 test("public errors do not reflect attacker-controlled messages",async()=>{const response=publicError(400,"invalid_symbol","SECRET_INTERNAL_STACK_TRACE");const body=await response.json();assert.equal(body.message,"invalid symbol");assert.equal(JSON.stringify(body).includes("SECRET_INTERNAL_STACK_TRACE"),false);});
 test("redacts sensitive keys and common secret shapes",()=>{const result=sanitizeForBoundary({api_key:"real-secret",nested:{password:"hunter2"},bearer:"Bearer "+"abcdefghijklmnop",token:"eyJ"+"aaaaaaaaaaa.bbbbbbbbbbb.ccccccccccc",safe:"hello"});assert.equal(result.api_key,REDACTED);assert.equal(result.nested.password,REDACTED);assert.equal(result.bearer,REDACTED);assert.equal(result.token,REDACTED);assert.equal(result.safe,"hello");});
 test("redaction bounds deeply nested payloads",()=>{const deep={a:{b:{c:{d:{e:{f:"secret"}}}}}};const result=sanitizeForBoundary(deep,{maxDepth:3});assert.equal(result.a.b.c,REDACTED);});
+test("security events are observable immediately and sanitized",()=>{const before=getRecentSecurityEvents(50).length;const event=securityEvent("block","test_realtime_event",{path:"/api/price",method:"GET",count:1,secret:"must_not_be_logged"});const after=getRecentSecurityEvents(50);assert.equal(after.length,Math.min(before+1,50));assert.equal(after[0].event_id,event.event_id);assert.equal(after[0].reason,"test_realtime_event");assert.equal(after[0].path,"/api/price");assert.equal("secret" in after[0],false);});
