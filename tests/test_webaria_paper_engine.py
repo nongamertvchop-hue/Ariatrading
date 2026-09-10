@@ -52,7 +52,7 @@ def test_webaria_paper_engine_stop_has_conservative_priority():
         vm.createContext(context);
         vm.runInContext(source, context);
         const E = context.WebariaPaperEngine;
-        const result = E.barExit({{ side: 'LONG', sl: 99, tp: 103 }}, {{ high: 104, low: 98 }});
+        const result = E.barExit({{ side: 'LONG', entry: 101, sl: 99, tp: 103 }}, {{ high: 104, low: 98 }});
         if (!result || result.reason !== 'stop loss' || result.outcome !== 'LOSS') throw new Error('STOP-first rule failed');
         console.log('ok');
         """
