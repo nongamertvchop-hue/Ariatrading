@@ -39,11 +39,19 @@ def _require_mt5() -> None:
 class MT5BarFeed:
     """Read completed OHLC bars from a connected MetaTrader 5 terminal."""
 
-    def __init__(self, mt5_module: Any | None = None, terminal_path: str | None = None):
-        """Create a feed, using an injected module for tests when provided."""
+    def __init__(
+        self,
+        mt5_module: Any | None = None,
+        terminal_path: str | None = None,
+        manage_connection: bool = True,
+    ):
+        """Create a feed; optionally borrow an already-connected MT5 session."""
         self.mt5 = mt5 if mt5_module is None else mt5_module
+        self._manage_connection = manage_connection
         if self.mt5 is None:
             _require_mt5()
+        if not self._manage_connection:
+            return
 
         if terminal_path:
             ok = self.mt5.initialize(path=terminal_path)
@@ -53,10 +61,11 @@ class MT5BarFeed:
             raise RuntimeError(f"MT5 initialize failed: {self.mt5.last_error()}")
 
     def close(self) -> None:
-        """Close the MT5 terminal connection."""
+        """Close the MT5 terminal connection only when this feed owns it."""
         if self.mt5 is None:
             _require_mt5()
-        self.mt5.shutdown()
+        if self._manage_connection:
+            self.mt5.shutdown()
 
     def closed_bars(self, symbol: str, timeframe: str, count: int) -> list[LiveBar]:
         """Return only completed candles; the forming bar is excluded."""
@@ -68,8 +77,6 @@ class MT5BarFeed:
             raise ValueError("count must be positive")
 
         tf = getattr(self.mt5, _TIMEFRAME_MAP[timeframe])
-        # Position 0 is the currently forming bar. Start at 1 so only closed
-        # candles enter the strategy and live monitoring cannot use intrabar data.
         rates = self.mt5.copy_rates_from_pos(symbol, tf, 1, count)
         if rates is None:
             raise RuntimeError(f"MT5 rates request failed: {self.mt5.last_error()}")
