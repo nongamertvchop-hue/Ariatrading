@@ -22,6 +22,7 @@ from typing import Any
 
 TERMINAL_STATES = frozenset({"SUCCEEDED", "FAILED"})
 NON_RETRYABLE_STATES = frozenset({"AMBIGUOUS"})
+RECOVERY_STATES = frozenset({"RESERVED", "SUBMITTED", "AMBIGUOUS"})
 
 
 @dataclass(frozen=True)
@@ -101,9 +102,17 @@ class ExecutionJournal:
         return self._load().get(intent_id)
 
     def reserve(self, intent: ExecutionIntent) -> bool:
-        """Reserve an intent once. False means it already exists and must not repeat."""
+        """Reserve an intent once and block all new work while reconciliation is pending.
+
+        A RESERVED/SUBMITTED/AMBIGUOUS record means the previous broker outcome
+        is not fully reconciled. Returning False here prevents a restart or a
+        fresh signal from submitting another order before that state is resolved.
+        """
         records = self._load()
-        if intent.intent_id in records:
+        existing = records.get(intent.intent_id)
+        if existing is not None:
+            return False
+        if any(record.get("state") in RECOVERY_STATES for record in records.values()):
             return False
         records[intent.intent_id] = {
             **asdict(intent),
@@ -139,8 +148,4 @@ class ExecutionJournal:
     def recoverable_intents(self) -> list[dict[str, Any]]:
         """Return only intents that require reconciliation, never automatic duplicate submission."""
         records = self._load()
-        return [
-            record
-            for record in records.values()
-            if record.get("state") in {"RESERVED", "SUBMITTED", "AMBIGUOUS"}
-        ]
+        return [record for record in records.values() if record.get("state") in RECOVERY_STATES]
