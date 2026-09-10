@@ -123,6 +123,8 @@ def replay_realtime_monitor(
         return RealtimeReplayResult(symbol, timeframe, ())
 
     normalized = [dict(candle) for candle in candles]
+    _validate_replay_timestamps(normalized)
+
     first = 0 if start_index is None else start_index
     if not 0 <= first < len(normalized):
         raise ValueError("start_index must be within candles")
@@ -158,6 +160,24 @@ class _ReplayFeed:
 
     def closed_bars(self, symbol: str, timeframe: str, count: int) -> Sequence[LiveBar]:
         return self.bars[-count:]
+
+
+def _validate_replay_timestamps(candles: Sequence[dict]) -> None:
+    """Require unique, timezone-aware timestamps in chronological order."""
+    seen: set[object] = set()
+    previous = None
+    for candle in candles:
+        timestamp = candle.get("time", candle.get("datetime"))
+        if timestamp is None:
+            raise ValueError("replay requires candle timestamps")
+        if timestamp in seen:
+            raise ValueError("replay requires unique candle timestamps")
+        seen.add(timestamp)
+        if getattr(timestamp, "tzinfo", None) is None or timestamp.utcoffset() is None:
+            raise ValueError("replay candle timestamps must be timezone-aware")
+        if previous is not None and timestamp <= previous:
+            raise ValueError("replay candles must be strictly chronological")
+        previous = timestamp
 
 
 def _to_live_bar(raw: dict) -> LiveBar:
