@@ -76,6 +76,7 @@ def _runtime(tmp_path, *, now=None, tick_time=None, bar_time=None, deals=None, l
         clock=lambda: now,
     )
     runtime.preflight = lambda: None
+    runtime._bound_account_login = login
     return runtime, orchestrator
 
 
@@ -204,7 +205,6 @@ def test_runtime_rejects_naive_tick_timestamp(tmp_path):
 def test_runtime_blocks_account_switch_after_preflight(tmp_path):
     now = datetime(2026, 9, 10, 12, tzinfo=timezone.utc)
     runtime, orchestrator = _runtime(tmp_path, now=now, login=1)
-    runtime._bound_account_login = 1
     runtime.executor.login = 2
 
     with pytest.raises(RuntimeError, match="account changed during runtime"):
