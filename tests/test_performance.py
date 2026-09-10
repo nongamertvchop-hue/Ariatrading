@@ -229,7 +229,8 @@ def test_sequence_metrics_track_max_and_current_streaks():
     assert report.max_loss_streak == 3
     assert report.current_streak == 1
     assert report.current_streak_type == "LOSS"
-    assert report.recovery_factor == pytest.approx(-1.0)
+    # Recovery factor is net R divided by peak-to-trough max drawdown R.
+    assert report.recovery_factor == pytest.approx(-1.0 / 3.0)
 
 
 def test_breakeven_breaks_streak_and_resets_current_state():
