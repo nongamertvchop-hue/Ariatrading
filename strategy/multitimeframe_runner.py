@@ -81,7 +81,7 @@ def run_multitimeframe_research(
 ) -> MultiTimeframeResearchResult:
     """Validate and run the existing walk-forward engine for each timeframe.
 
-    Every timeframe is validated independently before any result is returned.
+    Validation is completed for every timeframe before any backtest executes.
     Weekend/session gaps remain acceptable by default; callers can request strict
     contiguous research feeds with ``require_contiguous=True``.
     """
@@ -89,9 +89,10 @@ def run_multitimeframe_research(
         raise ValueError("expected_timeframes must not be empty")
     _validate_mapping_keys(candles_by_timeframe, expected_timeframes)
 
-    results: dict[str, WalkForwardResult] = {}
+    validated_inputs: list[tuple[str, list[dict], FeedIntegrityReport]] = []
     inputs: list[TimeframeResearchInput] = []
 
+    # Phase 1: reject the whole batch before doing any expensive strategy work.
     for timeframe in expected_timeframes:
         candles = candles_by_timeframe[timeframe]
         if not isinstance(candles, list):
@@ -107,7 +108,13 @@ def run_multitimeframe_research(
         if not integrity.ok:
             raise ValueError(f"feed integrity failed for {timeframe}: {integrity.reason}")
 
-        result = walk_forward_backtest(
+        validated_inputs.append((timeframe, candles, integrity))
+        inputs.append(TimeframeResearchInput(timeframe, len(candles), integrity))
+
+    # Phase 2: only run strategy research after every feed has passed validation.
+    results: dict[str, WalkForwardResult] = {}
+    for timeframe, candles, _integrity in validated_inputs:
+        results[timeframe] = walk_forward_backtest(
             candles,
             timeframe,
             history_bars=history_bars,
@@ -118,8 +125,6 @@ def run_multitimeframe_research(
             execution_model=execution_model,
             entry_timing=entry_timing,
         )
-        results[timeframe] = result
-        inputs.append(TimeframeResearchInput(timeframe, len(candles), integrity))
 
     report = build_multitimeframe_report(results, expected_timeframes=expected_timeframes)
     return MultiTimeframeResearchResult(report=report, results=results, inputs=tuple(inputs))
