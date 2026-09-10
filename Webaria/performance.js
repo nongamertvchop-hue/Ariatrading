@@ -13,7 +13,6 @@
     try {
       const url = new URL(typeof input === 'string' ? input : input.url, root.location.href);
       if (url.origin !== root.location.origin) return null;
-      if (!url.pathname.startsWith('/api/')) return null;
       if (url.pathname !== '/api/signal' && url.pathname !== '/api/price') return null;
       url.searchParams.sort();
       return url.toString();
@@ -46,27 +45,23 @@
 
   function lazyWatch() {
     const symbols = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'USD/CAD'];
-    const current = root.S?.symbol || document.getElementById('symbol')?.value || symbols[0];
-    const state = root.S;
-    if (!state) return;
+    const current = S.symbol;
 
     const fetchOne = async symbol => {
       try {
-        const response = await nativeFetch(`/api/price?symbol=${encodeURIComponent(symbol)}`, { cache: 'no-store' });
+        const response = await root.fetch(`/api/price?symbol=${encodeURIComponent(symbol)}`, { cache: 'no-store' });
         if (!response.ok) return;
         const payload = await response.json();
         const price = Number(payload?.price);
         if (!Number.isFinite(price)) return;
-        const previous = state.watch[symbol]?.price;
-        state.watch[symbol] = { price, pct: previous ? ((price - previous) / previous) * 100 : 0 };
+        const previous = S.watch[symbol]?.price;
+        S.watch[symbol] = { price, pct: previous ? ((price - previous) / previous) * 100 : 0 };
       } catch (_) {
         // Watchlist is non-critical; keep the last known value on transient failure.
       }
     };
 
-    void fetchOne(current).then(() => {
-      if (typeof root.renderWatch === 'function') root.renderWatch();
-    });
+    void fetchOne(current).then(() => renderWatch());
 
     const rest = symbols.filter(symbol => symbol !== current);
     let cursor = 0;
@@ -75,7 +70,7 @@
       cursor += WATCH_BATCH;
       if (!batch.length) return;
       Promise.all(batch.map(fetchOne)).then(() => {
-        if (typeof root.renderWatch === 'function') root.renderWatch();
+        renderWatch();
         if (cursor < rest.length) root.setTimeout(pump, 120);
       });
     };
