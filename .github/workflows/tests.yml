@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: "22"
       - name: Run Worker and Webaria tests
-        run: node --test tests/worker_signal_parity.test.mjs tests/web_signal_journal.test.mjs tests/web_paper_engine.test.mjs tests/web_chart_data_compat.test.mjs
+        run: node --test tests/worker_signal_parity.test.mjs tests/web_signal_journal.test.mjs tests/web_paper_engine.test.mjs tests/web_chart_data_compat.test.mjs tests/web_price_action_pages.test.mjs
 
   worker-syntax:
     runs-on: ubuntu-latest
@@ -36,5 +36,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Check Worker and chart JavaScript syntax
-        run: node --check worker/index.js && node --check worker/entry.js && node --check worker/signal_parity.js && node --check Webaria/chart-data-compat.js
+      - name: Check Worker, Pages signal, and chart JavaScript syntax
+        run: node --check worker/index.js && node --check worker/entry.js && node --check worker/signal_parity.js && node --check Webaria/functions/api/signal.js && node --check Webaria/chart-data-compat.js
