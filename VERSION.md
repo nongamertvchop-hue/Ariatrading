@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.14.4**
+Current version: **0.15.0**
 
 ## Versioning rule
 
@@ -15,7 +15,7 @@ Use semantic versioning:
 
 At the start of a new chat, read this file and `README.md` first, then inspect the latest commits before changing code. Continue from the current version instead of recreating earlier work.
 
-## Current milestone — 0.14.4
+## Current milestone — 0.15.0
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Confirmed-swing market structure, fake-breakout sequencing, MTF context, setup scoring, risk planning, and realtime closed-candle monitoring remain connected through the existing engine.
@@ -27,34 +27,31 @@ At the start of a new chat, read this file and `README.md` first, then inspect t
 - The final system readiness gate combines strategy protection, realtime data quality, portfolio risk, trade risk, broker contract validation, position reconciliation, execution recovery, and optional ML evidence into one fail-closed pre-execution contract.
 - The deterministic paper broker and end-to-end paper recovery coordinator cover full/partial fills, rejection, disconnect/timeout ambiguity, idempotency, durable multi-order state, audit-chain verification, and restart recovery.
 - Portfolio daily-loss accounting combines independently recorded realized loss with session-equity loss using the maximum rather than summing both sources, preventing double counting while preserving a fail-closed limit.
-- Broker-symbol contract validation now provides an explicit execution-boundary check for symbol identity, price precision, and volume min/max/step constraints.
+- Broker-symbol contract validation provides an explicit execution-boundary check for symbol identity, price precision, and volume min/max/step constraints.
 - Research provenance fingerprints dataset content, ordered feature definitions, model configuration, and code version so ML/DL artifacts can be compared reproducibly, with atomic persistence and schema validation.
-- Feed integrity validation runs directly at the realtime boundary, rejecting malformed OHLC, duplicate/out-of-order timestamps, non-UTC timestamps by default, and timestamps misaligned to the configured timeframe grid. It intentionally does not treat FX session/weekend gaps as automatically invalid.
-- Deep-learning walk-forward research can persist a deterministic provenance artifact describing its dataset and full model/research configuration, without forcing provenance writes when the feature is unused.
+- Feed integrity validation runs directly at the realtime boundary, rejecting malformed OHLC, duplicate/out-of-order timestamps, non-UTC timestamps by default, and timestamps misaligned to the configured timeframe grid.
 - Position reconciliation optionally tracks average entry price and enforces normalized broker symbol/volume contract consistency, while remaining backward compatible with older snapshots.
-- Average-entry and broker-contract mismatches fail closed before a reconciled position can be considered safe.
-- MT5 integration remains read-only; no order execution is implemented.
+- MT5 integration remains read-only; no real broker execution is implemented.
 - Webaria includes a realtime Signal Advisor backed by the Worker market-data API and a browser-safe Paper Risk Engine.
-- A dedicated MTF Signal Advisor evaluates 1D -> 4H -> 1H -> 15M using the existing `/api/signal` outputs. Higher timeframes filter an existing 15M setup and cannot create a third strategy.
-- The MTF Advisor records signal snapshots locally in the browser for research/journal review; the journal is not a broker execution log and is not shared between devices.
-- MTF and Webaria paper-engine page contracts are covered by automated tests.
-- Worker market-data traffic passes through a lightweight gateway that reduces duplicate upstream requests with short-lived fresh caching and serves recent successful snapshots as stale fallback during temporary provider/quota/network errors.
-- The Worker `/api/signal` path now uses a dedicated parity implementation that mirrors the Python realtime engine's candle pressure, confirmed zones, zone-center semantics, fake-breakout classification, sequence evaluation, structure bias, all-zone candidate selection, scoring, forecast context, realtime supervisor gate, and nearest-zone semantics.
-- Worker realtime input now has an explicit feed guard for OHLC geometry, chronological ordering, timeframe-grid alignment, stale/future data, and per-symbol/timeframe duplicate suppression.
-- Worker parity contracts are covered by a Node test suite in addition to Python tests and Worker syntax checks.
-- Signal events now have deterministic `sig_...` identities shared by the Python and Worker canonical payload contract, with browser journal deduplication using the event identity when available.
-- Realtime event timestamps are normalized to UTC `Z` form before event hashing so equivalent timezone-aware Python timestamps do not create a different research identity from Worker output.
-- Historical realtime replay can now attach causal paper-signal outcomes to each replayed event without changing the original signal decision.
-- Outcome labeling is research-only and supports `WIN`, `LOSS`, `TIMEOUT`, `AMBIGUOUS`, and `INVALID`; same-candle stop/target conflicts remain explicitly ambiguous because OHLC does not encode intrabar order.
+- The MTF Advisor evaluates 1D -> 4H -> 1H -> 15M using existing signal outputs and cannot create a third strategy.
+- Worker realtime input has an explicit feed guard for OHLC geometry, chronological ordering, timeframe-grid alignment, stale/future data, and duplicate suppression.
+- Worker parity contracts are covered by Node tests in addition to Python tests and Worker syntax checks.
+- Signal events use deterministic `sig_...` identities shared by Python and Worker canonical payload semantics.
+- Historical realtime replay can attach causal paper-signal outcomes without changing the original signal decision.
+- **Paper Runtime 0.15.0:** crash/restart recovery now has a dedicated atomic checkpoint format, unresolved pending execution remains fail-closed after restart, and corrupted checkpoint state is never silently reset.
+- **Paper Accounting 0.15.0:** deterministic realized P/L, unrealized P/L, equity, peak equity, drawdown, drawdown percentage, trade count, win/loss statistics, and checkpoint validation are first-class runtime state.
+- **Continuous Paper Runtime 0.15.0:** completed candles are processed once in timestamp order, paper positions are marked to market, stop/target exits are deterministic at bar resolution, and runtime state persists across restarts.
+- **Paper Dashboard 0.15.0:** Webaria now exposes balance, equity, realized/unrealized P/L, peak equity, drawdown, win rate, checkpoint status, heartbeat, position, failure mode, event stream, equity curve, snapshot export, recovery, and a deterministic 10,000-bar replay control.
+- **Soak/Fault Validation 0.15.0:** deterministic 10,000-bar replay and explicit timeout, disconnect, rejection, partial-fill, disappearance, duplicate-bar, out-of-order-bar, and checkpoint-corruption scenarios are covered by automated tests/documentation.
+- **Operational review 0.15.0:** the final paper/demo security checklist documents safety boundaries, recovery behavior, failure expectations, replay criteria, and release interpretation.
 
 ## Next milestones
 
-### 0.14.x — signal validation and paper research
-- Add historical outcome display to the Webaria Advisor using the same event IDs and replay semantics as Python.
-- Compare MTF filtered vs unfiltered paper signals on identical chronological windows.
-- Add signal-quality reports by timeframe, regime, breakout state, and setup score bucket.
-- Continue auditing execution-friction sensitivity and realtime/replay parity.
-- Replace duplicated Worker/Python strategy code with a generated/shared parity contract once the cross-runtime fixtures are complete.
+### 0.15.x — paper validation only
+- Run the full GitHub Actions matrix and retain failures as regression evidence.
+- Expand deterministic datasets with recorded real-market historical samples while preserving closed-candle and causal boundaries.
+- Compare paper-runtime results against existing backtest/replay outcomes on identical chronological windows.
+- Continue hardening observability and operational diagnostics without introducing live broker execution.
 
 ### 1.0.0 — Only after validation
 - Freeze a documented strategy specification only after out-of-sample and robustness checks.
