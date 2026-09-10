@@ -220,14 +220,18 @@ class LiveRuntime:
             raise ValueError("interval_seconds must be > 0")
         self.preflight()
         logger.info("Live runtime started; interval=%.2fs", interval_seconds)
-        while True:
-            started = time.monotonic()
-            try:
-                self.process_once()
-            except KeyboardInterrupt:
-                logger.info("Live runtime stopped by operator")
-                raise
-            except Exception:
-                logger.exception("Live runtime cycle failed closed; no blind retry")
-            elapsed = time.monotonic() - started
-            time.sleep(max(0.0, interval_seconds - elapsed))
+        try:
+            while True:
+                started = time.monotonic()
+                try:
+                    self.process_once()
+                except KeyboardInterrupt:
+                    logger.info("Live runtime stopped by operator")
+                    raise
+                except Exception:
+                    logger.exception("Live runtime cycle failed closed; no blind retry")
+                elapsed = time.monotonic() - started
+                time.sleep(max(0.0, interval_seconds - elapsed))
+        finally:
+            self.executor.disconnect()
+            self.feed.close()
