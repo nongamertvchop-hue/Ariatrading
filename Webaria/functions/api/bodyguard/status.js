@@ -46,14 +46,8 @@ export async function onRequestGet(context) {
   const token = String(context.env?.RUNTIME_API_TOKEN || "").trim();
   if (!runtimeUrl || !token) {
     return json({
-      guard: "Bodyguard(Aria)",
-      version: "0.05.2",
-      codename: "aegis-shield",
-      mode: "fail-closed",
-      posture: "DEGRADED",
-      telemetry: { freshness: "UNAVAILABLE", delivery: "RUNTIME_NOT_CONFIGURED" },
-      counters: {},
-      recent_events: [],
+      guard: "Bodyguard(Aria)", version: "0.05.2", codename: "aegis-shield", mode: "fail-closed", posture: "DEGRADED",
+      telemetry: { freshness: "UNAVAILABLE", delivery: "RUNTIME_NOT_CONFIGURED" }, counters: {}, recent_events: [],
       alerts: [{ level: "critical", code: "RUNTIME_TELEMETRY_UNAVAILABLE", message: "MT5 runtime telemetry bridge is not configured" }],
     }, 503);
   }
@@ -61,13 +55,16 @@ export async function onRequestGet(context) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 6000);
   try {
-    const response = await fetch(`${runtimeUrl}/events?limit=100`, {
-      signal: controller.signal,
-      headers: { accept: "application/json", authorization: `Bearer ${token}`, "cache-control": "no-cache" },
-    });
+    const headers = { accept: "application/json", authorization: `Bearer ${token}`, "cache-control": "no-cache" };
+    const [eventResponse, healthResponse] = await Promise.all([
+      fetch(`${runtimeUrl}/events?limit=100`, { signal: controller.signal, headers }),
+      fetch(`${runtimeUrl}/health`, { signal: controller.signal, headers }),
+    ]);
     let body;
-    try { body = await response.json(); } catch { throw new Error(`runtime returned invalid JSON (HTTP ${response.status})`); }
-    if (!response.ok || !Array.isArray(body?.events)) throw new Error(body?.message || `runtime HTTP ${response.status}`);
+    try { body = await eventResponse.json(); } catch { throw new Error(`runtime returned invalid events JSON (HTTP ${eventResponse.status})`); }
+    if (!eventResponse.ok || !Array.isArray(body?.events)) throw new Error(body?.message || `runtime events HTTP ${eventResponse.status}`);
+    let health = {};
+    try { health = await healthResponse.json(); } catch { /* event data remains useful */ }
 
     const events = body.events.map(sanitizeEvent);
     const counters = {
@@ -81,31 +78,23 @@ export async function onRequestGet(context) {
       cors_blocked: events.filter(e => e.category === "CORS").length,
       payloads_blocked: events.filter(e => /payload/i.test(e.reason)).length,
     };
+    const heartbeat = health?.heartbeat_at ? Date.parse(health.heartbeat_at) : NaN;
+    const heartbeatAge = Number.isFinite(heartbeat) ? Math.max(0, Date.now() - heartbeat) : Infinity;
     const latest = events[0]?.at ? Date.parse(events[0].at) : NaN;
-    const ageMs = Number.isFinite(latest) ? Math.max(0, Date.now() - latest) : Infinity;
-    const posture = events.some(e => e.severity === "CRITICAL") ? "CRITICAL" : events.some(e => e.severity === "HIGH") ? "ELEVATED" : "HEALTHY";
+    const eventAge = Number.isFinite(latest) ? Math.max(0, Date.now() - latest) : Infinity;
+    const stale = heartbeatAge > 10000 || (!Number.isFinite(heartbeatAge) && eventAge > 10000);
+    const posture = events.some(e => e.severity === "CRITICAL") ? "CRITICAL" : events.some(e => e.severity === "HIGH") ? "ELEVATED" : (stale ? "DEGRADED" : "HEALTHY");
     return json({
-      guard: "Bodyguard(Aria)",
-      version: "0.05.2",
-      codename: "aegis-shield",
-      mode: "enforce",
-      posture,
+      guard: "Bodyguard(Aria)", version: "0.05.2", codename: "aegis-shield", mode: "enforce", posture,
       started_at: null,
-      telemetry: { freshness: Number.isFinite(ageMs) && ageMs < 10000 ? "LIVE" : "STALE", delivery: "DURABLE_RUNTIME_SQLITE", event_window: events.length },
-      counters,
-      recent_events: events,
-      alerts: ageMs > 10000 ? [{ level: "critical", code: "TELEMETRY_STALE", message: "Runtime event stream is stale" }] : [],
+      telemetry: { freshness: stale ? "STALE" : "LIVE", delivery: "DURABLE_RUNTIME_SQLITE", event_window: events.length, heartbeat_at: health?.heartbeat_at || null },
+      counters, recent_events: events,
+      alerts: stale ? [{ level: "critical", code: "TELEMETRY_STALE", message: "Runtime heartbeat is stale or unavailable" }] : [],
     });
   } catch (error) {
     return json({
-      guard: "Bodyguard(Aria)",
-      version: "0.05.2",
-      codename: "aegis-shield",
-      mode: "fail-closed",
-      posture: "DEGRADED",
-      telemetry: { freshness: "UNAVAILABLE", delivery: "RUNTIME_ERROR" },
-      counters: {},
-      recent_events: [],
+      guard: "Bodyguard(Aria)", version: "0.05.2", codename: "aegis-shield", mode: "fail-closed", posture: "DEGRADED",
+      telemetry: { freshness: "UNAVAILABLE", delivery: "RUNTIME_ERROR" }, counters: {}, recent_events: [],
       alerts: [{ level: "critical", code: "RUNTIME_TELEMETRY_ERROR", message: error?.name === "AbortError" ? "Runtime telemetry request timed out" : String(error?.message || "Runtime telemetry unavailable").slice(0, 180) }],
     }, 503);
   } finally {
