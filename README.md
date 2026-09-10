@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.16.1**
+**Current version: 0.17.1**
 
 ## Core idea
 
@@ -59,12 +59,14 @@ The project is layered so every stage can be used together without duplicating s
 40. **Massive Replay / Soak** — deterministic 10,000-bar replay harness with repeatability checks and both LONG/SHORT exit paths.
 41. **Failure Injection + Operational Review** — reproducible timeout, disconnect, reject, partial-fill, missing-position, duplicate-bar, out-of-order-bar, and checkpoint-corruption scenarios with a documented paper/demo release gate.
 42. **Historical Data Gate** — strict CSV ingestion for real-market OHLCV fixtures, including schema, geometry, finite values, timezone and chronological checks.
-43. **Backtest/Realtime/Paper Parity Gate** — backtest and realtime now share all-zone candidate selection and score/tie semantics; release validation compares the common decision boundary and paper-runtime determinism on the same historical window.
+43. **Backtest/Realtime/Paper Parity Certification** — normalized decision-stream certification across all three paths on identical closed candles, with deterministic fingerprints and paper-runtime consumption checks.
 44. **Long-Term Paper History** — separate append-only SHA-256 hash-chained equity/accounting history survives checkpoint replacement and fails closed on corruption.
-45. **Operational Console** — standalone Webaria console for health, heartbeat, lifecycle, live market reachability, account metrics, alerts, release checks, event history, equity visualization and snapshot export.
-46. **Final Release Gate CI** — `.github/workflows/release-gate.yml` downloads a pinned real EURUSD 5-minute historical sample and runs the final paper-only gate plus the full Python regression suite.
-47. **Canonical MT5 Web Market Bridge** — Webaria `/api/market` now proxies an authenticated runtime `/market` endpoint; MT5 is the chart source of truth and provider fallback is intentionally disabled to prevent price/strategy drift.
-48. **Durable Bodyguard Telemetry Bridge** — Webaria `/api/bodyguard/status` reads sanitized runtime SQLite events and heartbeat data, giving the dashboard near-real-time durable incident visibility without exposing IPs, secrets, request bodies or PII.
+45. **Operational Console** — standalone Webaria console reads authoritative `aria.paper-runtime.v1` state from a Durable Object and exposes heartbeat, lifecycle, account metrics, alerts, history, recovery and export without treating browser state as authoritative.
+46. **Crash/Restart Certification** — an actual child process is terminated with `os._exit(137)` and a fresh process must recover the durable state; unresolved execution remains HALT.
+47. **Historical Shadow / Soak** — the pinned real EURUSD 5-minute sample is replayed through the certified decision boundary and paper runtime twice to verify deterministic long-duration paper evidence.
+48. **Final Release Gate CI** — `.github/workflows/release-gate.yml` combines historical data validation, 10k synthetic soak, three-way parity, process-death recovery and long real-history paper shadow.
+49. **Canonical MT5 Web Market Bridge** — Webaria `/api/market` proxies an authenticated runtime `/market` endpoint; MT5 is the chart source of truth and provider fallback is intentionally disabled to prevent price/strategy drift.
+50. **Durable Bodyguard Telemetry Bridge** — Webaria `/api/bodyguard/status` reads sanitized runtime SQLite events and heartbeat data, giving the dashboard near-real-time durable incident visibility without exposing IPs, secrets, request bodies or PII.
 
 ## Key modules
 
@@ -72,94 +74,17 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/historical_data.py` — strict external historical OHLCV CSV loader.
 - `strategy/realtime.py` — closed-candle realtime monitor with feed-integrity gating and deterministic event identity.
 - `strategy/realtime_replay.py` — deterministic historical replay of the realtime monitor plus causal outcome attachment.
+- `strategy/parity_certification.py` — normalized Backtest/Realtime/Paper decision-stream certificate.
 - `strategy/paper_accounting.py` — realized/unrealized P/L, equity, peak-equity and drawdown accounting.
 - `strategy/paper_history.py` — durable append-only hash-chained paper accounting history.
 - `strategy/paper_runtime_checkpoint.py` — atomic versioned continuous-runtime checkpoint persistence.
 - `strategy/paper_runtime_engine.py` — continuous closed-candle paper runtime, restart recovery and deterministic exits.
 - `strategy/paper_soak.py` — deterministic 10,000-bar replay and failure-injection harness.
-- `strategy/release_gate.py` — final historical/replay/paper parity and operational release checks.
-- `strategy/order_state.py` — deterministic order lifecycle state machine.
-- `strategy/order_persistence.py` — crash-safe order-state snapshot persistence.
-- `strategy/execution_audit.py` — append-only hash-chain execution audit journal.
-- `strategy/execution_recovery.py` — fail-closed post-restart execution consistency gate.
-- `strategy/paper_trading_loop.py` — end-to-end paper execution coordinator and reconciliation path.
-- `strategy/position_reconciliation.py` — normalized local/broker position reconciliation with average-entry and contract checks.
-- `strategy/system_gate.py` — final fail-closed pre-execution readiness contract.
-- `strategy/broker_contract.py` — normalized broker-symbol contract checks.
-- `adapters/mt5_feed.py` — read-only MT5 market-data adapter.
-- `adapters/paper_broker.py` — broker-like paper/demo simulator for deterministic execution tests.
-- `scripts/run_runtime_api.py` — authenticated REST/WebSocket runtime entrypoint and MT5 market bridge.
-- `polyglot/runner.py` — bounded JSONL worker execution and fail-closed consensus validation.
-- `Webaria/paper-runtime.html` — Paper Trading Dashboard shell.
-- `Webaria/paper-runtime.js` — continuous browser paper runtime and recovery controls.
-- `Webaria/operational-console.html` — operational monitoring console.
-- `Webaria/bodyguard.html` — durable Bodyguard security telemetry dashboard.
-- `Webaria/functions/api/market.js` — canonical Cloudflare-to-MT5 runtime market proxy.
-- `Webaria/functions/api/bodyguard/status.js` — sanitized durable Bodyguard telemetry facade.
-- `Webaria/signal-advisor.html` — single-timeframe realtime Signal Advisor.
-- `Webaria/mtf-advisor.html` — multi-timeframe Signal Advisor and local signal journal.
-- `worker/signal_parity.js` — Worker-side low-level strategy parity primitives.
-- `worker/signal_parity_v2.js` — Worker realtime orchestration aligned with Python sequence/score semantics.
-- `worker/forecast_parity.js` — Worker deterministic forecast and realtime-supervisor parity helpers.
-- `worker/realtime_feed_guard.js` — Worker realtime OHLC/timestamp/staleness/deduplication guard.
+- `strategy/historical_shadow.py` — repeated long-duration paper replay over real historical data.
+- `strategy/release_gate.py` — final paper-only historical/parity/crash/shadow release checks.
+- `worker/paper_runtime_store.js` — Durable Object implementation of the authoritative paper-runtime state contract.
+- `Webaria/operational-console.html` — authoritative operational dashboard backed by `/api/paper-state`.
 
-## System flow
+## Safety boundary
 
-```text
-MT5 terminal
-    |
-    +--> read-only closed bars + forming bar/tick
-    |
-    v
-Authenticated Runtime API (/market, /health, /events)
-    |
-    +--> Webaria /api/market ----> Trading Chart
-    |
-    +--> Webaria /api/bodyguard/status ----> Bodyguard Console
-    |
-    v
-Feed integrity + timeframe normalization
-    |
-    v
-Confirmed S/R zones <---- Market Structure
-    |
-    v
-Core Sequence Engine
-APPROACH -> TEST -> RECLAIM/REJECT -> CONFIRM
-    |
-    +---- Fake Breakout protection
-    +---- MTF look-ahead protection
-    +---- Setup scoring
-    |
-    v
-LONG / SHORT / WAIT
-    |
-    +---- Historical path -> Risk -> Backtest -> Validation
-    |
-    +---- Realtime path -> Supervisor -> Event ID -> Paper Runtime
-    |                                                   |
-    |                                                   +---- once-only closed candle
-    |                                                   +---- checkpoint/restart recovery
-    |                                                   +---- position reconciliation
-    |                                                   +---- P/L -> Equity -> Drawdown
-    |                                                   +---- long-term hash-chained history
-    |                                                   +---- Operational Console
-    |
-    +---- Polyglot Validation Fabric -> independent workers
-    |
-    +---- Final Release Gate -> CI/security/soak/failure evidence
-```
-
-## Research safety contract
-
-Ariatrading is a research and paper/demo system. MT5 integration remains read-only, and the paper runtime does not place or manage real broker orders.
-
-The Paper Trading Dashboard and Operational Console are explicitly **PAPER/DEMO**. Ambiguous execution outcomes remain unresolved until a trustworthy source of truth is available; they are never converted into a synthetic fill merely to keep the runtime moving.
-
-## Final release gate
-
-Version 0.16.1 extends the final paper-only architecture with an authenticated MT5 runtime market bridge, canonical Webaria market sourcing, durable Bodyguard telemetry, and CI syntax coverage for the new edge endpoints. Passing the release gate demonstrates the tested engineering/research properties for the selected revision and fixture. It is **not** evidence of profitability, future performance, or authorization for real-money execution.
-
-## Polyglot implementation status
-
-The language registry covers the requested ecosystem, but this repository does **not** pretend every compiler, VM, scientific suite, GPU toolchain, HDL toolchain, or formal prover is installed. A language becomes operational only when a concrete worker for that runtime is registered and passes the common contract tests. This avoids fake compatibility and prevents a large number of duplicated strategy implementations from becoming a hidden source of semantic drift.
+Ariatrading's supported runtime is **PAPER/DEMO only**. The release gate has no real-broker execution path, and the supported bot configuration rejects `BOT_MODE=live`. A passing paper gate is engineering/research evidence only; it is not a profitability claim and does not authorize real-money trading.
