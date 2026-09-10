@@ -222,6 +222,7 @@ class LiveRuntime:
             raise RuntimeError("MT5 account identity changed while binding runtime")
         if not account.trade_allowed or not account.trade_expert:
             raise RuntimeError("MT5 trading permissions are not enabled")
+        self.executor.bind_account_identity(identity)
         self._bound_account_identity = identity
         if self.circuit_breaker is not None:
             ok, reason = self.circuit_breaker.check(account.equity, now)
