@@ -9,6 +9,7 @@ rather than assuming a favorable or unfavorable path.
 """
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Literal
 
 LONG = "LONG"
@@ -44,9 +45,16 @@ def _validate_candle(raw: dict) -> tuple[float, float]:
         low = float(raw["low"])
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("outcome labeling requires numeric candle high/low") from exc
+    if not all(isfinite(value) for value in (high, low)):
+        raise ValueError("candle high/low must be finite")
     if high < low:
         raise ValueError("candle high must be >= low")
     return high, low
+
+
+def _validate_positive_finite(value: float, field_name: str) -> None:
+    if not isfinite(value) or value <= 0:
+        raise ValueError(f"{field_name} must be finite and > 0")
 
 
 def label_signal_outcome(
@@ -73,12 +81,13 @@ def label_signal_outcome(
         raise ValueError("event_id must not be empty")
     if direction not in {LONG, SHORT}:
         raise ValueError("direction must be LONG or SHORT")
-    if target_r_multiple <= 0:
-        raise ValueError("target_r_multiple must be > 0")
-    if max_bars < 1:
-        raise ValueError("max_bars must be >= 1")
-    if entry <= 0 or stop <= 0:
-        raise ValueError("entry and stop must be > 0")
+    _validate_positive_finite(target_r_multiple, "target_r_multiple")
+    if isinstance(max_bars, bool) or not isinstance(max_bars, int) or max_bars < 1:
+        raise ValueError("max_bars must be an integer >= 1")
+    _validate_positive_finite(entry, "entry")
+    _validate_positive_finite(stop, "stop")
+    if not isinstance(future_candles, list):
+        raise ValueError("future_candles must be a list")
 
     risk = entry - stop if direction == LONG else stop - entry
     if risk <= 0:
