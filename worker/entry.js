@@ -12,6 +12,7 @@ const STALE_TTL_MS = Object.freeze({"/api/price":5*60000,"/api/signal":5*60000,"
 const MAX_RESPONSE_CACHE_ENTRIES=256;
 const MAX_MT5_INGEST_BYTES=256*1024;
 const MAX_PAPER_STATE_BYTES=65536;
+const MAX_STRATEGY_BYTES=256*1024;
 const MARKET_RATE_WINDOW_MS=60_000;
 const MARKET_RATE_MAX=120;
 const MAX_MARKET_RATE_BUCKETS=4096;
@@ -42,18 +43,33 @@ async function handleMt5Ingest(request,env){
 async function handlePaperRuntimeState(request,env){
   const origin=request.headers.get("origin");
   const requestUrl=new URL(request.url);
-  if(origin){
-    try { if(new URL(origin).origin!==requestUrl.origin)return json({error:"origin_rejected"},403); }
-    catch(_){ return json({error:"origin_rejected"},403); }
-  }
+  if(origin){try{if(new URL(origin).origin!==requestUrl.origin)return json({error:"origin_rejected"},403);}catch(_){return json({error:"origin_rejected"},403);}}
   const contentLength=Number(request.headers.get("content-length"));
   if(Number.isFinite(contentLength)&&contentLength>MAX_PAPER_STATE_BYTES)return json({error:"payload_too_large"},413);
   const id=env.PAPER_RUNTIME_STATE.idFromName("paper-runtime");
   return env.PAPER_RUNTIME_STATE.get(id).fetch(new Request("https://paper.internal/state",{method:request.method,headers:request.headers,body:request.method==="GET"||request.method==="HEAD"?undefined:request.body}));
 }
+async function handleStrategyRequest(request){
+  if(request.method!=="POST")return json({error:"method_not_allowed"},405);
+  const contentLength=Number(request.headers.get("content-length"));
+  if(Number.isFinite(contentLength)&&contentLength>MAX_STRATEGY_BYTES)return json({error:"payload_too_large"},413);
+  try{
+    const body=await request.json();
+    const symbol=String(body?.symbol||"EUR/USD").trim().toUpperCase(),timeframe=String(body?.timeframe||"15m").trim();
+    if(!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol))return json({error:"bad_request",message:"symbol must look like EUR/USD"},400);
+    if(!TIMEFRAME_SECONDS[timeframe])return json({error:"bad_request",message:`unsupported timeframe: ${timeframe}`},400);
+    if(!Array.isArray(body?.candles)||body.candles.length<5||body.candles.length>500)return json({error:"bad_request",message:"candles must contain 5..500 rows"},400);
+    const result=evaluateRealtimeSignalParity(body.candles,timeframe);
+    const source=body?.source==="mt5"?"mt5":"simulation";
+    const response={symbol,timeframe,...result,source,execution:"NONE",generated_at:new Date().toISOString()};
+    response.event_id=await buildSignalEventId(response);
+    return json(response);
+  }catch(error){return json({error:"strategy_rejected",message:error?.message||"strategy payload rejected",execution:"NONE"},400);}
+}
 async function resolveApi(request,env,ctx,pathname){
   if(pathname==="/api/bodyguard/status")return statusResponse();
   if(pathname==="/api/paper-state")return handlePaperRuntimeState(request,env);
+  if(pathname==="/api/strategy")return handleStrategyRequest(request);
   if(pathname==="/api/mt5/ingest")return handleMt5Ingest(request,env);
   if(pathname==="/api/mt5/market"){
     const id=env.MT5_MARKET.idFromName("market");
