@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -65,6 +67,24 @@ class DailyCircuitBreaker:
             raise RuntimeError("circuit-breaker state must be an object")
         return value
 
+    def _save(self, state: dict) -> None:
+        """Atomically persist the breaker baseline so a torn write fails closed."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{self.path.name}.", dir=self.path.parent, text=True)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(state, handle, sort_keys=True, indent=2)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_name, self.path)
+        except OSError as exc:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise RuntimeError(f"circuit-breaker state cannot be persisted safely: {exc}") from exc
+
     def check(self, equity: float, now: datetime | None = None) -> tuple[bool, str]:
         if equity <= 0:
             return False, "account equity must be positive"
@@ -72,8 +92,7 @@ class DailyCircuitBreaker:
         state = self._load()
         if state.get("date") != current:
             state = {"date": current, "starting_equity": float(equity)}
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+            self._save(state)
         starting = float(state.get("starting_equity", 0.0))
         if starting <= 0:
             return False, "invalid starting equity in circuit-breaker state"
