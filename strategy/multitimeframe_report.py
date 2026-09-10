@@ -93,6 +93,25 @@ def _common_value(values: list[int]) -> int | None:
     return values[0]
 
 
+def _timeframe_seconds(timeframe: str) -> int:
+    """Return a canonical duration for supported MT5-style timeframe labels."""
+    value = timeframe.strip().lower()
+    if value.endswith("m"):
+        return int(value[:-1]) * 60
+    if value.endswith("h"):
+        return int(value[:-1]) * 60 * 60
+    if value.endswith("d"):
+        return int(value[:-1]) * 24 * 60 * 60
+    if value.endswith("w"):
+        return int(value[:-1]) * 7 * 24 * 60 * 60
+    raise ValueError(f"unsupported timeframe label: {timeframe!r}")
+
+
+def _timeframe_sort_key(timeframe: str) -> tuple[int, str]:
+    """Sort research rows from higher to lower timeframe, deterministically."""
+    return (-_timeframe_seconds(timeframe), timeframe)
+
+
 def build_multitimeframe_report(
     results: Mapping[str, WalkForwardResult],
     *,
@@ -103,7 +122,7 @@ def build_multitimeframe_report(
         return MultiTimeframeReport((), None, None, None)
 
     rows: list[TimeframeResearchRow] = []
-    for timeframe in sorted(results):
+    for timeframe in sorted(results, key=_timeframe_sort_key):
         result = results[timeframe]
         if result.timeframe != timeframe:
             raise ValueError(
