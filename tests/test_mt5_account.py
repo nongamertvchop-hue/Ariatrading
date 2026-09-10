@@ -7,11 +7,13 @@ class FakeMT5:
     ACCOUNT_TRADE_MODE_DEMO = 0
     ACCOUNT_TRADE_MODE_REAL = 2
 
-    def __init__(self, trade_mode, trade_allowed=True, trade_expert=True):
+    def __init__(self, trade_mode, trade_allowed=True, trade_expert=True, login=12345, server="Broker-Real"):
         self._info = SimpleNamespace(
             trade_mode=trade_mode,
             trade_allowed=trade_allowed,
             trade_expert=trade_expert,
+            login=login,
+            server=server,
         )
 
     def account_info(self):
@@ -19,6 +21,14 @@ class FakeMT5:
 
     def last_error(self):
         return (500, "account unavailable")
+
+
+def _arm_live(monkeypatch):
+    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
+    monkeypatch.setenv("ARIATRADING_LIVE_STAGE", "1")
+    monkeypatch.setenv("ARIATRADING_LIVE_ACCOUNT", "12345")
+    monkeypatch.setenv("ARIATRADING_LIVE_SERVER", "Broker-Real")
+    monkeypatch.setenv("ARIATRADING_LIVE_SYMBOLS", "EURUSD")
 
 
 def test_live_is_disabled_without_explicit_opt_in(monkeypatch):
@@ -29,7 +39,7 @@ def test_live_is_disabled_without_explicit_opt_in(monkeypatch):
 
 
 def test_live_requires_real_account(monkeypatch):
-    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
+    _arm_live(monkeypatch)
     ok, reason = validate_account_mode(FakeMT5(0), "LIVE")
     assert not ok
     assert "requested LIVE" in reason
@@ -44,7 +54,7 @@ def test_demo_requires_demo_account():
 
 
 def test_matching_live_account_is_allowed(monkeypatch):
-    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
+    _arm_live(monkeypatch)
     ok, reason = validate_account_mode(FakeMT5(2), "LIVE")
     assert ok
     assert reason == "account mode verified: LIVE"
@@ -56,22 +66,36 @@ def test_matching_demo_account_is_allowed():
     assert reason == "account mode verified: DEMO"
 
 
+def test_live_rejects_wrong_account(monkeypatch):
+    _arm_live(monkeypatch)
+    ok, reason = validate_account_mode(FakeMT5(2, login=12346), "LIVE")
+    assert not ok
+    assert "account identity mismatch" in reason
+
+
+def test_live_rejects_wrong_server(monkeypatch):
+    _arm_live(monkeypatch)
+    ok, reason = validate_account_mode(FakeMT5(2, server="Broker-Demo"), "LIVE")
+    assert not ok
+    assert "account identity mismatch" in reason
+
+
 def test_execution_disabled_for_account_is_rejected(monkeypatch):
-    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
+    _arm_live(monkeypatch)
     ok, reason = validate_account_mode(FakeMT5(2, trade_allowed=False), "LIVE")
     assert not ok
     assert reason == "MT5 account does not allow trading"
 
 
 def test_ea_trading_disabled_is_rejected(monkeypatch):
-    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
+    _arm_live(monkeypatch)
     ok, reason = validate_account_mode(FakeMT5(2, trade_expert=False), "LIVE")
     assert not ok
     assert reason == "MT5 Expert Advisor trading is disabled for this account"
 
 
 def test_account_info_failure_is_rejected(monkeypatch):
-    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
+    _arm_live(monkeypatch)
 
     class BrokenMT5(FakeMT5):
         def account_info(self):

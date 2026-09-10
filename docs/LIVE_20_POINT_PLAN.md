@@ -27,14 +27,28 @@ Goal: make the system capable of operating against a real MT5 account without re
 
 ## Current implementation status
 
-- 1–3: implemented.
-- 4: implemented in `live/live_runtime.py`; CLI wiring is the next integration step.
+- 1–3: implemented, plus explicit Stage 1 account/server allowlisting.
+- 4: implemented in `live/live_runtime.py` and wired through the canonical CLI.
 - 5–9: implemented across MT5 feed, executor, strategy, and runtime gates.
-- 10: implemented as `DailyCircuitBreaker`.
+- 10: implemented as `DailyCircuitBreaker`, with Stage 1 capped at 1% daily drawdown.
 - 11–12: implemented by `ExecutionJournal` and ambiguous-state handling.
 - 13–15: implemented in `MT5LiveExecutor`.
-- 16–19: implemented by the live runtime boundary and journal recovery checks.
-- 20: tests are being expanded; GitHub Actions must be observed after the latest commits before calling the branch green.
+- 16–19: implemented by the live runtime boundary, journal recovery checks and Stage 1 policy.
+- 20: automated tests cover Stage 1 policy, account identity and CLI defaults; branch CI must still be observed before promotion.
+
+## Stage 1 production boundary
+
+The first real-money tier is deliberately narrow:
+
+- exactly one allow-listed symbol
+- exact MT5 login + server identity
+- explicit operator opt-in
+- maximum 0.25% risk per trade
+- maximum 1% daily equity drawdown
+- maximum 20-point spread
+- maximum 5-second tick age
+
+These are deployment controls, not new strategy rules.
 
 ## Non-negotiable architecture rules
 

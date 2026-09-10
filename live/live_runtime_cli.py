@@ -21,14 +21,14 @@ logger = logging.getLogger("ariatrading.live_runtime_cli")
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Ariatrading hardened MT5 live runtime")
-    parser.add_argument("--symbols", default="EURUSD,GBPUSD,USDJPY", help="Comma-separated broker symbols")
+    parser.add_argument("--symbols", default="EURUSD", help="Comma-separated broker symbols")
     parser.add_argument("--mode", choices=["DEMO", "LIVE"], default="DEMO")
     parser.add_argument("--timeframe", default="15m", help="Candle timeframe (1m, 5m, 15m, 30m, 1h, 4h, 1D)")
-    parser.add_argument("--risk", type=float, default=0.01, help="Risk fraction per trade")
+    parser.add_argument("--risk", type=float, default=0.0025, help="Risk fraction per trade")
     parser.add_argument("--interval", type=float, default=5.0, help="Runtime cycle interval in seconds")
-    parser.add_argument("--max-tick-age", type=float, default=10.0, help="Maximum accepted broker tick age")
-    parser.add_argument("--max-spread-points", type=float, default=30.0, help="Maximum accepted spread in points")
-    parser.add_argument("--max-daily-drawdown", type=float, default=0.02, help="Daily equity drawdown circuit-breaker fraction")
+    parser.add_argument("--max-tick-age", type=float, default=5.0, help="Maximum accepted broker tick age")
+    parser.add_argument("--max-spread-points", type=float, default=20.0, help="Maximum accepted spread in points")
+    parser.add_argument("--max-daily-drawdown", type=float, default=0.01, help="Daily equity drawdown circuit-breaker fraction")
     return parser
 
 

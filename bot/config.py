@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from live.production_stage1 import ProductionStage1Policy
+
 
 _TRUE = {"1", "true", "yes", "on"}
 
@@ -70,8 +72,14 @@ class BotConfig:
     def validate(self) -> None:
         if self.mode not in {"paper", "demo", "live"}:
             raise ValueError("BOT_MODE must be paper, demo, or live")
-        if self.mode == "live" and not self.allow_live:
-            raise RuntimeError("LIVE mode is fail-closed: set ALLOW_LIVE=1 only in a separately reviewed deployment")
+        if self.mode == "live":
+            policy = ProductionStage1Policy.from_env()
+            policy.validate_symbols(self.symbols)
+            if not 0 < self.default_risk_per_trade <= policy.max_risk_per_trade:
+                raise RuntimeError(
+                    "LIVE Stage 1 risk exceeds policy: "
+                    f"{self.default_risk_per_trade} > {policy.max_risk_per_trade}"
+                )
         if not self.symbols:
             raise ValueError("DEFAULT_SYMBOLS must not be empty")
         if self.max_request_rate <= 0 or self.max_burst < 1:
