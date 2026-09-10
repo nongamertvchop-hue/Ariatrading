@@ -88,6 +88,7 @@ class MT5LiveExecutor:
         self.terminal_path = terminal_path
         self.magic_number = magic_number
         self._connected = False
+        self._bound_account_identity: AccountIdentity | None = None
 
     def connect(self) -> bool:
         if self.mt5 is None:
@@ -97,12 +98,14 @@ class MT5LiveExecutor:
             err = self.mt5.last_error() if hasattr(self.mt5, "last_error") else "unknown error"
             raise RuntimeError(f"Failed to initialize MT5: {err}")
         self._connected = True
+        self._bound_account_identity = None
         return True
 
     def disconnect(self) -> None:
         if self.mt5 is not None and self._connected:
             self.mt5.shutdown()
             self._connected = False
+        self._bound_account_identity = None
 
     def get_account_identity(self) -> AccountIdentity:
         """Read the broker/account identity and fail closed on missing fields."""
@@ -119,6 +122,28 @@ class MT5LiveExecutor:
         if login <= 0 or not server or not company or trade_mode < 0:
             raise RuntimeError("MT5 account identity is incomplete; refusing execution")
         return AccountIdentity(login=login, server=server, company=company, trade_mode=trade_mode)
+
+    def bind_account_identity(self, identity: AccountIdentity) -> None:
+        """Bind this executor to one verified account identity for its session."""
+        current = self.get_account_identity()
+        if current != identity:
+            raise RuntimeError("cannot bind executor: current MT5 account identity does not match expected identity")
+        if self._bound_account_identity is not None and self._bound_account_identity != identity:
+            raise RuntimeError("MT5 executor account identity is already bound to a different account")
+        self._bound_account_identity = identity
+
+    def _assert_bound_account_identity(self) -> None:
+        """Re-check the bound account immediately before any broker execution."""
+        if self._bound_account_identity is None:
+            raise RuntimeError("MT5 executor account identity is not bound; execution is disabled")
+        current = self.get_account_identity()
+        if current != self._bound_account_identity:
+            raise RuntimeError(
+                "MT5 executor account identity changed: "
+                f"expected login={self._bound_account_identity.login}, server={self._bound_account_identity.server!r}, "
+                f"company={self._bound_account_identity.company!r}, trade_mode={self._bound_account_identity.trade_mode}; "
+                f"got login={current.login}, server={current.server!r}, company={current.company!r}, trade_mode={current.trade_mode}"
+            )
 
     def get_account_snapshot(self) -> AccountSnapshot:
         if not self._connected:
@@ -171,14 +196,13 @@ class MT5LiveExecutor:
         tp: float | None = None, deviation_points: int = 20,
         comment: str = "Ariatrading Forex",
     ) -> OrderResult:
-        """Validate, order_check, then submit one market order.
-
-        A failed/unknown order_check never reaches order_send. Any exception
-        from order_send is allowed to become AMBIGUOUS in the caller because
-        transport failure cannot prove that the broker rejected the request.
-        """
+        """Validate, order_check, then submit one market order."""
         if not self._connected:
             return OrderResult(False, -1, error_message="MT5 executor is not connected")
+        try:
+            self._assert_bound_account_identity()
+        except RuntimeError as exc:
+            return OrderResult(False, -1, error_message=str(exc))
         if direction not in {ORDER_BUY, ORDER_SELL}:
             return OrderResult(False, -1, error_message=f"Invalid direction: {direction}")
         if not isfinite(volume) or volume <= 0:
@@ -275,6 +299,10 @@ class MT5LiveExecutor:
     def close_position(self, ticket: int, deviation_points: int = 20) -> OrderResult:
         if not self._connected:
             return OrderResult(False, -1, error_message="MT5 executor is not connected")
+        try:
+            self._assert_bound_account_identity()
+        except RuntimeError as exc:
+            return OrderResult(False, -1, error_message=str(exc))
         positions = self.mt5.positions_get(ticket=ticket)
         if positions is None:
             return OrderResult(False, -1, error_message=f"MT5 position lookup failed: {self.mt5.last_error()}")
