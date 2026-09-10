@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any, Sequence
 
 
@@ -53,8 +54,8 @@ class ProductionStage1Policy:
                 value = float(raw)
             except ValueError as exc:
                 raise RuntimeError(f"{name} must be a finite number") from exc
-            if value <= 0 or value > hard_max:
-                raise RuntimeError(f"{name} must be > 0 and <= {hard_max}")
+            if not isfinite(value) or value <= 0 or value > hard_max:
+                raise RuntimeError(f"{name} must be a finite number > 0 and <= {hard_max}")
             return value
 
         stage_raw = os.getenv(STAGE_ENV, "0").strip()
@@ -132,6 +133,14 @@ class ProductionStage1Policy:
         max_spread_points: float,
         max_tick_age_seconds: float,
     ) -> None:
+        values = {
+            "risk_per_trade": risk_per_trade,
+            "max_daily_drawdown": max_daily_drawdown,
+            "max_spread_points": max_spread_points,
+            "max_tick_age_seconds": max_tick_age_seconds,
+        }
+        if any(not isfinite(value) for value in values.values()):
+            raise RuntimeError("LIVE Stage 1 runtime limits must all be finite")
         if not 0 < risk_per_trade <= self.max_risk_per_trade:
             raise RuntimeError(
                 "LIVE Stage 1 risk exceeds policy: "
