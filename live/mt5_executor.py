@@ -23,7 +23,6 @@ except ImportError:
     mt5 = None
 
 
-# Order Types
 ORDER_BUY = "BUY"
 ORDER_SELL = "SELL"
 
@@ -57,14 +56,24 @@ class PositionSnapshot:
     open_time: datetime
 
 
+@dataclass(frozen=True)
+class AccountSnapshot:
+    """Minimal account state required by the live risk boundary."""
+
+    login: int
+    balance: float
+    equity: float
+    margin_free: float
+    trade_allowed: bool
+    trade_expert: bool
+
+
 def _resolve_filling_mode(mt5_mod: Any, symbol_info: Any) -> int:
     """Determine best supported order filling mode for the symbol."""
     filling_flags = getattr(symbol_info, "filling_mode", 0)
-    # Check bitmask for FOK, IOC, or fallback to RETURN
     order_filling_fok = getattr(mt5_mod, "ORDER_FILLING_FOK", 0)
     order_filling_ioc = getattr(mt5_mod, "ORDER_FILLING_IOC", 1)
     order_filling_return = getattr(mt5_mod, "ORDER_FILLING_RETURN", 2)
-
     symbol_filling_fok = getattr(mt5_mod, "SYMBOL_FILLING_FOK", 1)
     symbol_filling_ioc = getattr(mt5_mod, "SYMBOL_FILLING_IOC", 2)
 
@@ -112,6 +121,22 @@ class MT5LiveExecutor:
             self.mt5.shutdown()
             self._connected = False
 
+    def get_account_snapshot(self) -> AccountSnapshot:
+        """Read account state immediately before live decisions."""
+        if not self._connected:
+            raise RuntimeError("MT5 executor is not connected.")
+        info = self.mt5.account_info()
+        if info is None:
+            raise RuntimeError(f"MT5 account_info unavailable: {self.mt5.last_error()}")
+        return AccountSnapshot(
+            login=int(getattr(info, "login", 0)),
+            balance=float(getattr(info, "balance", 0.0)),
+            equity=float(getattr(info, "equity", 0.0)),
+            margin_free=float(getattr(info, "margin_free", 0.0)),
+            trade_allowed=bool(getattr(info, "trade_allowed", False)),
+            trade_expert=bool(getattr(info, "trade_expert", False)),
+        )
+
     def get_symbol_contract(self, symbol: str) -> ForexSymbolContract:
         """Retrieve and normalize broker contract details for a symbol."""
         if not self._connected:
@@ -120,10 +145,9 @@ class MT5LiveExecutor:
         info = self.mt5.symbol_info(symbol)
         if info is None:
             raise ValueError(f"Symbol {symbol} not found in MT5.")
-
-        # Ensure symbol is selected in Market Watch
         if not getattr(info, "visible", True):
-            self.mt5.symbol_select(symbol, True)
+            if not self.mt5.symbol_select(symbol, True):
+                raise RuntimeError(f"Could not select symbol {symbol} in MT5.")
 
         return ForexSymbolContract(
             symbol=str(info.name),
@@ -140,11 +164,9 @@ class MT5LiveExecutor:
         """Fetch current bid, ask, and timestamp."""
         if not self._connected:
             raise RuntimeError("MT5 executor is not connected.")
-
         tick = self.mt5.symbol_info_tick(symbol)
         if tick is None:
             raise RuntimeError(f"Could not retrieve tick for {symbol}")
-
         ts = datetime.fromtimestamp(int(tick.time), tz=timezone.utc)
         return float(tick.bid), float(tick.ask), ts
 
@@ -164,8 +186,14 @@ class MT5LiveExecutor:
             return OrderResult(False, -1, error_message="MT5 executor is not connected")
         if direction not in {ORDER_BUY, ORDER_SELL}:
             return OrderResult(False, -1, error_message=f"Invalid direction: {direction}")
+        if not isfinite(volume) or volume <= 0:
+            return OrderResult(False, -1, error_message="Order volume must be finite and > 0")
         if sl <= 0 or not isfinite(sl):
             return OrderResult(False, -1, error_message="Mandatory Stop Loss must be finite and > 0")
+        if tp is not None and (not isfinite(tp) or tp <= 0):
+            return OrderResult(False, -1, error_message="Take Profit must be finite and > 0 when provided")
+        if deviation_points < 0:
+            return OrderResult(False, -1, error_message="Deviation must be >= 0")
 
         sym_info = self.mt5.symbol_info(symbol)
         if sym_info is None:
@@ -205,7 +233,7 @@ class MT5LiveExecutor:
             "type_time": getattr(self.mt5, "ORDER_TIME_GTC", 0),
             "type_filling": filling,
         }
-        if tp is not None and tp > 0:
+        if tp is not None:
             req["tp"] = round(tp, digits)
 
         res = self.mt5.order_send(req)
@@ -215,7 +243,6 @@ class MT5LiveExecutor:
 
         trade_retcode_done = getattr(self.mt5, "TRADE_RETCODE_DONE", 10009)
         trade_retcode_placed = getattr(self.mt5, "TRADE_RETCODE_PLACED", 10008)
-
         if res.retcode in {trade_retcode_done, trade_retcode_placed}:
             return OrderResult(
                 success=True,
@@ -234,15 +261,10 @@ class MT5LiveExecutor:
         )
 
     def get_open_positions(self, symbol: str | None = None) -> list[PositionSnapshot]:
-        """Fetch active positions filtered by magic number and optional symbol."""
+        """Fetch active positions filtered by this strategy's magic number."""
         if not self._connected:
             return []
-
-        if symbol:
-            raw_positions = self.mt5.positions_get(symbol=symbol)
-        else:
-            raw_positions = self.mt5.positions_get()
-
+        raw_positions = self.mt5.positions_get(symbol=symbol) if symbol else self.mt5.positions_get()
         if raw_positions is None:
             return []
 
@@ -251,7 +273,6 @@ class MT5LiveExecutor:
             magic = int(getattr(pos, "magic", 0))
             if self.magic_number and magic != self.magic_number:
                 continue
-
             ptype = getattr(pos, "type", 0)
             otype = ORDER_BUY if ptype == getattr(self.mt5, "ORDER_TYPE_BUY", 0) else ORDER_SELL
             ts = datetime.fromtimestamp(int(pos.time), tz=timezone.utc)
@@ -275,24 +296,23 @@ class MT5LiveExecutor:
         """Close an existing open position by ticket."""
         if not self._connected:
             return OrderResult(False, -1, error_message="MT5 executor is not connected")
-
         positions = self.mt5.positions_get(ticket=ticket)
         if not positions:
             return OrderResult(False, -1, error_message=f"Position ticket {ticket} not found")
 
         pos = positions[0]
+        if self.magic_number and int(getattr(pos, "magic", 0)) != self.magic_number:
+            return OrderResult(False, -1, error_message=f"Position #{ticket} is not owned by this strategy")
+
         sym = str(pos.symbol)
         vol = float(pos.volume)
         ptype = getattr(pos, "type", 0)
-
         sym_info = self.mt5.symbol_info(sym)
         tick = self.mt5.symbol_info_tick(sym)
         if sym_info is None or tick is None:
             return OrderResult(False, -1, error_message=f"Could not retrieve tick/info for {sym}")
 
         filling = _resolve_filling_mode(self.mt5, sym_info)
-
-        # Opposite order type to close
         if ptype == getattr(self.mt5, "ORDER_TYPE_BUY", 0):
             close_type = getattr(self.mt5, "ORDER_TYPE_SELL", 1)
             close_price = float(tick.bid)
