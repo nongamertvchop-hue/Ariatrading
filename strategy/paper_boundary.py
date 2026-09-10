@@ -11,6 +11,7 @@ import ast
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+_SELF = Path(__file__).resolve()
 
 # Keep this list deliberately small and high-confidence. Generic words such as
 # ``order`` or ``broker`` are valid concepts in a paper simulator.
@@ -26,12 +27,6 @@ FORBIDDEN_REFERENCES = (
     "create_order",
 )
 
-PAPER_PATHS = (
-    ROOT / "strategy",
-    ROOT / "adapters" / "paper_broker.py",
-    ROOT / "scripts" / "run_paper_runtime.py",
-)
-
 
 def _python_files() -> list[Path]:
     files: list[Path] = []
@@ -39,7 +34,9 @@ def _python_files() -> list[Path]:
     files.extend(sorted(strategy_root.glob("*.py")))
     files.append(ROOT / "adapters" / "paper_broker.py")
     files.append(ROOT / "scripts" / "run_paper_runtime.py")
-    return [path for path in files if path.exists()]
+    # The scanner contains the forbidden vocabulary as policy data, so it must
+    # not report its own rule table as an application-level violation.
+    return [path for path in files if path.exists() and path.resolve() != _SELF]
 
 
 def verify_paper_boundary() -> tuple[bool, tuple[str, ...]]:
