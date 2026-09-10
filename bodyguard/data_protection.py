@@ -37,15 +37,10 @@ def _redact_string(value: str) -> str:
 
 
 def sanitize_for_boundary(value: Any, *, max_depth: int = 8, max_items: int = 200) -> Any:
-    """Return a bounded copy with sensitive keys/values redacted.
-
-    Unknown objects are converted to a short string rather than serialized
-    through arbitrary object hooks. This avoids accidentally invoking custom
-    serialization code at a security boundary.
-    """
+    """Return a bounded copy with sensitive keys/values redacted."""
 
     def visit(item: Any, depth: int) -> Any:
-        if depth > max_depth:
+        if depth >= max_depth:
             return REDACTED
         if item is None or isinstance(item, (bool, int, float)):
             return item
