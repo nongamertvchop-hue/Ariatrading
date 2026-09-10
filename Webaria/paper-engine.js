@@ -4,8 +4,8 @@
  * Browser-safe risk primitives mirroring strategy/risk_engine.py.
  * This module is intentionally simulation-only: it never calls a broker.
  *
- * Integration is kept separate from the chart/terminal until the existing
- * index.html can be edited safely without replacing truncated source.
+ * The public functions validate their contracts aggressively so malformed UI
+ * state cannot silently turn into a plausible-looking paper calculation.
  */
 (function (root) {
   'use strict';
@@ -17,6 +17,24 @@
   function finitePositive(value, name) {
     const n = Number(value);
     if (!Number.isFinite(n) || n <= 0) throw new Error(name + ' must be finite and > 0');
+    return n;
+  }
+
+  function finiteNonNegative(value, name) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) throw new Error(name + ' must be finite and >= 0');
+    return n;
+  }
+
+  function fraction(value, name) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0 || n > 1) throw new Error(name + ' must be > 0 and <= 1');
+    return n;
+  }
+
+  function integerNonNegative(value, name) {
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 0) throw new Error(name + ' must be an integer >= 0');
     return n;
   }
 
@@ -51,10 +69,9 @@
     const eq = finitePositive(equity, 'equity');
     const en = finitePositive(entry, 'entry');
     const st = finitePositive(stop, 'stop');
-    const rf = Number(riskFraction);
+    const rf = fraction(riskFraction, 'riskFraction');
     const valuePerPriceUnit = cfg.valuePerPriceUnit == null ? 1 : Number(cfg.valuePerPriceUnit);
     const quantityStep = cfg.quantityStep == null ? 0 : Number(cfg.quantityStep);
-    if (!Number.isFinite(rf) || rf <= 0 || rf > 1) throw new Error('riskFraction must be > 0 and <= 1');
     if (!Number.isFinite(valuePerPriceUnit) || valuePerPriceUnit <= 0) throw new Error('valuePerPriceUnit must be finite and > 0');
     if (!Number.isFinite(quantityStep) || quantityStep < 0) throw new Error('quantityStep must be finite and >= 0');
     if (en === st) throw new Error('entry and stop must differ');
@@ -63,11 +80,7 @@
     return floorStep(riskBudget / riskPerUnit, quantityStep);
   }
 
-  function evaluateRisk(params) {
-    const p = params || {};
-    const equity = finitePositive(p.equity, 'equity');
-    const entry = finitePositive(p.entry, 'entry');
-    const stop = finitePositive(p.stop, 'stop');
+  function validateLimits(raw) {
     const limits = Object.assign({
       riskPerTrade: 0.01,
       maxDailyLoss: 0.03,
@@ -75,12 +88,36 @@
       maxPositions: 1,
       minQuantity: 0,
       maxQuantity: null
-    }, p.limits || {});
+    }, raw || {});
+
+    fraction(limits.riskPerTrade, 'limits.riskPerTrade');
+    fraction(limits.maxDailyLoss, 'limits.maxDailyLoss');
+    fraction(limits.maxOpenRisk, 'limits.maxOpenRisk');
+    integerNonNegative(limits.maxPositions, 'limits.maxPositions');
+    finiteNonNegative(limits.minQuantity, 'limits.minQuantity');
+
+    if (limits.maxQuantity != null) {
+      finiteNonNegative(limits.maxQuantity, 'limits.maxQuantity');
+      if (limits.maxQuantity < limits.minQuantity) {
+        throw new Error('limits.maxQuantity must be >= limits.minQuantity');
+      }
+    }
+
+    return limits;
+  }
+
+  function evaluateRisk(params) {
+    const p = params || {};
+    const equity = finitePositive(p.equity, 'equity');
+    const entry = finitePositive(p.entry, 'entry');
+    const stop = finitePositive(p.stop, 'stop');
+    const limits = validateLimits(p.limits);
     const dailyLoss = Number(p.dailyRealizedLoss || 0);
     const openRisk = Number(p.openRiskAmount || 0);
     const openPositions = Number(p.openPositions || 0);
     if (![dailyLoss, openRisk, openPositions].every(Number.isFinite)) throw new Error('risk state must be finite');
     if (dailyLoss < 0 || openRisk < 0 || openPositions < 0) throw new Error('risk state cannot be negative');
+    if (!Number.isInteger(openPositions)) throw new Error('openPositions must be an integer >= 0');
 
     if (dailyLoss >= equity * limits.maxDailyLoss) return { allowed: false, reason: 'daily loss limit reached', quantity: 0, riskAmount: 0, riskFraction: 0 };
     if (openPositions >= limits.maxPositions) return { allowed: false, reason: 'maximum open positions reached', quantity: 0, riskAmount: 0, riskFraction: 0 };
@@ -99,13 +136,14 @@
     if (limits.minQuantity > 0 && quantity < limits.minQuantity) return { allowed: false, reason: 'computed quantity is below configured minimum quantity', quantity: 0, riskAmount: 0, riskFraction: 0 };
 
     if (limits.maxQuantity != null) {
-      quantity = Math.min(quantity, Number(limits.maxQuantity));
+      quantity = Math.min(quantity, limits.maxQuantity);
       quantity = floorStep(quantity, p.quantityStep == null ? 0 : Number(p.quantityStep));
       if (quantity <= 0) return { allowed: false, reason: 'maximum quantity cap is below broker minimum step', quantity: 0, riskAmount: 0, riskFraction: 0 };
       if (limits.minQuantity > 0 && quantity < limits.minQuantity) return { allowed: false, reason: 'quantity cap leaves less than configured minimum quantity', quantity: 0, riskAmount: 0, riskFraction: 0 };
     }
 
     const valuePerPriceUnit = p.valuePerPriceUnit == null ? 1 : Number(p.valuePerPriceUnit);
+    if (!Number.isFinite(valuePerPriceUnit) || valuePerPriceUnit <= 0) throw new Error('valuePerPriceUnit must be finite and > 0');
     const riskAmount = Math.abs(entry - stop) * valuePerPriceUnit * quantity;
     if (riskAmount > requested * (1 + EPSILON)) return { allowed: false, reason: 'sizing exceeded the configured risk budget', quantity: 0, riskAmount: 0, riskFraction: 0 };
     return { allowed: true, reason: 'risk checks passed', quantity, riskAmount, riskFraction: riskAmount / equity };
@@ -113,8 +151,8 @@
 
   function unrealizedPnl(position, marketPrice) {
     if (!position) return 0;
-    const price = Number(marketPrice);
-    finitePositive(price, 'marketPrice');
+    if (position.side !== LONG && position.side !== SHORT) throw new Error('side must be LONG or SHORT');
+    const price = finitePositive(marketPrice, 'marketPrice');
     const qty = finitePositive(position.quantity, 'quantity');
     const entry = finitePositive(position.entry, 'entry');
     return (price - entry) * (position.side === LONG ? 1 : -1) * qty;
@@ -122,28 +160,24 @@
 
   function barExit(position, bar) {
     if (!position || typeof position !== 'object') return null;
+    if (position.side !== LONG && position.side !== SHORT) throw new Error('side must be LONG or SHORT');
     const high = Number(bar && bar.high);
     const low = Number(bar && bar.low);
     if (!Number.isFinite(high) || !Number.isFinite(low) || high < low) throw new Error('bar high/low must be finite and high >= low');
-    const stop = position.sl == null ? null : Number(position.sl);
-    const target = position.tp == null ? null : Number(position.tp);
+    const { entry, stop, target } = validateStops(position.side, position.entry, position.sl, position.tp);
     if (position.side === LONG) {
       if (stop !== null && low <= stop) return { reason: 'stop loss', price: stop, outcome: 'LOSS' };
       if (target !== null && high >= target) return { reason: 'take profit', price: target, outcome: 'WIN' };
-    } else if (position.side === SHORT) {
+    } else {
       if (stop !== null && high >= stop) return { reason: 'stop loss', price: stop, outcome: 'LOSS' };
       if (target !== null && low <= target) return { reason: 'take profit', price: target, outcome: 'WIN' };
-    } else {
-      throw new Error('side must be LONG or SHORT');
     }
+    void entry;
     return null;
   }
 
   function riskReward(entry, stop, target, side) {
-    const e = finitePositive(entry, 'entry');
-    const s = finitePositive(stop, 'stop');
-    const t = finitePositive(target, 'target');
-    if (side !== LONG && side !== SHORT) throw new Error('side must be LONG or SHORT');
+    const { entry: e, stop: s, target: t } = validateStops(side, entry, stop, target);
     const risk = Math.abs(e - s);
     const reward = Math.abs(t - e);
     if (risk === 0) throw new Error('risk distance must be > 0');
