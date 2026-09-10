@@ -8,16 +8,23 @@ from live.execution_guard import ExecutionJournal
 
 
 class _Executor:
-    def __init__(self, tick_time, deals=None):
+    def __init__(self, tick_time, deals=None, *, broker_evidence=None):
         self.tick_time = tick_time
         self.deals = deals or []
+        self.broker_evidence = broker_evidence or {}
         self.magic_number = 8808
         self.mt5 = SimpleNamespace(
             account_info=lambda: SimpleNamespace(trade_mode=2, trade_allowed=True, trade_expert=True),
             last_error=lambda: (0, "ok"),
             DEAL_ENTRY_OUT=1,
             DEAL_ENTRY_OUT_BY=3,
+            DEAL_TYPE_BUY=0,
+            DEAL_TYPE_SELL=1,
+            ORDER_TYPE_BUY=0,
+            ORDER_TYPE_SELL=1,
             history_deals_get=lambda start, end: self.deals,
+            positions_get=lambda symbol=None: self.broker_evidence.get("positions", []),
+            history_orders_get=lambda start, end: self.broker_evidence.get("orders", []),
         )
 
     def get_account_snapshot(self):
@@ -92,9 +99,62 @@ def test_runtime_preflight_blocks_unreconciled_journal(tmp_path):
     runtime = LiveRuntime(
         orchestrator=_Orchestrator(), feed=_Feed(datetime.now(timezone.utc)),
         executor=_Executor(datetime.now(timezone.utc)), journal=journal,
+        clock=lambda: datetime(2026, 9, 10, 12, tzinfo=timezone.utc),
     )
     with pytest.raises(RuntimeError, match="unreconciled"):
         runtime.preflight()
+
+
+def test_runtime_reconciles_exact_broker_evidence(tmp_path):
+    from live.execution_guard import build_intent
+    now = datetime(2026, 9, 10, 12, tzinfo=timezone.utc)
+    intent = build_intent(
+        symbol="EURUSD", direction="BUY", bar_time=datetime(2026, 9, 10, 11, tzinfo=timezone.utc),
+        entry=1.1, sl=1.099, tp=1.102, lot_size=0.01,
+    )
+    journal = ExecutionJournal(tmp_path / "execution.json")
+    journal.reserve(intent)
+    journal.transition(intent.intent_id, "AMBIGUOUS", error="transport timeout")
+    evidence = {
+        "orders": [SimpleNamespace(
+            magic=8808, symbol="EURUSD", comment=f"Aria-{intent.intent_id[:12]}",
+            type=0, volume_initial=0.01, ticket=9001, position_id=9002,
+        )],
+        "positions": [],
+    }
+    runtime = LiveRuntime(
+        orchestrator=_Orchestrator(), feed=_Feed(now),
+        executor=_Executor(now, broker_evidence=evidence), journal=journal,
+        clock=lambda: now,
+    )
+    assert runtime._reconcile_unresolved(now) == 1
+    assert journal.get(intent.intent_id)["state"] == "SUCCEEDED"
+
+
+def test_runtime_does_not_reconcile_weak_or_foreign_evidence(tmp_path):
+    from live.execution_guard import build_intent
+    now = datetime(2026, 9, 10, 12, tzinfo=timezone.utc)
+    intent = build_intent(
+        symbol="EURUSD", direction="BUY", bar_time=datetime(2026, 9, 10, 11, tzinfo=timezone.utc),
+        entry=1.1, sl=1.099, tp=1.102, lot_size=0.01,
+    )
+    journal = ExecutionJournal(tmp_path / "execution.json")
+    journal.reserve(intent)
+    journal.transition(intent.intent_id, "AMBIGUOUS", error="transport timeout")
+    evidence = {
+        "orders": [SimpleNamespace(
+            magic=1234, symbol="EURUSD", comment=f"Aria-{intent.intent_id[:12]}",
+            type=0, volume_initial=0.01, ticket=9001, position_id=9002,
+        )],
+        "positions": [],
+    }
+    runtime = LiveRuntime(
+        orchestrator=_Orchestrator(), feed=_Feed(now),
+        executor=_Executor(now, broker_evidence=evidence), journal=journal,
+        clock=lambda: now,
+    )
+    assert runtime._reconcile_unresolved(now) == 0
+    assert journal.get(intent.intent_id)["state"] == "AMBIGUOUS"
 
 
 def test_runtime_skips_stale_tick(tmp_path):
