@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from datetime import datetime, timedelta, timezone
+from typing import Sequence
 
 from .paper_runtime_engine import FailureMode, PaperRuntimeEngine, RuntimeBar, RuntimeSignal, RuntimeLifecycle
 
@@ -84,16 +85,15 @@ def build_deterministic_dataset(count: int = 10_000, *, start_price: float = 100
     bars: list[RuntimeBar] = []
     signals: list[RuntimeSignal] = []
     price = float(start_price)
+    origin = datetime(2026, 1, 1, tzinfo=timezone.utc)
     for index in range(count):
-        # Alternating, fully deterministic five-bar waves keep both long and short
-        # exits active without random data or look-ahead.
         cycle = index % 6
         delta = (2.0, 3.0, 4.0, -2.0, -3.0, -4.0)[cycle]
         open_price = price
         close = price + delta
         high = max(open_price, close) + 1.0
         low = min(open_price, close) - 1.0
-        time = f"2026-01-01T00:{index // 60:02d}:{index % 60:02d}Z"
+        time = (origin + timedelta(minutes=index)).isoformat().replace("+00:00", "Z")
         bars.append(RuntimeBar(time, open_price, high, low, close))
         if cycle == 0:
             signals.append(RuntimeSignal("LONG", close, close - 5.0, "soak long"))
