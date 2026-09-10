@@ -25,23 +25,24 @@ test('normalizes numeric timestamp strings', () => {
   assert.equal(normalizeTimestamp('1725000000'), 1725000000000);
 });
 
-test('keeps ISO timestamps unchanged', () => {
+test('normalizes ISO timestamps to milliseconds', () => {
   const value = '2026-09-10T08:00:00Z';
-  assert.equal(normalizeTimestamp(value), value);
+  assert.equal(normalizeTimestamp(value), Date.parse(value));
 });
 
-test('normalizes candle time without changing OHLC values', () => {
+test('normalizes ISO candle time without changing OHLC values', () => {
   const payload = {
     symbol: 'EUR/USD',
     candles: [
-      { time: 1725000000, open: 1.1, high: 1.2, low: 1.0, close: 1.15 },
+      { datetime: '2026-09-10T08:00:00Z', open: 1.1, high: 1.2, low: 1.0, close: 1.15 },
     ],
   };
   const result = normalizeChartPayload(payload);
   assert.equal(result.symbol, 'EUR/USD');
   assert.equal(result.candles.length, 1);
   assert.deepEqual({ ...result.candles[0] }, {
-    time: 1725000000000,
+    datetime: '2026-09-10T08:00:00Z',
+    time: Date.parse('2026-09-10T08:00:00Z'),
     open: 1.1,
     high: 1.2,
     low: 1.0,
