@@ -9,11 +9,14 @@ import { evaluateRealtimeSignalParity } from "../worker/signal_parity_v2.js";
 import { resetRealtimeFeedGuard } from "../worker/realtime_feed_guard.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(HERE, "..");
 const cases = JSON.parse(fs.readFileSync(path.join(HERE, "fixtures", "realtime_parity_cases.json"), "utf8")).cases;
 
 function runPythonOracle() {
+  const env = { ...process.env, PYTHONPATH: [ROOT, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) };
   return JSON.parse(execFileSync("python", [path.join(HERE, "realtime_parity_oracle.py")], {
-    cwd: path.join(HERE, ".."),
+    cwd: ROOT,
+    env,
     input: JSON.stringify({ cases }),
     encoding: "utf8",
   }));
