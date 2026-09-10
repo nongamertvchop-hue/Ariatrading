@@ -9,12 +9,13 @@ def test_worker_gateway_wraps_existing_worker_and_caches_market_endpoints():
     source = ENTRY.read_text(encoding="utf-8")
     for marker in (
         'import app from "./index.js"',
-        '"/api/price": 10_000',
-        '"/api/signal": 30_000',
-        '"/api/live-candle": 10_000',
+        '"/api/price":10000',
+        '"/api/signal":30000',
+        '"/api/live-candle":10000',
+        '"/api/market":2000',
         '"STALE"',
         'responseCache',
-        'app.fetch(request, env, ctx)',
+        'app.fetch(request,env,ctx)',
     ):
         assert marker in source, f"missing market cache gateway marker: {marker}"
 
