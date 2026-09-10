@@ -9,6 +9,7 @@ changes so restart recovery is deterministic and fail-closed.
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
 from enum import Enum
 from math import isfinite
 from pathlib import Path
@@ -80,6 +81,22 @@ class RuntimeResult:
     event: RuntimeEvent
 
 
+def _time_key(value: str) -> float:
+    if not isinstance(value, str) or not value:
+        raise ValueError("bar timestamp must be a non-empty string")
+    text = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).timestamp()
+    except ValueError:
+        try:
+            return float(value)
+        except ValueError as exc:
+            raise ValueError("bar timestamp must be ISO-8601 or numeric") from exc
+
+
 class PaperRuntimeEngine:
     """Stateful continuous paper runtime with durable restart recovery."""
 
@@ -127,10 +144,13 @@ class PaperRuntimeEngine:
             return self._emit(False, "NOOP", "runtime is not running")
         if self.lifecycle is RuntimeLifecycle.HALT:
             return self._emit(False, "HALT", self.halt_reason)
+
+        current_key = _time_key(bar.time)
         if self.last_processed_bar_time is not None:
-            if bar.time == self.last_processed_bar_time:
+            last_key = _time_key(self.last_processed_bar_time)
+            if current_key == last_key:
                 return self._emit(True, "NO_UPDATE", "duplicate completed bar ignored")
-            if bar.time < self.last_processed_bar_time:
+            if current_key < last_key:
                 return self._halt("out-of-order completed bar rejected")
 
         self.last_bar_time = bar.time
@@ -262,12 +282,12 @@ class PaperRuntimeEngine:
 
     def _check_exit(self, bar: RuntimeBar) -> tuple[float, str] | None:
         levels = self._exit_levels
-        if levels is None or self.account.position is None:
+        position = self.account.position
+        if levels is None or position is None:
             return None
-        side = levels["side"]
         stop = float(levels["stop"])
         target = float(levels["target"])
-        if side == "LONG":
+        if position.side == "LONG":
             if bar.low <= stop:
                 return stop, "stop loss"
             if bar.high >= target:
@@ -310,18 +330,13 @@ class PaperRuntimeEngine:
             self.lifecycle = RuntimeLifecycle.HALT
             self.halt_reason = "runtime checkpoint persistence failed"
 
-    def _lifecycle_for_event(self, event_type: str) -> RuntimeLifecycle:
-        if event_type == "START":
-            return self.lifecycle
-        if event_type == "OPEN":
-            return RuntimeLifecycle.OPEN
-        if event_type == "CLOSED" or event_type == "REJECTED" or event_type == "NO_UPDATE":
-            return self.lifecycle
-        if event_type == "HALT":
-            return RuntimeLifecycle.HALT
-        if event_type == "RECOVERED":
-            return self.lifecycle
-        return self.lifecycle
+    @staticmethod
+    def _lifecycle_for_event(event_type: str) -> RuntimeLifecycle:
+        mapping = {
+            "OPEN": RuntimeLifecycle.OPEN,
+            "HALT": RuntimeLifecycle.HALT,
+        }
+        return mapping.get(event_type, RuntimeLifecycle.FLAT)
 
     def _restore(self, payload: dict) -> None:
         if payload.get("version") != 1:
