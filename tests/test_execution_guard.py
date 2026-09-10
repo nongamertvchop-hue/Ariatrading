@@ -93,9 +93,9 @@ def test_corrupt_journal_fails_closed(tmp_path):
 
 def test_concurrent_processes_cannot_both_reserve_new_intents(tmp_path):
     path = tmp_path / "execution.json"
-    start_event = multiprocessing.Event()
-    result_queue = multiprocessing.Queue()
     context = multiprocessing.get_context("spawn")
+    start_event = context.Event()
+    result_queue = context.Queue()
     processes = [
         context.Process(target=_reserve_worker, args=(path, 7, start_event, result_queue)),
         context.Process(target=_reserve_worker, args=(path, 8, start_event, result_queue)),
