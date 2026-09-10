@@ -15,9 +15,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from live.data_quality import validate_closed_bars
 from live.execution_guard import ExecutionJournal
 from live.mt5_account import validate_account_mode
 from live.mt5_executor import MT5LiveExecutor
+from live.position_reconciliation import ReconciliationState, reconcile
 from live.runtime_controls import (
     KillSwitch,
     RuntimeSafetyConfig,
@@ -107,6 +109,18 @@ class LiveRuntime:
         self.telemetry = telemetry
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
+    def _reconcile(self, positions=None):
+        """Reconcile durable in-flight intents against the broker before new entries."""
+        if positions is None:
+            positions = self.executor.get_open_positions()
+        report = reconcile(self.journal.recoverable_intents(), positions)
+        if report.state is not ReconciliationState.CLEAN:
+            reason = f"execution reconciliation blocked: {report.state.value}; {'; '.join(report.reasons)}"
+            if self.telemetry:
+                self.telemetry.event("reconciliation_blocked", reason=reason, matched=report.matched_intents, positions=report.observed_positions)
+            raise RuntimeError(reason)
+        return positions
+
     def preflight(self) -> None:
         """Refuse to start if the requested execution environment is inconsistent."""
         validate_runtime_configuration(
@@ -122,12 +136,16 @@ class LiveRuntime:
                 self.telemetry.heartbeat(status="BLOCKED", mode=self.orchestrator.mode, reason=reason)
                 self.telemetry.event("preflight_blocked", reason=reason)
             raise RuntimeError(reason)
-        if self.journal.recoverable_intents():
-            reason = "execution journal contains unreconciled intents; manual reconciliation required"
+
+        positions = self.executor.get_open_positions()
+        try:
+            self._reconcile(positions)
+        except RuntimeError as exc:
             if self.telemetry:
-                self.telemetry.heartbeat(status="BLOCKED", mode=self.orchestrator.mode, reason=reason)
-                self.telemetry.event("preflight_blocked", reason=reason)
-            raise RuntimeError(reason)
+                self.telemetry.heartbeat(status="BLOCKED", mode=self.orchestrator.mode, reason=str(exc))
+                self.telemetry.event("preflight_blocked", reason=str(exc))
+            raise
+
         ok, reason = self.kill_switch.check() if self.kill_switch is not None else (True, "kill switch not configured")
         if not ok:
             if self.telemetry:
@@ -149,7 +167,7 @@ class LiveRuntime:
                 raise RuntimeError(reason)
         if self.telemetry:
             self.telemetry.heartbeat(status="READY", mode=self.orchestrator.mode, account=account.login)
-            self.telemetry.event("preflight_passed", mode=self.orchestrator.mode, account=account.login)
+            self.telemetry.event("preflight_passed", mode=self.orchestrator.mode, account=account.login, positions=len(positions))
         logger.info("Live runtime preflight passed: mode=%s account=%s", self.orchestrator.mode, account.login)
 
     def _daily_realized_loss(self) -> float:
@@ -200,7 +218,14 @@ class LiveRuntime:
                     self.telemetry.event("circuit_breaker", reason=reason, account=account.login)
                 return 0
 
-        positions = self.executor.get_open_positions()
+        try:
+            positions = self._reconcile()
+        except RuntimeError as exc:
+            logger.error(str(exc))
+            if self.telemetry:
+                self.telemetry.heartbeat(status="BLOCKED", mode=self.orchestrator.mode, account=account.login, reason=str(exc))
+            return 0
+
         total_positions, per_symbol = exposure_counts(positions)
         if total_positions >= self.limits.max_positions:
             reason = f"global position cap reached: {total_positions} >= {self.limits.max_positions}"
@@ -223,6 +248,18 @@ class LiveRuntime:
                 continue
             try:
                 bars = self.feed.closed_bars(symbol, self.orchestrator.timeframe, self.orchestrator.candle_history)
+                quality = validate_closed_bars(
+                    bars,
+                    timeframe_seconds=_TIMEFRAME_SECONDS[self.orchestrator.timeframe],
+                    minimum_bars=30,
+                )
+                if not quality.ok:
+                    logger.warning("%s: market data quality gate failed: %s", symbol, quality.reason)
+                    if self.telemetry:
+                        self.telemetry.event("market_data_quality_block", symbol=symbol, reason=quality.reason, bar_count=quality.bar_count, gap_seconds=quality.gap_seconds)
+                        self.telemetry.heartbeat(status="DEGRADED", mode=self.orchestrator.mode, account=account.login, reason=f"{symbol}: {quality.reason}")
+                    continue
+
                 bid, ask, tick_time = self.executor.get_current_tick(symbol)
                 if bid <= 0 or ask <= 0 or ask < bid:
                     logger.warning("%s: invalid tick bid=%s ask=%s", symbol, bid, ask)
@@ -257,12 +294,7 @@ class LiveRuntime:
                         self.telemetry.event("spread_gate", symbol=symbol, spread_points=spread_points)
                     continue
 
-                if not bars:
-                    continue
                 latest = bars[-1].time
-                if latest.tzinfo is None:
-                    logger.warning("%s: candle timestamp is naive", symbol)
-                    continue
                 latest_utc = latest.astimezone(timezone.utc)
                 if latest_utc > now:
                     logger.warning("%s: latest completed candle is in the future", symbol)
