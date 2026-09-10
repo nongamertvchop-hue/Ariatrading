@@ -194,7 +194,7 @@ def test_backtest_end_index_is_a_hard_out_of_sample_boundary(monkeypatch):
     assert result.trades[0].bars_held == 0
 
 
-def test_signal_filter_is_applied_at_decision_index_without_changing_strategy(monkeypatch):
+def test_signal_filter_receives_decision_indices_and_can_block_all_entries(monkeypatch):
     _patch_simple_long(monkeypatch)
     candles = make_candles(40)
     for candle in candles:
@@ -204,22 +204,21 @@ def test_signal_filter_is_applied_at_decision_index_without_changing_strategy(mo
         candle["close"] = 100.0
     observed_indices = []
 
-    def allow_only_late(index, signal):
+    def block_every_signal(index, signal):
         observed_indices.append(index)
-        return index >= 35
+        assert signal.action == LONG
+        return False
 
     result = run_backtest(
         candles,
         "15m",
         reward_risk=2.0,
         max_hold_bars=5,
-        signal_filter=allow_only_late,
+        signal_filter=block_every_signal,
     )
 
-    assert observed_indices
-    assert all(index >= 35 for index in [i for i in observed_indices if i >= 35])
-    assert result.trades
-    assert all(index >= 35 for index in result.signal_indices if index >= 35)
+    assert observed_indices == list(range(min(observed_indices), len(candles)))
+    assert result.trades == ()
 
 
 def test_all_timeframes():
