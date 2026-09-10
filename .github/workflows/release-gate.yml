@@ -1,0 +1,33 @@
+name: paper-release-gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  historical-paper-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test runner
+        run: python -m pip install --upgrade pip pytest scikit-learn
+      - name: Download pinned real-market EURUSD 5m sample
+        env:
+          DATA_SHA: 665f2c90686b5a7fc5feb670ce2c3af9a3a060b8
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/getdata-finance/eurusd-5m-ohlcv-forex-historical-data/${DATA_SHA}/EURUSD_5m.csv" \
+            --output /tmp/EURUSD_5m.csv
+          test "$(wc -l < /tmp/EURUSD_5m.csv)" -ge 1001
+      - name: Run release gate on real historical candles
+        env:
+          ARIATRADING_HISTORICAL_CSV: /tmp/EURUSD_5m.csv
+        run: python -m pytest -q tests/test_release_gate.py
+      - name: Run full Python regression suite
+        run: python -m pytest -q
