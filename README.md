@@ -11,8 +11,7 @@ Ariatrading deliberately starts with only two reversal setups:
 - **LONG:** price approaches support -> tests support -> rejects/reclaims it -> bullish confirmation -> LONG.
 - **SHORT:** price approaches resistance -> tests resistance -> rejects/reclaims it -> bearish confirmation -> SHORT.
 - **WAIT:** the sequence is incomplete, ambiguous, or the level has clearly broken.
-
-No unrelated entry patterns are added. Context layers can filter, score, or validate these two setups, but cannot create a third setup.
+- No unrelated entry patterns are added. Context layers can filter, score, or validate these two setups, but cannot create a third setup.
 
 ## Architecture
 
@@ -53,6 +52,7 @@ The project is layered so every stage can be used together without duplicating s
 33. **Causal outcome labeling** — paper/replay signal outcomes use only candles strictly after the signal bar and preserve explicit `AMBIGUOUS` results when OHLC cannot reveal intrabar order.
 34. **Replay outcome attachment** — completed realtime replay results can be enriched with outcome records while keeping the strategy decision immutable.
 35. **Research & innovation rules** — hypothesis-driven invention, measurable experiments, evidence-based retention, explicit failure reporting, reproducibility, and fail-closed safety boundaries. The runtime strategy boundary enforces the executable research contract.
+36. **Polyglot Verification Fabric** — a language-neutral JSONL contract and fail-closed worker runner for independent validators/research workers across the requested language ecosystem. Language diversity validates or researches existing decisions; it never bypasses safety gates or creates a third strategy direction.
 
 ## Key modules
 
@@ -107,6 +107,11 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/broker_contract.py` — normalized broker-symbol contract checks.
 - `adapters/mt5_feed.py` — read-only MT5 market-data adapter.
 - `adapters/paper_broker.py` — broker-like paper/demo simulator for deterministic execution tests.
+- `polyglot/runner.py` — bounded JSONL worker execution and fail-closed consensus validation.
+- `polyglot/languages.json` — requested language/capability registry.
+- `polyglot/protocol.schema.json` — language-neutral worker message contract.
+- `polyglot/README.md` — Polyglot architecture and research roles.
+- `Webaria/chart-quality.js` — canvas bitmap/viewport quality layer aligned with the actual chart state.
 - `Webaria/paper-engine.js` — browser-safe paper risk primitives; no broker calls.
 - `Webaria/signal-advisor.html` — single-timeframe realtime Signal Advisor.
 - `Webaria/mtf-advisor.html` — multi-timeframe Signal Advisor and local signal journal.
@@ -147,6 +152,13 @@ LONG / SHORT / WAIT
         |                                   Causal Outcome Label
         |
         +---- Research path -> MTF comparison -> Quality Report -> ML/DL
+        |
+        +---- Polyglot Validation Fabric -> independent language workers
+                                             |
+                                             +---- contract validation
+                                             +---- deterministic replay
+                                             +---- research metrics
+                                             +---- disagreement evidence
 ```
 
 ## Research safety contract
@@ -156,3 +168,7 @@ Ariatrading is a research and paper/demo system. MT5 integration remains read-on
 ## Research & innovation contract
 
 Ariatrading does not treat novelty as proof. New mechanisms are hypotheses until measured, compared, and validated. Failures and negative results are retained as research evidence. Safety, causal data boundaries, reproducibility, and paper/demo isolation always override experimental novelty.
+
+## Polyglot implementation status
+
+The language registry covers the requested ecosystem, but this repository does **not** pretend every compiler, VM, scientific suite, GPU toolchain, HDL toolchain, or formal prover is installed. A language becomes operational only when a concrete worker for that runtime is registered and passes the common contract tests. This avoids fake compatibility and prevents a large number of duplicated strategy implementations from becoming a hidden source of semantic drift.
