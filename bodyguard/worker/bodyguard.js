@@ -99,18 +99,9 @@ function clientKey(request) {
 }
 
 function evictOldest(map, maxSize) {
-  while (map.size >= maxSize) {
-    const oldest = map.keys().next().value;
-    if (oldest === undefined) break;
-    map.delete(oldest);
-  }
-}
-
-function pruneExpired(map, now, isExpired, maxSize) {
-  for (const [key, value] of map) {
-    if (isExpired(value, now)) map.delete(key);
-  }
-  evictOldest(map, maxSize);
+  if (map.size < maxSize) return;
+  const oldest = map.keys().next().value;
+  if (oldest !== undefined) map.delete(oldest);
 }
 
 export function securityEvent(level, reason, extra = {}) {
@@ -128,14 +119,8 @@ export function securityEvent(level, reason, extra = {}) {
 
 function noteOffense(key, reason) {
   const now = Date.now();
-  pruneExpired(
-    offenseBuckets,
-    now,
-    (bucket, current) => current - bucket.start > DEFAULTS.softBan.windowMs,
-    DEFAULTS.maxOffenseBuckets,
-  );
   let bucket = offenseBuckets.get(key);
-  if (!bucket) {
+  if (!bucket || now - bucket.start > DEFAULTS.softBan.windowMs) {
     evictOldest(offenseBuckets, DEFAULTS.maxOffenseBuckets);
     bucket = { start: now, count: 0, lastReason: reason };
     offenseBuckets.set(key, bucket);
@@ -143,7 +128,6 @@ function noteOffense(key, reason) {
   bucket.count += 1;
   bucket.lastReason = reason;
   if (bucket.count >= DEFAULTS.softBan.blockThreshold) {
-    pruneExpired(softBans, now, (until, current) => current > until, DEFAULTS.maxSoftBans);
     evictOldest(softBans, DEFAULTS.maxSoftBans);
     softBans.set(key, now + DEFAULTS.softBan.banMs);
     audit.softBans += 1;
@@ -296,9 +280,8 @@ export function checkRateLimit(request, opts = {}) {
   const max = opts.max ?? DEFAULTS.rateMax;
   const key = `${clientKey(request)}:${new URL(request.url).pathname}`;
   const now = Date.now();
-  pruneExpired(rateBuckets, now, (bucket, current) => current - bucket.start > windowMs, DEFAULTS.maxRateBuckets);
   let bucket = rateBuckets.get(key);
-  if (!bucket) {
+  if (!bucket || now - bucket.start > windowMs) {
     evictOldest(rateBuckets, DEFAULTS.maxRateBuckets);
     bucket = { start: now, count: 0 };
     rateBuckets.set(key, bucket);
