@@ -63,7 +63,7 @@
 
   <div class="card full" style="margin-top:12px">
     <div class="label">Operational security status</div>
-    <div class="security">MODE=PAPER_ONLY · REAL_BROKER=DISABLED · CLOSED_CANDLE_ONLY=TRUE · IDEMPOTENCY=ENABLED · CHECKPOINT=ATOMIC · UNKNOWN_OUTCOME=FAIL_CLOSED · P/L=MARK_TO_MARKET · DRAW_DOWN=PEAK_TO_EQUITY · REPLAY=DETERMINISTIC</div>
+    <div class="security">MODE=PAPER_ONLY · REAL_BROKER=DISABLED · CLOSED_CANDLE_ONLY=TRUE · IDEMPOTENCY=ENABLED · CHECKPOINT=ATOMIC · UNKNOWN_OUTCOME=FAIL_CLOSED · P/L=MARK_TO_MARKET · DRAW_DOWN=PEAK_TO_EQUITY · REPLAY=DETERMINISTIC · DURABLE_STATE_CONTRACT=ARIA.PAPER-RUNTIME.V1</div>
   </div>
 
   <div class="card full" style="margin-top:12px"><div class="label">Runtime events</div><div class="events" id="rtEvents"></div></div>
@@ -71,18 +71,28 @@
 <script src="paper-runtime.js"></script>
 <script>
   const runtime = window.WebariaPaperRuntime; const $ = id => document.getElementById(id);
-  $('start').onclick = () => { runtime.configureFromDom(); runtime.start(); };
-  $('stop').onclick = () => runtime.stop();
-  $('recover').onclick = () => runtime.recover();
-  $('reset').onclick = () => runtime.reset();
-  $('applyFailure').onclick = () => runtime.setFailureMode($('failure').value);
-  $('soak').onclick = () => runtime.runSoak(10000);
+  const publishDurableState = async () => {
+    try {
+      const s = runtime.state;
+      const account = {balance:s.balance,equity:s.equity,realizedPnl:s.realizedPnl,unrealizedPnl:s.unrealizedPnl,peakEquity:s.peakEquity,drawdown:s.drawdown,drawdownPct:s.drawdownPct,tradeCount:s.tradeCount,winRate:s.winRate};
+      await fetch('/api/paper-state',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contract:'aria.paper-runtime.v1',mode:'PAPER',lifecycle:s.lifecycle,running:!!s.running,halted:!!s.halted,haltReason:s.haltReason||'',heartbeat:s.heartbeat||new Date().toISOString(),lastBarTime:s.lastBarTime||null,lastProcessedBarTime:s.lastProcessedBarTime||null,account,position:s.position,pending:s.pending,events:s.events||[],history:s.equityCurve||[],alerts:(s.halted||s.pending)?[{severity:'CRITICAL',reason:s.haltReason||'pending paper execution'}]:[],updatedAt:new Date().toISOString()})});
+    } catch (_) {
+      /* Runtime remains functional when the optional durable telemetry endpoint is unavailable. */
+    }
+  };
+  $('start').onclick = () => { runtime.configureFromDom(); runtime.start(); void publishDurableState(); };
+  $('stop').onclick = () => { runtime.stop(); void publishDurableState(); };
+  $('recover').onclick = () => { runtime.recover(); void publishDurableState(); };
+  $('reset').onclick = () => { runtime.reset(); void publishDurableState(); };
+  $('applyFailure').onclick = () => { runtime.setFailureMode($('failure').value); void publishDurableState(); };
+  $('soak').onclick = () => { runtime.runSoak(10000); void publishDurableState(); };
   $('export').onclick = () => runtime.exportSnapshot();
   $('paperRuntimeSymbol').value = runtime.state.symbol; $('paperRuntimeTf').value = runtime.state.timeframe;
   setInterval(() => {
     const state = runtime.state; $('rtDot').className = `dot ${state.halted ? 'halt' : (state.running ? 'run' : '')}`;
     document.querySelectorAll('.step').forEach(node => node.classList.toggle('active', node.dataset.state === state.lifecycle));
-  }, 250);
+    void publishDurableState();
+  }, 2500);
 </script>
 </body>
 </html>
