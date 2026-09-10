@@ -1,4 +1,4 @@
-"""Fail-closed idempotency journal for the demo execution boundary.
+"""Fail-closed idempotency journal for DEMO/LIVE execution.
 
 The journal solves a subtle failure mode: a broker request can time out after the
 broker accepted it. Retrying immediately can create a duplicate position. An
@@ -63,7 +63,12 @@ def build_intent(
 
 
 class ExecutionJournal:
-    """Small durable JSON journal with atomic replacement and fail-closed states."""
+    """Small durable JSON journal with atomic replacement and fail-closed states.
+
+    The file is intentionally simple and portable for the single-runtime
+    deployment. It is not a multi-process coordination primitive; production
+    deployment must run one execution worker per journal path.
+    """
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
