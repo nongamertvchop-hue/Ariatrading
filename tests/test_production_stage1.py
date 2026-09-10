@@ -70,3 +70,22 @@ def test_stage1_rejects_policy_values_above_hard_cap(monkeypatch):
     monkeypatch.setenv("ARIATRADING_LIVE_MAX_RISK", "0.01")
     with pytest.raises(RuntimeError, match="ARIATRADING_LIVE_MAX_RISK"):
         ProductionStage1Policy.from_env()
+
+
+def test_stage1_rejects_nan_policy_value(monkeypatch):
+    _arm(monkeypatch)
+    monkeypatch.setenv("ARIATRADING_LIVE_MAX_RISK", "nan")
+    with pytest.raises(RuntimeError, match="ARIATRADING_LIVE_MAX_RISK"):
+        ProductionStage1Policy.from_env()
+
+
+def test_stage1_rejects_non_finite_runtime_limit(monkeypatch):
+    _arm(monkeypatch)
+    policy = ProductionStage1Policy.from_env()
+    with pytest.raises(RuntimeError, match="limits must all be finite"):
+        policy.validate_runtime_limits(
+            risk_per_trade=float("nan"),
+            max_daily_drawdown=0.01,
+            max_spread_points=20,
+            max_tick_age_seconds=5,
+        )
