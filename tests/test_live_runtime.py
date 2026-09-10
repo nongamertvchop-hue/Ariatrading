@@ -18,6 +18,7 @@ class _Executor:
         self.company = company
         self.trade_mode = trade_mode
         self.magic_number = 8808
+        self.bound_identity = None
         self.mt5 = SimpleNamespace(
             account_info=lambda: SimpleNamespace(
                 login=self.login,
@@ -46,6 +47,13 @@ class _Executor:
             company=self.company,
             trade_mode=self.trade_mode,
         )
+
+    def bind_account_identity(self, identity):
+        if self.get_account_identity() != identity:
+            raise RuntimeError("identity mismatch")
+        if self.bound_identity is not None and self.bound_identity != identity:
+            raise RuntimeError("identity already bound")
+        self.bound_identity = identity
 
     def get_account_snapshot(self):
         return SimpleNamespace(login=self.login, equity=10000.0, trade_allowed=True, trade_expert=True)
@@ -104,13 +112,16 @@ def test_daily_circuit_breaker_persists_and_blocks(tmp_path):
     breaker = DailyCircuitBreaker(tmp_path / "breaker.json", 0.02)
     now = datetime(2026, 9, 10, tzinfo=timezone.utc)
     assert breaker.check(10000.0, now)[0]
-    assert breaker.check(9800.0, now)[0]
+    ok, reason = breaker.check(9800.0, now)
+    assert not ok
+    assert "daily drawdown" in reason
     ok, reason = breaker.check(9799.0, now)
     assert not ok
     assert "daily drawdown" in reason
 
 
-def test_runtime_preflight_blocks_unreconciled_journal(tmp_path):
+def test_runtime_preflight_blocks_unreconciled_journal(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
     journal = ExecutionJournal(tmp_path / "execution.json")
     from live.execution_guard import build_intent
     intent = build_intent(
