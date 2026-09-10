@@ -202,8 +202,8 @@ class LiveRuntime:
 
         positions = self.executor.get_open_positions()
         total_positions, per_symbol = exposure_counts(positions)
-        if total_positions > self.limits.max_positions:
-            reason = f"global position cap breached: {total_positions} > {self.limits.max_positions}"
+        if total_positions >= self.limits.max_positions:
+            reason = f"global position cap reached: {total_positions} >= {self.limits.max_positions}"
             logger.error(reason)
             if self.telemetry:
                 self.telemetry.heartbeat(status="BLOCKED", mode=self.orchestrator.mode, account=account.login, reason=reason)
