@@ -9,27 +9,27 @@ A score of 50/50 is not permission to trade money. The release gate additionally
 | 1 | Explicit LIVE opt-in | Present and retained |
 | 2 | DEMO/REAL account reconciliation | Present and retained |
 | 3 | MT5 trade-permission check | Present and retained |
-| 4 | Terminal connection health | Hardened runtime gate |
+| 4 | Terminal connection health | Guarded entrypoint/runtime |
 | 5 | Symbol availability/select | Present in executor |
-| 6 | Broker contract validation | Present; runtime reuses contract |
-| 7 | Tick freshness | Hardened runtime gate |
-| 8 | Spread ceiling | Hardened runtime gate |
+| 6 | Broker contract validation | Present; runtime validates point size |
+| 7 | Tick freshness | Guarded runtime gate |
+| 8 | Spread ceiling | Guarded runtime gate |
 | 9 | Completed-candle-only strategy input | Present |
-| 10 | Future timestamp rejection | Hardened |
-| 11 | Broker history failure handling | Fail-closed in runner |
-| 12 | Candle freshness check | Hardened runtime gate |
+| 10 | Future timestamp rejection | Guarded runtime gate |
+| 11 | Broker history failure handling | Fail-closed |
+| 12 | Candle freshness check | Guarded runtime gate |
 | 13 | Minimum history requirement | Present in orchestrator |
 | 14 | Signal protection gate | Present |
 | 15 | Session/market-condition gate | Present |
 | 16 | Risk-per-trade contract | Present |
 | 17 | Stop-loss direction validation | Present in executor |
-| 18 | Broker stop-distance validation | Broker-side check remains authoritative |
+| 18 | Broker stop-distance validation | Broker `order_check()` remains authoritative |
 | 19 | Volume min/max/step validation | Present |
 | 20 | Margin/order preflight | `order_check()` present |
-| 21 | Global position cap | New runtime control |
-| 22 | Per-symbol position cap | New runtime control |
-| 23 | Exposure inventory from owned positions | New runtime control |
-| 24 | Daily realized-loss accounting | Present in runner |
+| 21 | Global position cap | Implemented in runtime controls |
+| 22 | Per-symbol position cap | Implemented in runtime controls |
+| 23 | Exposure inventory from owned positions | Implemented in runtime controls |
+| 24 | Daily realized-loss accounting | Implemented in guarded runtime |
 | 25 | Daily equity drawdown circuit breaker | Present and persisted |
 | 26 | Persistent idempotency journal | Present |
 | 27 | Atomic journal persistence | Present |
@@ -41,25 +41,27 @@ A score of 50/50 is not permission to trade money. The release gate additionally
 | 33 | Execution confirmation data | Present in `OrderResult` |
 | 34 | Close-order preflight | Present |
 | 35 | Duplicate-intent suppression | Present |
-| 36 | Durable operator kill switch | New |
-| 37 | Kill switch integrated as a release gate | New runtime integration |
+| 36 | Durable operator kill switch | Implemented |
+| 37 | Kill switch integrated as a release gate | Implemented |
 | 38 | Runtime fail-closed exception boundary | Present |
-| 39 | Restart-safe warm-up | Present |
+| 39 | Restart-safe warm-up | Present in orchestrator |
 | 40 | Deterministic intent identity | Present |
 | 41 | Structured operational logging | Present |
 | 42 | Operator notification path | Present via notifier |
-| 43 | Local runtime heartbeat/health state | Next integration target; no false claim |
-| 44 | Audit/event retention policy | Next integration target; no false claim |
-| 45 | Static runtime configuration validation | New |
-| 46 | Broker/local clock-skew protection | New |
-| 47 | Timezone-aware timestamps | Present across live path |
+| 43 | Local runtime heartbeat/health state | Implemented via `RuntimeTelemetry` |
+| 44 | Audit/event retention path | Implemented via append-only JSONL event log |
+| 45 | Static runtime configuration validation | Implemented |
+| 46 | Broker/local clock-skew protection | Implemented |
+| 47 | Timezone-aware timestamps | Enforced on runtime clock/ticks/candles |
 | 48 | Strategy/backtest parity | Existing project work; must be verified continuously |
 | 49 | DEMO soak + shadow comparison | Release requirement |
-| 50 | Staged LIVE rollout / emergency rollback procedure | Release requirement |
+| 50 | Staged LIVE rollout / emergency rollback procedure | Runbook + release requirement |
 
-## What changed now
+## Implementation boundary
 
-This branch introduces a single safety-control module (`live/runtime_controls.py`) for configuration validation, clock-skew checks, exposure counting, and a durable operator kill switch. The existing `live/live_runtime.py` is the intended runtime boundary; duplicated polling logic in `live/runner.py` must not remain the long-term architecture.
+The guarded entrypoint is `python -m live.live_entry`. It is the intended operator path for DEMO/LIVE. `live/live_runtime.py` is the single safety control plane and delegates signal generation to the existing orchestrator; it does not create a second strategy.
+
+The legacy `run()` path in `live/runner.py` should be treated as compatibility code until it is fully redirected to the guarded runtime. Do not maintain two independent production polling loops.
 
 ## Hard release gate
 
