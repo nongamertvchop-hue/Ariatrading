@@ -21,7 +21,15 @@ class FakeMT5:
         return (500, "account unavailable")
 
 
-def test_live_requires_real_account():
+def test_live_is_disabled_without_explicit_opt_in(monkeypatch):
+    monkeypatch.delenv("ARIATRADING_ENABLE_LIVE", raising=False)
+    ok, reason = validate_account_mode(FakeMT5(2), "LIVE")
+    assert not ok
+    assert "LIVE execution is disabled by default" in reason
+
+
+def test_live_requires_real_account(monkeypatch):
+    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
     ok, reason = validate_account_mode(FakeMT5(0), "LIVE")
     assert not ok
     assert "requested LIVE" in reason
@@ -35,7 +43,8 @@ def test_demo_requires_demo_account():
     assert "REAL" in reason
 
 
-def test_matching_live_account_is_allowed():
+def test_matching_live_account_is_allowed(monkeypatch):
+    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
     ok, reason = validate_account_mode(FakeMT5(2), "LIVE")
     assert ok
     assert reason == "account mode verified: LIVE"
@@ -47,19 +56,23 @@ def test_matching_demo_account_is_allowed():
     assert reason == "account mode verified: DEMO"
 
 
-def test_execution_disabled_for_account_is_rejected():
+def test_execution_disabled_for_account_is_rejected(monkeypatch):
+    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
     ok, reason = validate_account_mode(FakeMT5(2, trade_allowed=False), "LIVE")
     assert not ok
     assert reason == "MT5 account does not allow trading"
 
 
-def test_ea_trading_disabled_is_rejected():
+def test_ea_trading_disabled_is_rejected(monkeypatch):
+    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
     ok, reason = validate_account_mode(FakeMT5(2, trade_expert=False), "LIVE")
     assert not ok
     assert reason == "MT5 Expert Advisor trading is disabled for this account"
 
 
-def test_account_info_failure_is_rejected():
+def test_account_info_failure_is_rejected(monkeypatch):
+    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
+
     class BrokenMT5(FakeMT5):
         def account_info(self):
             return None
