@@ -7,6 +7,7 @@ Market structure and setup scoring are context layers. They do not create a
 third setup and do not turn a score into a win probability.
 
 Educational/demo only. No orders are placed here.
+The runtime research contract is enforced on every evaluation.
 """
 
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from dataclasses import dataclass
 from .levels_v2 import PriceZone, SUPPORT, RESISTANCE
 from .market_structure import MarketStructure, analyze_market_structure
 from .mtf import MultiTimeframeContext
+from .research_rules import enforce_research_contract
 from .scoring import SetupScore, score_setup
 from .sequence import evaluate_sequence
 from .timeframe import adaptive_confirmation_buffer, get_timeframe_config
@@ -67,6 +69,11 @@ def _evaluate(
     mtf: MultiTimeframeContext | None,
     max_test_age: int,
 ) -> EngineSignal:
+    # The research contract is deliberately checked at the strategy boundary:
+    # new research can evolve, but execution mode and causal-data safeguards
+    # cannot silently drift while experiments are being developed.
+    enforce_research_contract()
+
     get_timeframe_config(timeframe)
     result = evaluate_sequence(
         candles,
