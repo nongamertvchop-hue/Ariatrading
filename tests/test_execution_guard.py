@@ -5,11 +5,11 @@ import pytest
 from live.execution_guard import ExecutionJournal, build_intent
 
 
-def _intent():
+def _intent(bar_hour=7):
     return build_intent(
         symbol="eurusd",
         direction="buy",
-        bar_time=datetime(2026, 9, 10, 7, 0, tzinfo=timezone.utc),
+        bar_time=datetime(2026, 9, 10, bar_hour, 0, tzinfo=timezone.utc),
         entry=1.1,
         sl=1.095,
         tp=1.1075,
@@ -32,7 +32,6 @@ def test_equivalent_normalization_produces_same_id():
         tp=1.1075,
         lot_size=0.01,
     )
-    # Different bar time is intentionally a different execution intent.
     assert base.intent_id != normalized.intent_id
 
 
@@ -42,6 +41,17 @@ def test_duplicate_reservation_is_rejected(tmp_path):
     assert journal.reserve(intent) is True
     assert journal.reserve(intent) is False
     assert journal.get(intent.intent_id)["state"] == "RESERVED"
+
+
+def test_new_intent_is_blocked_while_previous_intent_requires_reconciliation(tmp_path):
+    journal = ExecutionJournal(tmp_path / "execution.json")
+    first = _intent(7)
+    second = _intent(8)
+    assert journal.reserve(first) is True
+    assert journal.reserve(second) is False
+
+    journal.transition(first.intent_id, "SUCCEEDED", ticket=123)
+    assert journal.reserve(second) is True
 
 
 def test_ambiguous_intent_is_recoverable_but_not_reopenable(tmp_path):
