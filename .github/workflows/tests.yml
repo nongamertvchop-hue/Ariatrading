@@ -27,6 +27,7 @@ jobs:
         with:
           node-version: "22"
       - name: Run Worker and Webaria tests
+        # Full realtime parity is intentionally part of the required CI gate.
         run: node --test tests/worker_signal_parity.test.mjs tests/realtime_full_parity.test.mjs tests/web_signal_journal.test.mjs tests/web_paper_engine.test.mjs tests/web_chart_data_compat.test.mjs tests/web_price_action_pages.test.mjs
 
   worker-syntax:
@@ -75,5 +76,5 @@ jobs:
           for cmd in "/tmp/ariatrading-cpp-validator" "/tmp/ariatrading-go-validator" "java -cp polyglot/java-validator MarketDataValidator" "polyglot/rust-validator/target/release/ariatrading-market-validator"; do
             echo "== $cmd =="
             bash -lc "$cmd < /tmp/ariatrading-sample.tsv | tee /tmp/validator.out"
-            grep -q '"ok":true' /tmp/validator.out
+            grep -q '\"ok\":true' /tmp/validator.out
           done
