@@ -46,6 +46,11 @@ class PositionSnapshot:
         ):
             raise ValueError("average_entry_price must be finite and > 0 when provided")
 
+    @property
+    def net_quantity(self) -> float:
+        """Expose a signed quantity for normalized broker-position consumers."""
+        return self.quantity if self.direction == LONG else -self.quantity
+
 
 @dataclass(frozen=True)
 class LocalPositionState:
