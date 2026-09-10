@@ -12,11 +12,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 import tempfile
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 TERMINAL_STATES = frozenset({"SUCCEEDED", "FAILED"})
 NON_RETRYABLE_STATES = frozenset({"AMBIGUOUS"})
@@ -63,15 +65,48 @@ def build_intent(
 
 
 class ExecutionJournal:
-    """Small durable JSON journal with atomic replacement and fail-closed states.
+    """Durable JSON journal with a cross-process transactional lock.
 
-    The file is intentionally simple and portable for the single-runtime
-    deployment. It is not a multi-process coordination primitive; production
-    deployment must run one execution worker per journal path.
+    JSON remains the human-readable source of execution state. A small SQLite
+    sidecar serializes all journal operations with ``BEGIN IMMEDIATE``. SQLite
+    releases its transaction lock automatically if a process crashes, avoiding
+    the stale-lock-file failure mode while preserving the existing JSON format.
     """
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
+        self._lock_path = self.path.with_name(f".{self.path.name}.lock.sqlite3")
+        self._initialize_lock_db()
+
+    def _initialize_lock_db(self) -> None:
+        try:
+            self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(self._lock_path, timeout=30.0) as connection:
+                connection.execute(
+                    "CREATE TABLE IF NOT EXISTS journal_lock "
+                    "(id INTEGER PRIMARY KEY CHECK (id = 1))"
+                )
+                connection.execute("INSERT OR IGNORE INTO journal_lock(id) VALUES (1)")
+        except (OSError, sqlite3.Error) as exc:
+            raise RuntimeError(f"Execution journal lock cannot be initialized safely: {exc}") from exc
+
+    @contextmanager
+    def _lock(self) -> Iterator[None]:
+        """Serialize journal operations across processes and fail closed."""
+        try:
+            connection = sqlite3.connect(self._lock_path, timeout=30.0)
+        except (OSError, sqlite3.Error) as exc:
+            raise RuntimeError(f"Execution journal lock cannot be opened safely: {exc}") from exc
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("SELECT id FROM journal_lock WHERE id = 1")
+            yield
+            connection.commit()
+        except (OSError, sqlite3.Error) as exc:
+            connection.rollback()
+            raise RuntimeError(f"Execution journal lock failed safely: {exc}") from exc
+        finally:
+            connection.close()
 
     def _load(self) -> dict[str, dict[str, Any]]:
         if not self.path.exists():
@@ -102,51 +137,55 @@ class ExecutionJournal:
             raise RuntimeError(f"Execution journal cannot be persisted safely: {exc}") from exc
 
     def get(self, intent_id: str) -> dict[str, Any] | None:
-        return self._load().get(intent_id)
+        with self._lock():
+            return self._load().get(intent_id)
 
     def reserve(self, intent: ExecutionIntent) -> bool:
         """Reserve an intent once and block all new work while reconciliation is pending."""
-        records = self._load()
-        existing = records.get(intent.intent_id)
-        if existing is not None:
-            return False
-        if any(record.get("state") in RECOVERY_STATES for record in records.values()):
-            return False
-        records[intent.intent_id] = {
-            **asdict(intent),
-            "state": "RESERVED",
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self._save(records)
-        return True
+        with self._lock():
+            records = self._load()
+            existing = records.get(intent.intent_id)
+            if existing is not None:
+                return False
+            if any(record.get("state") in RECOVERY_STATES for record in records.values()):
+                return False
+            records[intent.intent_id] = {
+                **asdict(intent),
+                "state": "RESERVED",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            self._save(records)
+            return True
 
     def transition(self, intent_id: str, state: str, **metadata: Any) -> None:
         """Move an intent safely; broker reconciliation is the only AMBIGUOUS exit."""
         allowed = {"RESERVED", "SUBMITTED", "SUCCEEDED", "FAILED", "AMBIGUOUS"}
         if state not in allowed:
             raise ValueError(f"Unsupported execution state: {state}")
-        records = self._load()
-        record = records.get(intent_id)
-        if record is None:
-            raise KeyError(f"Unknown execution intent: {intent_id}")
-        current = str(record.get("state"))
-        if current in TERMINAL_STATES:
-            if state != current:
-                raise RuntimeError(f"Cannot transition {current} intent {intent_id}")
-            return
-        if current == "AMBIGUOUS":
-            if state != "SUCCEEDED" or metadata.get("reconciliation") != "broker_exact_match":
-                raise RuntimeError(f"Cannot transition AMBIGUOUS intent {intent_id} without exact broker reconciliation")
-        elif current == "RESERVED" and state not in {"RESERVED", "SUBMITTED", "SUCCEEDED", "FAILED", "AMBIGUOUS"}:
-            raise RuntimeError(f"Invalid transition {current} -> {state}")
-        elif current == "SUBMITTED" and state not in {"SUBMITTED", "SUCCEEDED", "FAILED", "AMBIGUOUS"}:
-            raise RuntimeError(f"Invalid transition {current} -> {state}")
-        record.update(metadata)
-        record["state"] = state
-        record["updated_at"] = datetime.now(timezone.utc).isoformat()
-        self._save(records)
+        with self._lock():
+            records = self._load()
+            record = records.get(intent_id)
+            if record is None:
+                raise KeyError(f"Unknown execution intent: {intent_id}")
+            current = str(record.get("state"))
+            if current in TERMINAL_STATES:
+                if state != current:
+                    raise RuntimeError(f"Cannot transition {current} intent {intent_id}")
+                return
+            if current == "AMBIGUOUS":
+                if state != "SUCCEEDED" or metadata.get("reconciliation") != "broker_exact_match":
+                    raise RuntimeError(f"Cannot transition AMBIGUOUS intent {intent_id} without exact broker reconciliation")
+            elif current == "RESERVED" and state not in {"RESERVED", "SUBMITTED", "SUCCEEDED", "FAILED", "AMBIGUOUS"}:
+                raise RuntimeError(f"Invalid transition {current} -> {state}")
+            elif current == "SUBMITTED" and state not in {"SUBMITTED", "SUCCEEDED", "FAILED", "AMBIGUOUS"}:
+                raise RuntimeError(f"Invalid transition {current} -> {state}")
+            record.update(metadata)
+            record["state"] = state
+            record["updated_at"] = datetime.now(timezone.utc).isoformat()
+            self._save(records)
 
     def recoverable_intents(self) -> list[dict[str, Any]]:
         """Return only intents that require reconciliation, never automatic duplicate submission."""
-        records = self._load()
-        return [record for record in records.values() if record.get("state") in RECOVERY_STATES]
+        with self._lock():
+            records = self._load()
+            return [record for record in records.values() if record.get("state") in RECOVERY_STATES]
