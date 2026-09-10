@@ -19,6 +19,10 @@
   let lastDpr = 0;
   let lastCandleCount = 0;
 
+  function getState() {
+    return window.WebariaChartState || null;
+  }
+
   function syncCanvasBitmap() {
     const width = Math.max(1, Math.floor(canvas.clientWidth || wrap.clientWidth));
     const height = Math.max(1, Math.floor(canvas.clientHeight || wrap.clientHeight));
@@ -39,7 +43,7 @@
   }
 
   function fitToViewport() {
-    const state = window.S;
+    const state = getState();
     if (!state || !Array.isArray(state.candles) || !state.candles.length) return;
     if (state._userViewport) return;
 
@@ -51,7 +55,6 @@
 
     state.visibleBars = visible;
     state.offset = 0;
-    if (typeof state.clampView === 'function') state.clampView();
   }
 
   const originalDraw = window.draw;
@@ -59,7 +62,7 @@
 
   window.draw = function () {
     syncCanvasBitmap();
-    const state = window.S;
+    const state = getState();
     const candleCount = Array.isArray(state?.candles) ? state.candles.length : 0;
     if (candleCount !== lastCandleCount || !state?._userViewport) {
       fitToViewport();
@@ -70,7 +73,7 @@
 
   function redrawForResize() {
     syncCanvasBitmap();
-    const state = window.S;
+    const state = getState();
     if (state && !state._userViewport) fitToViewport();
     window.draw();
   }
