@@ -76,5 +76,5 @@ jobs:
           for cmd in "/tmp/ariatrading-cpp-validator" "/tmp/ariatrading-go-validator" "java -cp polyglot/java-validator MarketDataValidator" "polyglot/rust-validator/target/release/ariatrading-market-validator"; do
             echo "== $cmd =="
             bash -lc "$cmd < /tmp/ariatrading-sample.tsv | tee /tmp/validator.out"
-            grep -q '\"ok\":true' /tmp/validator.out
+            grep -Fq '"ok":true' /tmp/validator.out
           done
