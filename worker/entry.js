@@ -1,5 +1,6 @@
 import app from "./index.js";
 import { Mt5MarketStore } from "./mt5_market.js";
+import { PaperRuntimeStore } from "./paper_runtime_store.js";
 import { handleSignalParityV2, evaluateRealtimeSignalParity } from "./signal_parity_v2.js";
 import { buildSignalEventId } from "./signal_event.js";
 import { fallbackCandles, fallbackPrice, FALLBACK_SOURCE, TIMEFRAME_SECONDS } from "./fallback_market.js";
@@ -37,8 +38,13 @@ async function handleMt5Ingest(request,env){
   const id=env.MT5_MARKET.idFromName("market");
   return env.MT5_MARKET.get(id).fetch(new Request("https://mt5.internal/ingest",{method:"POST",headers:request.headers,body:request.body}));
 }
+async function handlePaperRuntimeState(request,env){
+  const id=env.PAPER_RUNTIME_STATE.idFromName("paper-runtime");
+  return env.PAPER_RUNTIME_STATE.get(id).fetch(new Request("https://paper.internal/state",{method:request.method,headers:request.headers,body:request.method==="GET"||request.method==="HEAD"?undefined:request.body}));
+}
 async function resolveApi(request,env,ctx,pathname){
   if(pathname==="/api/bodyguard/status")return statusResponse();
+  if(pathname==="/api/paper-state")return handlePaperRuntimeState(request,env);
   if(pathname==="/api/mt5/ingest")return handleMt5Ingest(request,env);
   if(pathname==="/api/mt5/market"){
     const id=env.MT5_MARKET.idFromName("market");
@@ -57,5 +63,5 @@ async function resolveApi(request,env,ctx,pathname){
   if(pathname==="/api/signal")return handleSignalParityV2(request,env);
   return app.fetch(request,env,ctx);
 }
-export { Mt5MarketStore };
+export { Mt5MarketStore, PaperRuntimeStore };
 export default {async fetch(request,env,ctx){const url=new URL(request.url);if(url.pathname.startsWith("/api/")&&url.pathname!=="/api/mt5/ingest"&&url.pathname!=="/api/market"){const blocked=guardPublicRequest(request);if(blocked)return blocked;}if(url.pathname==="/api/market"){const limited=marketRateLimit(request);if(limited)return limited;}if(url.pathname==="/api/bodyguard/status")return statusResponse();const ttl=FRESH_TTL_MS[url.pathname],staleTtl=STALE_TTL_MS[url.pathname];if(!ttl||request.method!=="GET"){const response=await resolveApi(request,env,ctx,url.pathname);return applySecurityHeaders(response);}const key=cacheKey(request),now=Date.now(),cached=responseCache.get(key);if(cached&&now-cached.savedAt<=ttl)return cachedResponse(cached,cached.status,"HIT");try{const response=await resolveApi(request,env,ctx,url.pathname);if(response.ok){const record=await readResponse(response);evictOldestCacheEntry();responseCache.set(key,record);return cachedResponse(record,record.status,"MISS");}if(cached&&now-cached.savedAt<=staleTtl)return cachedResponse(cached,200,"STALE");return applySecurityHeaders(response);}catch(_){if(cached&&now-cached.savedAt<=staleTtl)return cachedResponse(cached,200,"STALE");return json({error:"upstream_or_internal_error",message:"request could not be completed",guard:"Bodyguard(Aria)",version:BODYGUARD_VERSION},502);}}};
