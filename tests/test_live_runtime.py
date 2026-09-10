@@ -8,10 +8,11 @@ from live.execution_guard import ExecutionJournal
 
 
 class _Executor:
-    def __init__(self, tick_time, deals=None, *, broker_evidence=None):
+    def __init__(self, tick_time, deals=None, *, broker_evidence=None, login=1):
         self.tick_time = tick_time
         self.deals = deals or []
         self.broker_evidence = broker_evidence or {}
+        self.login = login
         self.magic_number = 8808
         self.mt5 = SimpleNamespace(
             account_info=lambda: SimpleNamespace(trade_mode=2, trade_allowed=True, trade_expert=True),
@@ -28,7 +29,7 @@ class _Executor:
         )
 
     def get_account_snapshot(self):
-        return SimpleNamespace(login=1, equity=10000.0, trade_allowed=True, trade_expert=True)
+        return SimpleNamespace(login=self.login, equity=10000.0, trade_allowed=True, trade_expert=True)
 
     def get_open_positions(self):
         return []
@@ -63,13 +64,13 @@ class _Orchestrator:
         self.kwargs = kwargs
 
 
-def _runtime(tmp_path, *, now=None, tick_time=None, bar_time=None, deals=None, limits=None):
+def _runtime(tmp_path, *, now=None, tick_time=None, bar_time=None, deals=None, limits=None, login=1):
     now = now or datetime.now(timezone.utc)
     orchestrator = _Orchestrator()
     runtime = LiveRuntime(
         orchestrator=orchestrator,
         feed=_Feed(bar_time if bar_time is not None else now - timedelta(seconds=1)),
-        executor=_Executor(tick_time if tick_time is not None else now, deals=deals),
+        executor=_Executor(tick_time if tick_time is not None else now, deals=deals, login=login),
         journal=ExecutionJournal(tmp_path / "execution.json"),
         limits=limits,
         clock=lambda: now,
@@ -198,3 +199,14 @@ def test_runtime_rejects_naive_tick_timestamp(tmp_path):
     runtime, _ = _runtime(tmp_path, now=now, tick_time=datetime(2026, 9, 10, 12))
     with pytest.raises(RuntimeError, match="tick timestamp must be timezone-aware"):
         runtime.process_once()
+
+
+def test_runtime_blocks_account_switch_after_preflight(tmp_path):
+    now = datetime(2026, 9, 10, 12, tzinfo=timezone.utc)
+    runtime, orchestrator = _runtime(tmp_path, now=now, login=1)
+    runtime._bound_account_login = 1
+    runtime.executor.login = 2
+
+    with pytest.raises(RuntimeError, match="account changed during runtime"):
+        runtime.process_once()
+    assert orchestrator.calls == 0
