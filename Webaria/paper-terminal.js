@@ -4,9 +4,11 @@
   const STORAGE_KEY = 'webaria-paper-account-v1';
   const START_BALANCE = 10000;
   const MAX_HISTORY = 100;
+  const BAR_POLL_MS = 30000;
   const $ = id => document.getElementById(id);
 
   let state = loadState();
+  let monitorBusy = false;
 
   function finitePositive(value, fallback) {
     const n = Number(value);
@@ -37,6 +39,10 @@
 
   function currentSymbol() {
     return $('symbol')?.value || 'EUR/USD';
+  }
+
+  function currentTimeframe() {
+    return $('tf')?.value || '15m';
   }
 
   function currentPrice() {
@@ -92,7 +98,38 @@
     return Number.isFinite(n) ? n.toFixed(Math.abs(n) >= 20 ? 3 : 5) : '—';
   }
 
-  function recordTrade(position, exitPrice, reason) {
+  function timeValue(value) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+    const parsed = Date.parse(String(value || ''));
+    return Number.isFinite(parsed) ? parsed : NaN;
+  }
+
+  function normalizeBars(payload) {
+    if (!Array.isArray(payload?.candles)) return [];
+    return payload.candles.map(raw => ({
+      time: raw?.datetime ?? raw?.time,
+      open: Number(raw?.open),
+      high: Number(raw?.high),
+      low: Number(raw?.low),
+      close: Number(raw?.close)
+    })).filter(bar =>
+      Number.isFinite(timeValue(bar.time)) &&
+      Number.isFinite(bar.open) && Number.isFinite(bar.high) &&
+      Number.isFinite(bar.low) && Number.isFinite(bar.close)
+    ).sort((a, b) => timeValue(a.time) - timeValue(b.time));
+  }
+
+  async function getCompletedBars(symbol, timeframe) {
+    const params = new URLSearchParams({ symbol, timeframe });
+    const response = await fetch(`/api/signal?${params.toString()}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`signal endpoint HTTP ${response.status}`);
+    const payload = await response.json();
+    if (payload?.error) throw new Error(payload.message || 'signal endpoint error');
+    return normalizeBars(payload);
+  }
+
+  function recordTrade(position, exitPrice, reason, metadata = {}) {
     const realized = pnl(position, exitPrice);
     state.balance += realized;
     state.history.push({
@@ -106,7 +143,11 @@
       pnl: realized,
       reason,
       opened_at: position.opened_at,
-      closed_at: new Date().toISOString()
+      closed_at: new Date().toISOString(),
+      entry_bar_time: position.entry_bar_time || null,
+      exit_bar_time: metadata.exitBarTime || null,
+      exit_source: metadata.exitSource || 'manual_quote',
+      execution_model: position.execution_model || 'manual_quote'
     });
     state.history = state.history.slice(-MAX_HISTORY);
     state.position = null;
@@ -115,13 +156,14 @@
     render();
   }
 
-  function open(side) {
+  async function open(side) {
     if (state.position) {
       setNote('Only one paper position is allowed at a time.');
       return;
     }
 
     const symbol = currentSymbol();
+    const timeframe = currentTimeframe();
     const entry = currentPrice();
     const quantity = Number($('qty')?.value);
     const rawSl = $('sl')?.value?.trim();
@@ -147,18 +189,36 @@
       return;
     }
 
+    let bars;
+    try {
+      bars = await getCompletedBars(symbol, timeframe);
+    } catch (error) {
+      setNote(`Cannot open paper trade: ${error.message}`);
+      return;
+    }
+
+    const latestBar = bars[bars.length - 1];
+    if (!latestBar) {
+      setNote('Cannot open paper trade: no completed candle is available.');
+      return;
+    }
+
     state.position = {
       symbol,
-      timeframe: $('tf')?.value || '15m',
+      timeframe,
       side,
       quantity,
       entry,
       sl: Number.isFinite(sl) ? sl : null,
       tp: Number.isFinite(tp) ? tp : null,
-      opened_at: new Date().toISOString()
+      opened_at: new Date().toISOString(),
+      entry_bar_time: latestBar.time,
+      entry_bar_close: latestBar.close,
+      last_checked_bar_time: latestBar.time,
+      execution_model: 'completed-bar'
     };
     saveState();
-    setNote(`Opened ${side} ${quantity} ${symbol} · simulation only`);
+    setNote(`Opened ${side} ${quantity} ${symbol} · entry anchored after completed ${timeframe} bar · demo only`);
     render();
   }
 
@@ -174,21 +234,52 @@
       setNote('Cannot close paper trade: no valid quote.');
       return;
     }
-    recordTrade(position, price, reason || 'manual close');
+    recordTrade(position, price, reason || 'manual close', { exitSource: 'manual_quote' });
   }
 
-  function checkStops() {
-    const position = state.position;
-    if (!position || position.symbol !== currentSymbol()) return;
-    const price = currentPrice();
-    if (!Number.isFinite(price)) return;
+  async function monitorPosition() {
+    if (monitorBusy || !state.position) return;
+    monitorBusy = true;
 
-    if (position.side === 'LONG') {
-      if (position.sl != null && price <= position.sl) return close('stop loss');
-      if (position.tp != null && price >= position.tp) return close('take profit');
-    } else if (position.side === 'SHORT') {
-      if (position.sl != null && price >= position.sl) return close('stop loss');
-      if (position.tp != null && price <= position.tp) return close('take profit');
+    try {
+      const position = state.position;
+      const bars = await getCompletedBars(position.symbol, position.timeframe);
+      const latestBar = bars[bars.length - 1];
+      if (!latestBar) return;
+
+      let anchor = timeValue(position.entry_bar_time);
+      if (!Number.isFinite(anchor)) {
+        // Legacy positions are migrated without evaluating any old bar.
+        position.entry_bar_time = latestBar.time;
+        position.entry_bar_close = latestBar.close;
+        position.last_checked_bar_time = latestBar.time;
+        position.execution_model = 'completed-bar';
+        saveState();
+        setNote('Migrated existing paper position to completed-bar monitoring.');
+        return;
+      }
+
+      const lastChecked = timeValue(position.last_checked_bar_time);
+      const cutoff = Number.isFinite(lastChecked) ? Math.max(anchor, lastChecked) : anchor;
+      const candidates = bars.filter(bar => timeValue(bar.time) > cutoff);
+
+      for (const bar of candidates) {
+        const exit = window.WebariaPaperEngine?.barExit(position, bar);
+        if (exit) {
+          recordTrade(position, exit.price, exit.reason, {
+            exitBarTime: bar.time,
+            exitSource: 'completed_bar'
+          });
+          return;
+        }
+        position.last_checked_bar_time = bar.time;
+      }
+
+      if (candidates.length) saveState();
+    } catch (error) {
+      setNote(`Bar monitor error: ${error.message}. Position remains open.`);
+    } finally {
+      monitorBusy = false;
     }
   }
 
@@ -201,17 +292,20 @@
   }
 
   function bind() {
-    $('buy')?.addEventListener('click', intercept(() => open('LONG')), true);
-    $('sell')?.addEventListener('click', intercept(() => open('SHORT')), true);
+    $('buy')?.addEventListener('click', intercept(() => { void open('LONG'); }), true);
+    $('sell')?.addEventListener('click', intercept(() => { void open('SHORT'); }), true);
     $('close')?.addEventListener('click', intercept(() => close('manual close')), true);
   }
 
   bind();
   render();
+  void monitorPosition();
   setInterval(() => {
-    checkStops();
+    void monitorPosition();
     render();
-  }, 1000);
+  }, BAR_POLL_MS);
+  setInterval(render, 1000);
+
   window.addEventListener('storage', event => {
     if (event.key === STORAGE_KEY) {
       state = loadState();
