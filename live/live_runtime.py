@@ -111,6 +111,7 @@ class LiveRuntime:
         self.limits = limits or RuntimeLimits()
         self.circuit_breaker = circuit_breaker
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self._bound_account_login: int | None = None
 
     def _daily_realized_loss(self, now: datetime) -> float:
         """Return today's realized loss for this strategy; fail closed on history errors."""
@@ -184,6 +185,7 @@ class LiveRuntime:
         account = self.executor.get_account_snapshot()
         if not account.trade_allowed or not account.trade_expert:
             raise RuntimeError("MT5 trading permissions are not enabled")
+        self._bound_account_login = account.login
         if self.circuit_breaker is not None:
             ok, reason = self.circuit_breaker.check(account.equity, now)
             if not ok:
@@ -193,6 +195,12 @@ class LiveRuntime:
     def process_once(self) -> int:
         """Process one completed-bar cycle. Returns number of evaluated symbols."""
         account = self.executor.get_account_snapshot()
+        if self._bound_account_login is None:
+            raise RuntimeError("MT5 account is not bound; preflight is required before processing")
+        if account.login != self._bound_account_login:
+            raise RuntimeError(
+                f"MT5 account changed during runtime: expected {self._bound_account_login}, got {account.login}"
+            )
         now = _require_utc(self.clock(), "runtime clock")
         if self.circuit_breaker is not None:
             ok, reason = self.circuit_breaker.check(account.equity, now)
