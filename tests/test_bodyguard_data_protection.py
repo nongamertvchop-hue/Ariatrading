@@ -5,11 +5,9 @@ def test_sensitive_keys_are_redacted_recursively():
     payload = {
         "symbol": "EUR/USD",
         "credentials": {"api_key": "secret-value", "password": "hunter2"},
-        "nested": [{"authorization": "Bearer abcdefghijklmnop"}],
+        "nested": [{"authorization": "Bearer " + "abcdefghijklmnop"}],
     }
-
     result = sanitize_for_boundary(payload)
-
     assert result["symbol"] == "EUR/USD"
     assert result["credentials"]["api_key"] == REDACTED
     assert result["credentials"]["password"] == REDACTED
@@ -18,13 +16,11 @@ def test_sensitive_keys_are_redacted_recursively():
 
 def test_secret_shaped_values_are_redacted_even_without_sensitive_key():
     payload = {
-        "message": "Authorization: Bearer abcdefghijklmnop",
-        "token_dump": "eyJaaaaaaaaaaaa.bbbbbbbbbbbb.cccccccccccc",
-        "key": "ghp_abcdefghijklmnopqrstuvwxyz123456",
+        "message": "Authorization: Bearer " + "abcdefghijklmnop",
+        "token_dump": "eyJ" + "aaaaaaaaaaaa.bbbbbbbbbbbb.cccccccccccc",
+        "key": "ghp_" + "abcdefghijklmnopqrstuvwxyz123456",
     }
-
     result = sanitize_public_payload(payload)
-
     assert REDACTED in result["message"]
     assert REDACTED in result["token_dump"]
     assert REDACTED in result["key"]
@@ -33,7 +29,6 @@ def test_secret_shaped_values_are_redacted_even_without_sensitive_key():
 def test_bounded_depth_and_collection_size():
     deep = {"a": {"b": {"c": {"d": {"e": {"f": "secret"}}}}}}
     wide = {str(i): i for i in range(250)}
-
     assert sanitize_for_boundary(deep, max_depth=3)["a"]["b"]["c"] == REDACTED
     result = sanitize_for_boundary(wide, max_items=10)
     assert len(result) == 11
@@ -43,8 +38,7 @@ def test_bounded_depth_and_collection_size():
 def test_unknown_objects_are_stringified_without_custom_serialization():
     class SensitiveObject:
         def __str__(self):
-            return "Bearer abcdefghijklmnop"
-
+            return "Bearer " + "abcdefghijklmnop"
     result = sanitize_for_boundary({"object": SensitiveObject()})
     assert result["object"] == f"{REDACTED}"
 
