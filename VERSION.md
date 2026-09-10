@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.16.1**
+Current version: **0.17.0**
 
 ## Versioning rule
 
@@ -11,25 +11,30 @@ Use semantic versioning:
 - **MINOR**: new strategy capability that remains backward compatible.
 - **PATCH**: bug fix, test improvement, documentation, or non-strategy correction.
 
-## Current milestone — 0.16.1 — realtime web/runtime boundary hardening
+## Current milestone — 0.17.0 — LIVE Stage 1 execution boundary
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
-- Backtest/realtime/paper safety boundaries remain unchanged and real broker execution remains disabled.
-- Webaria `/api/market` now treats the MT5 runtime as the canonical market source and fails closed when the runtime bridge is not configured.
-- The runtime API exposes an authenticated `/market` endpoint for completed MT5 candles and current market telemetry.
-- Runtime API authentication can be enabled with `RUNTIME_API_TOKEN`; Cloudflare Pages uses the same secret through `MT5_RUNTIME_API_URL` + `RUNTIME_API_TOKEN`.
-- Webaria Bodyguard now reads sanitized durable runtime events and heartbeat telemetry instead of relying on ephemeral Worker-isolate memory.
-- Bodyguard telemetry intentionally exposes actor class, category, severity and reason only; IPs, secrets, request bodies and PII remain excluded.
-- CI syntax coverage includes the new Bodyguard status endpoint and canonical market endpoint.
-- MT5 remains read-only and no real broker execution path is implemented.
+- Backtest/realtime/paper strategy semantics remain unchanged.
+- MT5 real-account execution is now implemented behind an explicit Stage 1 production policy.
+- LIVE requires the exact operator opt-in `ARIATRADING_ENABLE_LIVE=I_UNDERSTAND_REAL_ORDERS`.
+- LIVE requires an exact account-login and trade-server allowlist supplied outside the repository.
+- LIVE Stage 1 permits exactly one configured symbol and enforces a maximum 0.25% risk per trade.
+- LIVE Stage 1 enforces a maximum 1% daily equity drawdown, 20-point spread and 5-second broker tick age.
+- LIVE continues to use completed-candle evaluation, broker contract validation, mandatory Stop Loss, `order_check`, idempotency, reconciliation and fail-closed ambiguous outcomes.
+- The canonical hardened runtime is `live/runtime_cli.py` / `live/live_runtime_cli.py`; the legacy runner is also constrained by the Stage 1 policy.
+- No broker credentials, account identifiers or live secrets are committed to Git.
 
 ## Release interpretation
 
-A 0.16.1 PASS means the tested engineering properties held for the selected code revision and historical fixture. It does not establish profitability, future performance, or permission to use real money.
+A 0.17.0 PASS means the tested engineering properties held for the selected code revision. It does not establish profitability, future performance, or low financial risk. Real-money activation still requires operator-supplied MT5 credentials, exact account/server allowlisting and an eligible production host with the MT5 terminal available.
+
+## Stage 1 activation boundary
+
+Stage 1 is deliberately a narrow real-money execution tier, not a claim that Ariatrading is universally production-ready. The repository contains the execution path and safety policy; activation remains external to source control and must be performed on the operator's MT5 host.
 
 ## Next milestone
 
-### 1.0.0 — only after extended paper evidence
-- Extend historical coverage and long-duration paper observation.
-- Freeze a documented strategy specification only after out-of-sample and robustness checks.
-- Keep any future broker execution component isolated from the research engine and fail closed on uncertainty.
+### Production expansion — only after verified Stage 1 evidence
+- Observe long-duration live behavior with strict operational review.
+- Add additional symbols only through explicit policy changes and fresh verification evidence.
+- Keep strategy changes separate from execution-policy changes.
