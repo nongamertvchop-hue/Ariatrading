@@ -4,14 +4,15 @@ Coordinates the multi-symbol live lifecycle:
 1. Feeds: Polls completed candles from MT5 or feed adapter.
 2. Signal: Evaluates Sequence, S/R Levels, and Realtime Supervisor.
 3. Gates: Forex Market Conditions (Session, Rollover, Spread) + Forex Risk Sizing.
-4. Action: Broadcasts alerts and, in DEMO mode only, routes orders to MT5.
+4. Action: Broadcasts alerts and routes validated orders to MT5 in DEMO/LIVE mode.
 
 Supported modes:
 - ALERT_ONLY: Monitor and send alerts without placing broker orders.
 - DEMO: Execute on an MT5 demo account with hard SL/TP and slippage control.
+- LIVE: Execute on an MT5 real account with the same validation/risk boundary.
 
-LIVE execution is intentionally disabled in this repository build. The execution
-journal is also fail-closed: an ambiguous broker response is never retried blindly.
+The execution journal is fail-closed: an ambiguous broker response is never
+retried blindly. LIVE is an explicit execution mode and is not the default.
 """
 
 from __future__ import annotations
@@ -57,7 +58,8 @@ class ForexCandidateOrder:
 class ForexLiveOrchestrator:
     """Multi-symbol Forex orchestrator with a fail-closed execution boundary."""
 
-    ALLOWED_MODES = {"ALERT_ONLY", "DEMO"}
+    ALLOWED_MODES = {"ALERT_ONLY", "DEMO", "LIVE"}
+    EXECUTION_MODES = {"DEMO", "LIVE"}
 
     def __init__(
         self,
@@ -76,10 +78,7 @@ class ForexLiveOrchestrator:
         self.symbols = [s.strip().upper() for s in symbols]
         self.mode = mode.upper()
         if self.mode not in self.ALLOWED_MODES:
-            raise ValueError(
-                f"Unsupported execution mode: {self.mode}. "
-                "Only ALERT_ONLY and DEMO are enabled; LIVE is fail-closed."
-            )
+            raise ValueError(f"Unsupported execution mode: {self.mode}")
         self.timeframe = timeframe
         self.candle_history = max(candle_history, 50)
         self.risk_limits = ForexRiskLimits(risk_per_trade_fraction=risk_per_trade)
@@ -88,7 +87,7 @@ class ForexLiveOrchestrator:
         self.notifier = notifier or Notifier()
         self.session_config = session_config or ForexSessionConfig()
         self.execution_journal = execution_journal or ExecutionJournal(
-            _PROJECT_ROOT / "data" / "demo_execution_journal.json"
+            _PROJECT_ROOT / "data" / "execution_journal.json"
         )
         self._last_processed_bar_time: dict[str, datetime] = {}
 
@@ -190,11 +189,12 @@ class ForexLiveOrchestrator:
             mode=self.mode,
         )
 
-        if self.mode == "DEMO":
+        if self.mode in self.EXECUTION_MODES:
             self._last_processed_bar_time[symbol] = latest_bar.time
+            mode_label = self.mode
             if self.executor is None:
                 self.notifier.notify_system(
-                    title="Demo Execution Blocked",
+                    title=f"{mode_label} Execution Blocked",
                     details=f"Symbol: {candidate.symbol}\nReason: executor unavailable; fail-closed.",
                     alert_level="ERROR",
                 )
@@ -213,15 +213,16 @@ class ForexLiveOrchestrator:
                 if not self.execution_journal.reserve(intent):
                     existing = self.execution_journal.get(intent.intent_id) or {}
                     logger.warning(
-                        "Duplicate demo execution suppressed for %s (state=%s)",
+                        "Duplicate %s execution suppressed for %s (state=%s)",
+                        mode_label,
                         candidate.symbol,
                         existing.get("state", "UNKNOWN"),
                     )
                     return candidate
             except (OSError, RuntimeError, KeyError) as exc:
-                logger.error("Demo execution blocked: journal unavailable: %s", exc)
+                logger.error("%s execution blocked: journal unavailable: %s", mode_label, exc)
                 self.notifier.notify_system(
-                    title="Demo Execution Blocked",
+                    title=f"{mode_label} Execution Blocked",
                     details=f"Symbol: {candidate.symbol}\nReason: execution journal unavailable; fail-closed.\nError: {exc}",
                     alert_level="ERROR",
                 )
@@ -235,15 +236,13 @@ class ForexLiveOrchestrator:
                     volume=candidate.lot_size,
                     sl=candidate.sl,
                     tp=candidate.tp,
-                    comment=f"Aria-DEMO-{intent.intent_id[:12]}",
+                    comment=f"Aria-{mode_label}-{intent.intent_id[:12]}",
                 )
             except Exception as exc:
-                # A transport exception is ambiguous: the broker may have accepted
-                # the request before the client observed the failure. Never retry blindly.
                 self.execution_journal.transition(intent.intent_id, "AMBIGUOUS", error=str(exc))
-                logger.exception("Demo order outcome is ambiguous for %s", candidate.symbol)
+                logger.exception("%s order outcome is ambiguous for %s", mode_label, candidate.symbol)
                 self.notifier.notify_system(
-                    title="Demo Order Ambiguous",
+                    title=f"{mode_label} Order Ambiguous",
                     details=f"Symbol: {candidate.symbol}\nIntent: {intent.intent_id}\nReason: {exc}\nManual reconciliation required before retry.",
                     alert_level="ERROR",
                 )
@@ -255,8 +254,9 @@ class ForexLiveOrchestrator:
                     "SUCCEEDED",
                     ticket=exec_res.ticket,
                     broker_retcode=exec_res.retcode,
+                    execution_mode=mode_label,
                 )
-                logger.info("Demo order executed #%d for %s", exec_res.ticket, candidate.symbol)
+                logger.info("%s order executed #%d for %s", mode_label, exec_res.ticket, candidate.symbol)
                 self.notifier.notify_execution(
                     symbol=candidate.symbol,
                     direction=candidate.direction,
@@ -271,14 +271,14 @@ class ForexLiveOrchestrator:
                     "FAILED",
                     broker_retcode=exec_res.retcode,
                     error=exec_res.error_message,
+                    execution_mode=mode_label,
                 )
-                logger.error("Demo order placement failed for %s: %s", candidate.symbol, exec_res.error_message)
+                logger.error("%s order placement failed for %s: %s", mode_label, candidate.symbol, exec_res.error_message)
                 self.notifier.notify_system(
-                    title="Demo Order Failed",
+                    title=f"{mode_label} Order Failed",
                     details=f"Symbol: {candidate.symbol}\nError: {exec_res.error_message}",
                     alert_level="ERROR",
                 )
-
         else:
             self._last_processed_bar_time[symbol] = latest_bar.time
 
@@ -290,9 +290,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--symbols", default="EURUSD,GBPUSD,USDJPY", help="Comma-separated symbols")
     parser.add_argument(
         "--mode",
-        choices=["ALERT_ONLY", "DEMO"],
+        choices=["ALERT_ONLY", "DEMO", "LIVE"],
         default="ALERT_ONLY",
-        help="Execution mode. DEMO is the only enabled broker-execution mode.",
+        help="Execution mode. ALERT_ONLY never sends orders; DEMO/LIVE route through the MT5 executor.",
     )
     parser.add_argument("--timeframe", default="15m", help="Candle timeframe (1m, 5m, 15m, 1h, 4h, 1D)")
     parser.add_argument("--risk", type=float, default=0.01, help="Risk fraction per trade (default: 0.01 = 1%%)")
@@ -313,15 +313,15 @@ def main() -> None:
         feed = MT5BarFeed()
         logger.info("MT5 feed initialized.")
     except Exception as e:
-        logger.warning("MT5 feed not available (%s). Make sure MT5 terminal is open for demo feeds.", e)
+        logger.warning("MT5 feed not available (%s). Make sure MT5 terminal is open for broker feeds.", e)
 
-    if args.mode == "DEMO":
+    if args.mode in {"DEMO", "LIVE"}:
         try:
             executor = MT5LiveExecutor()
             executor.connect()
-            logger.info("MT5 demo executor connected.")
+            logger.info("MT5 %s executor connected.", args.mode)
         except Exception as e:
-            logger.error("Failed to connect MT5 demo executor: %s", e)
+            logger.error("Failed to connect MT5 %s executor: %s", args.mode, e)
 
     orchestrator = ForexLiveOrchestrator(
         symbols=symbols,
