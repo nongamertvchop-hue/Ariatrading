@@ -6,12 +6,12 @@
   const state = window.WebariaChartState;
   if (!canvas || !wrap || !state) return;
 
-  // Keep candle cells comfortably separated on both desktop and narrow screens.
-  // This is deliberately larger than the previous 10.5px target because the
-  // old viewport still looked compressed even after zoom was restored.
-  const MIN_BARS = 16;
-  const MAX_BARS = 110;
-  const TARGET_PX_PER_BAR = 15;
+  // Use a deliberately lower candle count so each candle remains readable.
+  // The chart is a price-action terminal, so legibility is more important than
+  // showing as much history as possible in the first viewport.
+  const MIN_BARS = 20;
+  const MAX_BARS = 70;
+  const TARGET_PX_PER_BAR = 22;
   const LEFT = 12;
   const MIN_RIGHT_AXIS = 62;
 
@@ -30,12 +30,12 @@
   const plotWidth = width => Math.max(1, width - LEFT - rightAxis(width));
   const redraw = () => {
     if (typeof window.draw === 'function') window.draw();
+    else window.dispatchEvent(new Event('resize'));
   };
 
   function normalizeViewport() {
     const total = count();
     if (!total) return;
-
     const maxVisible = Math.min(MAX_BARS, total);
     state.visibleBars = clamp(Math.round(Number(state.visibleBars) || maxVisible), MIN_BARS, maxVisible);
     const maxOffset = Math.max(0, total - state.visibleBars);
@@ -49,7 +49,6 @@
 
     const target = Math.round(plotWidth(width) / TARGET_PX_PER_BAR);
     state.visibleBars = clamp(target, MIN_BARS, Math.min(MAX_BARS, total));
-    // Keep the newest candle at the right edge, like a normal trading chart.
     state.offset = 0;
     preferredVisible = state.visibleBars;
     preferredOffset = 0;
@@ -99,7 +98,6 @@
   function zoomAt(clientX, factor) {
     const total = count();
     if (!total) return;
-
     normalizeViewport();
     const rect = canvas.getBoundingClientRect();
     const width = Math.max(1, rect.width);
@@ -129,7 +127,6 @@
     const total = count();
     if (!total) return;
     normalizeViewport();
-
     const barsPerPixel = state.visibleBars / plotWidth(canvas.clientWidth);
     state.offset = clamp(
       Math.round(state.offset + dx * barsPerPixel),
@@ -141,7 +138,6 @@
     redraw();
   }
 
-  // Prevent the browser/page from stealing chart gestures.
   canvas.style.touchAction = 'none';
   canvas.style.userSelect = 'none';
   canvas.style.webkitUserSelect = 'none';
@@ -193,23 +189,30 @@
   if (ro) ro.observe(wrap);
   window.addEventListener('resize', resizeCanvas, {passive: true});
 
-  // trading.js still initializes its viewport to 90 bars on each data refresh.
-  // Keep this compatibility guard very tight so there is no visible 90-bar flash.
+  // trading.js still resets to 90 bars during refresh. Detect that specific
+  // reset and immediately re-fit instead of allowing the chart to remain
+  // compressed. User zoom/pan is always restored and is never overridden.
   setInterval(() => {
     const total = count();
     if (!total) return;
 
-    if (total !== lastCount) {
-      lastCount = total;
-      if (userZoomed) restore();
-      else fit();
+    if (userZoomed) {
+      restore();
       return;
     }
 
-    if (userZoomed) restore();
+    const width = wrap.clientWidth;
+    const target = clamp(Math.round(plotWidth(width) / TARGET_PX_PER_BAR), MIN_BARS, Math.min(MAX_BARS, total));
+    if (state.visibleBars !== target || state.offset !== 0 || total !== lastCount) {
+      state.visibleBars = target;
+      state.offset = 0;
+      preferredVisible = target;
+      preferredOffset = 0;
+      lastCount = total;
+      redraw();
+    }
   }, 50);
 
-  // First paint: wait until trading.js has populated candles, then fit once.
   setTimeout(() => {
     resizeCanvas();
     if (count() && !userZoomed) fit();
