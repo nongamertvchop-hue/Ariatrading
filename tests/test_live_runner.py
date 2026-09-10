@@ -2,13 +2,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from live.mt5_executor import MT5LiveExecutor
-from live.notifier import NotificationConfig, Notifier
-from live.runner import ForexLiveOrchestrator
-from strategy.forex_conditions import ForexSessionConfig
+from live.runner import ForexLiveOrchestrator, build_arg_parser
 from strategy.forex_risk import ForexSymbolContract
 from strategy.realtime import LiveBar
-from tests.test_mt5_executor import FakeMT5Module
 
 
 def generate_bars(count=60, start_price=1.1000, trend=0.0001):
@@ -17,7 +13,6 @@ def generate_bars(count=60, start_price=1.1000, trend=0.0001):
     p = start_price
     for i in range(count):
         t = base_time + timedelta(minutes=15 * i)
-        # Form basic swings
         o = p
         h = p + 0.0005
         l = p - 0.0003
@@ -52,9 +47,19 @@ def test_orchestrator_initialization():
     assert orchestrator.mode == "ALERT_ONLY"
 
 
+def test_orchestrator_rejects_live_mode():
+    with pytest.raises(ValueError, match="LIVE is fail-closed"):
+        ForexLiveOrchestrator(symbols=["EURUSD"], mode="LIVE")
+
+
+def test_cli_exposes_only_safe_execution_modes():
+    mode_action = next(action for action in build_arg_parser()._actions if action.dest == "mode")
+    assert mode_action.choices == ["ALERT_ONLY", "DEMO"]
+
+
 def test_orchestrator_insufficient_bars(eurusd_contract):
     orchestrator = ForexLiveOrchestrator(symbols=["EURUSD"], mode="ALERT_ONLY")
-    bars = generate_bars(count=15)  # < 30
+    bars = generate_bars(count=15)
     res = orchestrator.process_symbol(
         symbol="EURUSD",
         bars=bars,
@@ -70,7 +75,6 @@ def test_orchestrator_deduplicates_same_bar(eurusd_contract):
     orchestrator = ForexLiveOrchestrator(symbols=["EURUSD"], mode="ALERT_ONLY")
     bars = generate_bars(count=50)
 
-    # First run processes or evaluates
     _ = orchestrator.process_symbol(
         symbol="EURUSD",
         bars=bars,
@@ -80,7 +84,6 @@ def test_orchestrator_deduplicates_same_bar(eurusd_contract):
         equity=10000.0,
     )
 
-    # Second run with exact same bars returns None immediately without recalculating
     res2 = orchestrator.process_symbol(
         symbol="EURUSD",
         bars=bars,
