@@ -172,3 +172,27 @@ def test_max_bars_must_be_an_integer():
             max_bars=2.0,
             future_candles=[candle(101.0, 99.5)],
         )
+
+
+def test_derived_target_overflow_fails_closed():
+    with pytest.raises(ValueError, match="target"):
+        label_signal_outcome(
+            event_id="sig_target_overflow",
+            direction=LONG,
+            entry=1.0e308,
+            stop=1.0,
+            target_r_multiple=2.0,
+            future_candles=[],
+        )
+
+
+def test_derived_mfe_mae_overflow_fails_closed():
+    with pytest.raises(ValueError, match="MFE/MAE"):
+        label_signal_outcome(
+            event_id="sig_metric_overflow",
+            direction=LONG,
+            entry=1.0,
+            stop=1.0e-308,
+            target_r_multiple=2.0,
+            future_candles=[candle(1.0e308, 1.0)],
+        )
