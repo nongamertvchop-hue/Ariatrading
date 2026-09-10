@@ -121,3 +121,54 @@ def test_invalid_stop_and_parameters_fail_fast():
             target_r_multiple=0,
             future_candles=[candle(101.0, 100.0)],
         )
+
+
+def test_non_finite_trade_parameters_fail_fast():
+    with pytest.raises(ValueError, match="entry"):
+        label_signal_outcome(
+            event_id="sig_bad_entry",
+            direction=LONG,
+            entry=float("nan"),
+            stop=99.0,
+            future_candles=[candle(101.0, 100.0)],
+        )
+    with pytest.raises(ValueError, match="stop"):
+        label_signal_outcome(
+            event_id="sig_bad_stop",
+            direction=LONG,
+            entry=100.0,
+            stop=float("inf"),
+            future_candles=[candle(101.0, 100.0)],
+        )
+    with pytest.raises(ValueError, match="target_r_multiple"):
+        label_signal_outcome(
+            event_id="sig_bad_target",
+            direction=LONG,
+            entry=100.0,
+            stop=99.0,
+            target_r_multiple=float("nan"),
+            future_candles=[candle(101.0, 100.0)],
+        )
+
+
+def test_non_finite_future_candle_fails_fast():
+    with pytest.raises(ValueError, match="finite"):
+        label_signal_outcome(
+            event_id="sig_bad_candle",
+            direction=LONG,
+            entry=100.0,
+            stop=99.0,
+            future_candles=[candle(float("nan"), 99.5)],
+        )
+
+
+def test_max_bars_must_be_an_integer():
+    with pytest.raises(ValueError, match="integer"):
+        label_signal_outcome(
+            event_id="sig_bad_horizon",
+            direction=LONG,
+            entry=100.0,
+            stop=99.0,
+            max_bars=2.0,
+            future_candles=[candle(101.0, 99.5)],
+        )
