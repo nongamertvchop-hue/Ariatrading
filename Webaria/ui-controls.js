@@ -78,10 +78,10 @@
   function togglePanel(button) {
     const panel = $('right');
     if (!panel) return;
-    const hidden = panel.classList.toggle('panel-collapsed');
+    const open = panel.classList.toggle('open');
     if (button) {
-      button.setAttribute('aria-expanded', String(!hidden));
-      button.textContent = hidden ? 'Show Panel' : 'Panel';
+      button.setAttribute('aria-expanded', String(open));
+      button.textContent = open ? 'Panel' : 'Show Panel';
     }
   }
 
