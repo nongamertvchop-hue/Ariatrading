@@ -6,3 +6,12 @@ main = "./worker/entry.js"
 directory = "./Webaria"
 binding = "ASSETS"
 run_worker_first = ["/api/*"]
+
+[durable_objects]
+[[durable_objects.bindings]]
+name = "MT5_MARKET"
+class_name = "Mt5MarketStore"
+
+[exports.Mt5MarketStore]
+type = "durable-object"
+storage = "sqlite"
