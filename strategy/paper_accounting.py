@@ -72,16 +72,7 @@ class PaperAccounting:
         self._bars_held = 0
         self._mark_price: float | None = None
 
-    def open_position(
-        self,
-        *,
-        symbol: str,
-        side: str,
-        quantity: float,
-        entry_price: float,
-        bar_time: str,
-        contract_multiplier: float = 1.0,
-    ) -> PaperPosition:
+    def open_position(self, *, symbol: str, side: str, quantity: float, entry_price: float, bar_time: str, contract_multiplier: float = 1.0) -> PaperPosition:
         self._validate_side(side)
         self._validate_positive(quantity, "quantity")
         self._validate_positive(entry_price, "entry_price")
@@ -112,13 +103,7 @@ class PaperAccounting:
         self._refresh_peak(snapshot.equity)
         return self.snapshot()
 
-    def close_position(
-        self,
-        *,
-        exit_price: float,
-        bar_time: str,
-        fee_units: float | None = None,
-    ) -> PaperTrade:
+    def close_position(self, *, exit_price: float, bar_time: str, fee_units: float | None = None) -> PaperTrade:
         self._validate_positive(exit_price, "exit_price")
         if self.position is None:
             raise RuntimeError("paper account is already flat")
@@ -136,19 +121,7 @@ class PaperAccounting:
         net = gross - fees
         self.balance += net
         self.realized_pnl += net
-        trade = PaperTrade(
-            symbol=position.symbol,
-            side=position.side,
-            quantity=position.quantity,
-            entry_price=position.entry_price,
-            exit_price=float(exit_price),
-            gross_pnl=gross,
-            fees=fees,
-            net_pnl=net,
-            bars_held=self._bars_held,
-            entry_bar_time=position.entry_bar_time,
-            exit_bar_time=bar_time,
-        )
+        trade = PaperTrade(position.symbol, position.side, position.quantity, position.entry_price, float(exit_price), gross, fees, net, self._bars_held, position.entry_bar_time, bar_time)
         self.trades.append(trade)
         self.position = None
         self._last_bar_time = bar_time
@@ -169,23 +142,9 @@ class PaperAccounting:
         wins = sum(1 for trade in self.trades if trade.net_pnl > 0)
         losses = sum(1 for trade in self.trades if trade.net_pnl < 0)
         flats = len(self.trades) - wins - losses
-        return AccountSnapshot(
-            balance=self.balance,
-            equity=equity,
-            realized_pnl=self.realized_pnl,
-            unrealized_pnl=unrealized,
-            peak_equity=self.peak_equity,
-            drawdown=drawdown,
-            drawdown_pct=drawdown_pct,
-            trade_count=len(self.trades),
-            win_count=wins,
-            loss_count=losses,
-            flat_count=flats,
-        )
+        return AccountSnapshot(self.balance, equity, self.realized_pnl, unrealized, self.peak_equity, drawdown, drawdown_pct, len(self.trades), wins, losses, flats)
 
     def export_state(self) -> dict:
-        """Return a JSON-safe checkpoint representation."""
-        snap = self.snapshot()
         return {
             "version": 1,
             "initial_balance": self.initial_balance,
@@ -198,7 +157,6 @@ class PaperAccounting:
             "last_bar_time": self._last_bar_time,
             "bars_held": self._bars_held,
             "mark_price": self._mark_price,
-            "snapshot": snap.__dict__,
         }
 
     @classmethod
@@ -211,15 +169,41 @@ class PaperAccounting:
         account.peak_equity = float(payload["peak_equity"])
         raw_position = payload.get("position")
         if raw_position is not None:
+            if not isinstance(raw_position, dict):
+                raise ValueError("invalid position checkpoint")
+            account._validate_side(str(raw_position["side"]))
+            account._validate_positive(float(raw_position["quantity"]), "position quantity")
+            account._validate_positive(float(raw_position["entry_price"]), "position entry price")
+            account._validate_positive(float(raw_position.get("contract_multiplier", 1.0)), "contract multiplier")
             account.position = PaperPosition(**raw_position)
-        account.trades = [PaperTrade(**item) for item in payload.get("trades", [])]
+        raw_trades = payload.get("trades", [])
+        if not isinstance(raw_trades, list):
+            raise ValueError("invalid trade checkpoint")
+        account.trades = []
+        for item in raw_trades:
+            if not isinstance(item, dict):
+                raise ValueError("invalid trade record")
+            account._validate_side(str(item["side"]))
+            account._validate_positive(float(item["quantity"]), "trade quantity")
+            for field in ("entry_price", "exit_price", "gross_pnl", "fees", "net_pnl"):
+                if not isfinite(float(item[field])):
+                    raise ValueError(f"invalid trade {field}")
+            if int(item["bars_held"]) < 0:
+                raise ValueError("invalid trade bars_held")
+            account.trades.append(PaperTrade(**item))
         account._last_bar_time = payload.get("last_bar_time")
         account._bars_held = int(payload.get("bars_held", 0))
         mark_price = payload.get("mark_price")
         account._mark_price = None if mark_price is None else float(mark_price)
-        # Recompute the observable state after loading rather than trusting a cached summary.
+        if not isfinite(account.balance) or not isfinite(account.realized_pnl) or not isfinite(account.peak_equity):
+            raise ValueError("accounting checkpoint contains non-finite state")
         if account.balance <= 0 or account.peak_equity <= 0 or account._bars_held < 0:
             raise ValueError("invalid accounting checkpoint values")
+        if account._mark_price is not None and not isfinite(account._mark_price):
+            raise ValueError("invalid accounting mark price")
+        expected_realized = sum(trade.net_pnl for trade in account.trades)
+        if abs(expected_realized - account.realized_pnl) > 1e-9:
+            raise ValueError("realized P/L does not match trade ledger")
         account._refresh_peak(account.snapshot().equity)
         return account
 
