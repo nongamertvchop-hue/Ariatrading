@@ -41,6 +41,7 @@ export class Mt5MarketStore {
     const url=new URL(request.url), symbol=(url.searchParams.get("symbol")||"EUR/USD").trim().toUpperCase(), timeframe=(url.searchParams.get("timeframe")||"15m").trim();
     if(request.method==="POST") return this.ingest(request);
     if(request.method!=="GET") return json({error:"method_not_allowed"},405);
+    if(url.pathname==="/status") return this.diagnostics(symbol);
     if(!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)||!Object.prototype.hasOwnProperty.call(TIMEFRAME_SECONDS,timeframe)) return json({error:"bad_request",message:"invalid symbol or timeframe",source:"mt5"},400);
     const stored=await this.state.storage.get(key(symbol,timeframe));
     if(!stored) return json({error:"mt5_feed_unavailable",message:"no MT5 data received",source:"mt5",contract:MARKET_CONTRACT_VERSION},503);
