@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable
+from typing import Callable, Sequence
 
 from .engine import LONG, SHORT, WAIT, EngineSignal, evaluate_long, evaluate_short
 from .execution import ExecutionModel, entry_price, simulate_realistic_exit
@@ -75,13 +75,34 @@ def _latest_zones(history: list[dict], timeframe: str):
 
 
 def _nearest_support(candle: dict, zones: list[PriceZone]) -> PriceZone | None:
-    candidates = [z for z in zones if float(candle["low"]) <= z.high]
-    return min(candidates, key=lambda z: abs(z.center - float(candle["close"])), default=None)
+    price = float(candle["close"])
+    candidates = [z for z in zones if z.center <= price]
+    return min(candidates, key=lambda z: price - z.center, default=None)
 
 
 def _nearest_resistance(candle: dict, zones: list[PriceZone]) -> PriceZone | None:
-    candidates = [z for z in zones if float(candle["high"]) >= z.low]
-    return min(candidates, key=lambda z: abs(z.center - float(candle["close"])), default=None)
+    price = float(candle["close"])
+    candidates = [z for z in zones if z.center >= price]
+    return min(candidates, key=lambda z: z.center - price, default=None)
+
+
+def _best_signal(signals: Sequence[EngineSignal]) -> EngineSignal:
+    directional = [signal for signal in signals if signal.action != WAIT]
+    if not directional:
+        return signals[0] if signals else EngineSignal(WAIT, "no setup", "")
+    return max(directional, key=lambda signal: signal.score.total if signal.score is not None else -1)
+
+
+def _select_signal(long_signal: EngineSignal, short_signal: EngineSignal) -> EngineSignal:
+    if long_signal.action != WAIT and short_signal.action == WAIT:
+        return long_signal
+    if short_signal.action != WAIT and long_signal.action == WAIT:
+        return short_signal
+    if long_signal.action == WAIT and short_signal.action == WAIT:
+        return EngineSignal(WAIT, "no directional setup", long_signal.timeframe)
+    long_score = long_signal.score.total if long_signal.score is not None else -1
+    short_score = short_signal.score.total if short_signal.score is not None else -1
+    return long_signal if long_score > short_score else short_signal
 
 
 def _mtf_for_current(candles_by_timeframe, timeframe: str, current: dict):
@@ -108,22 +129,10 @@ def run_backtest(
 ) -> BacktestResult:
     """Run strategy/risk sequentially over a bounded research window.
 
-    ``start_index`` and ``end_index`` define the candles whose close is treated
-    as the decision/test window. History before ``start_index`` remains visible
-    to the strategy, while exit simulation is capped at ``end_index`` so a trade
-    cannot consume observations from a later out-of-sample window.
-
-    ``entry_timing`` controls the historical fill assumption:
-
-    - ``signal_reference`` uses the strategy confirmation reference on the
-      signal candle. This preserves the original backtest behavior.
-    - ``next_bar_open`` opens at the next candle's open, matching the paper
-      session lifecycle and avoiding same-candle execution assumptions.
-
-    ``signal_filter`` is evaluated after deterministic strategy selection but
-    before risk/entry simulation. It receives the actual decision index, so a
-    research model can filter an existing LONG/SHORT signal without changing
-    the underlying setup logic.
+    Signal selection intentionally mirrors the realtime research path: all
+    support and resistance candidates are evaluated, the highest-scoring
+    directional candidate is selected, and nearest zones are used only for
+    context calculations. This keeps backtest/replay signal semantics aligned.
     """
     config = get_timeframe_config(timeframe)
     if reward_risk <= 0 or max_hold_bars < 1:
@@ -153,21 +162,11 @@ def run_backtest(
         current, prior = candles[i], candles[:i]
         supports, resistances = _latest_zones(prior, timeframe)
         mtf = _mtf_for_current(mtf_candles_by_timeframe, timeframe, current)
-        candidates = []
-        support = _nearest_support(current, supports)
-        resistance = _nearest_resistance(current, resistances)
-        if support:
-            candidates.append(evaluate_long(candles[:i + 1], support, timeframe, mtf=mtf))
-        if resistance:
-            candidates.append(evaluate_short(candles[:i + 1], resistance, timeframe, mtf=mtf))
-
-        directional = [s for s in candidates if s.action in {LONG, SHORT}]
-        if len(directional) == 1:
-            signal = directional[0]
-        elif len(directional) == 2 and all(s.score is not None for s in directional) and directional[0].score.total != directional[1].score.total:
-            signal = max(directional, key=lambda s: s.score.total)
-        else:
-            signal = EngineSignal(WAIT, "no unique directional setup", timeframe)
+        long_candidates = [evaluate_long(candles[:i + 1], zone, timeframe, mtf=mtf) for zone in supports]
+        short_candidates = [evaluate_short(candles[:i + 1], zone, timeframe, mtf=mtf) for zone in resistances]
+        long_signal = _best_signal(long_candidates) if long_candidates else EngineSignal(WAIT, "no support zone", timeframe)
+        short_signal = _best_signal(short_candidates) if short_candidates else EngineSignal(WAIT, "no resistance zone", timeframe)
+        signal = _select_signal(long_signal, short_signal)
         signals.append(signal)
         signal_indices.append(i)
 
@@ -185,38 +184,19 @@ def run_backtest(
                 reference_entry = float(candles[fill_index]["open"])
                 future_start = fill_index + 1
             else:
-                fill_index = i
                 reference_entry = float(signal.entry_reference)
                 future_start = i + 1
 
             if execution_model is None:
                 entry = reference_entry
-                plan = build_risk_plan(
-                    signal.action,
-                    entry,
-                    signal.zone,
-                    adaptive_confirmation_buffer(prior, timeframe),
-                    reward_risk,
-                )
+                plan = build_risk_plan(signal.action, entry, signal.zone, adaptive_confirmation_buffer(prior, timeframe), reward_risk)
                 future = candles[future_start:min(end_index, future_start + max_hold_bars)]
                 trade = simulate_exit(plan, future, max_hold_bars)
             else:
                 entry = entry_price(reference_entry, signal.action, execution_model)
-                plan: RiskPlan = build_risk_plan(
-                    signal.action,
-                    entry,
-                    signal.zone,
-                    adaptive_confirmation_buffer(prior, timeframe),
-                    reward_risk,
-                )
+                plan: RiskPlan = build_risk_plan(signal.action, entry, signal.zone, adaptive_confirmation_buffer(prior, timeframe), reward_risk)
                 future = candles[future_start:min(end_index, future_start + max_hold_bars)]
-                trade = simulate_realistic_exit(
-                    plan,
-                    future,
-                    execution_model,
-                    max_hold_bars,
-                    entry_is_effective=True,
-                )
+                trade = simulate_realistic_exit(plan, future, execution_model, max_hold_bars, entry_is_effective=True)
 
             trades.append(trade)
             if trade.bars_held > 0 and trade.outcome in {WIN, LOSS}:
@@ -244,23 +224,9 @@ def run_all_timeframes(
     entry_timing: str = ENTRY_TIMING_SIGNAL_REFERENCE,
 ):
     return {
-        tf: run_backtest(
-            c,
-            tf,
-            reward_risk=reward_risk,
-            max_hold_bars=max_hold_bars,
-            execution_model=execution_model,
-            entry_timing=entry_timing,
-        )
+        tf: run_backtest(c, tf, reward_risk=reward_risk, max_hold_bars=max_hold_bars, execution_model=execution_model, entry_timing=entry_timing)
         for tf, c in candles_by_timeframe.items()
     }
 
 
-__all__ = [
-    "BacktestResult",
-    "ENTRY_TIMING_NEXT_BAR_OPEN",
-    "ENTRY_TIMING_SIGNAL_REFERENCE",
-    "SignalFilter",
-    "run_all_timeframes",
-    "run_backtest",
-]
+__all__ = ["BacktestResult", "ENTRY_TIMING_NEXT_BAR_OPEN", "ENTRY_TIMING_SIGNAL_REFERENCE", "SignalFilter", "run_all_timeframes", "run_backtest"]
