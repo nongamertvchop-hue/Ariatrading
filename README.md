@@ -52,6 +52,7 @@ The project is layered so every stage can be used together without duplicating s
 32. **Signal-event identity** — deterministic `sig_...` IDs for replay/realtime signal snapshots, with canonical Python/Worker payload semantics and browser journal deduplication.
 33. **Causal outcome labeling** — paper/replay signal outcomes use only candles strictly after the signal bar and preserve explicit `AMBIGUOUS` results when OHLC cannot reveal intrabar order.
 34. **Replay outcome attachment** — completed realtime replay results can be enriched with outcome records while keeping the strategy decision immutable.
+35. **Research & innovation rules** — hypothesis-driven invention, measurable experiments, evidence-based retention, explicit failure reporting, reproducibility, and fail-closed safety boundaries. The runtime strategy boundary enforces the executable research contract.
 
 ## Key modules
 
@@ -65,7 +66,8 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/timeframe.py` — adaptive distances for 1m through 1D.
 - `strategy/mtf.py` — structural context and timestamp alignment.
 - `strategy/scoring.py` — explainable setup quality score.
-- `strategy/engine.py` — central LONG/SHORT/WAIT strategy interface.
+- `strategy/engine.py` — central LONG/SHORT/WAIT strategy interface with runtime research-contract enforcement.
+- `strategy/research_rules.py` — executable research/innovation contract and fail-closed runtime boundaries.
 - `strategy/risk.py` — hypothetical risk plans and baseline exit simulation.
 - `strategy/risk_engine.py` — account-level sizing and hard risk limits, including broker minimum/maximum quantity.
 - `strategy/portfolio_risk.py` — stateful daily-loss, drawdown and consecutive-loss kill switch.
@@ -150,3 +152,7 @@ LONG / SHORT / WAIT
 ## Research safety contract
 
 Ariatrading is a research and paper/demo system. MT5 integration remains read-only, and the research outcome layer does not place or manage broker orders.
+
+## Research & innovation contract
+
+Ariatrading does not treat novelty as proof. New mechanisms are hypotheses until measured, compared, and validated. Failures and negative results are retained as research evidence. Safety, causal data boundaries, reproducibility, and paper/demo isolation always override experimental novelty.
