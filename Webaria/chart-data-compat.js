@@ -14,12 +14,17 @@
   function normalizeTimestamp(value) {
     if (typeof value === 'number' && Number.isFinite(value)) {
       const absolute = Math.abs(value);
-      // Unix seconds are currently ~1e9; Unix milliseconds are ~1e12.
       if (absolute > 0 && absolute < 1e11) return value * 1000;
+      return value;
     }
-    if (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim())) {
-      const numeric = Number(value);
-      if (Number.isFinite(numeric) && Math.abs(numeric) < 1e11) return numeric * 1000;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+        const numeric = Number(trimmed);
+        if (Number.isFinite(numeric) && Math.abs(numeric) < 1e11) return numeric * 1000;
+      }
+      const parsed = Date.parse(trimmed);
+      if (Number.isFinite(parsed)) return parsed;
     }
     return value;
   }
@@ -55,8 +60,6 @@
         headers,
       });
     } catch {
-      // Never turn a valid API response into a chart failure because the
-      // compatibility layer could not parse or reconstruct it.
       return response;
     }
   };
