@@ -12,10 +12,13 @@
   const PLOT_LEFT = 12;
 
   let userZoomed = false;
+  let preferredVisible = null;
+  let preferredOffset = null;
   let lastCandleCount = -1;
   let lastWidth = 0;
   let lastHeight = 0;
   let wheelBusy = false;
+  let pan = null;
 
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
   const totalBars = () => Array.isArray(state.candles) ? state.candles.length : 0;
@@ -34,6 +37,8 @@
 
     state.visibleBars = Math.min(count, target);
     state.offset = 0;
+    preferredVisible = state.visibleBars;
+    preferredOffset = 0;
   }
 
   function clampViewport() {
@@ -44,6 +49,24 @@
     state.visibleBars = visible;
     const maxOffset = Math.max(0, count - visible);
     state.offset = clamp(Math.round(Number(state.offset) || 0), 0, maxOffset);
+  }
+
+  function rememberViewport() {
+    clampViewport();
+    preferredVisible = state.visibleBars;
+    preferredOffset = state.offset;
+  }
+
+  function restoreUserViewport() {
+    if (!userZoomed || preferredVisible == null) return false;
+    const beforeVisible = state.visibleBars;
+    const beforeOffset = state.offset;
+    state.visibleBars = preferredVisible;
+    state.offset = preferredOffset ?? 0;
+    clampViewport();
+    preferredVisible = state.visibleBars;
+    preferredOffset = state.offset;
+    return beforeVisible !== state.visibleBars || beforeOffset !== state.offset;
   }
 
   function resizeCanvas() {
@@ -93,8 +116,8 @@
 
     state.visibleBars = newCount;
     state.offset = total - (newStart + newCount);
-    clampViewport();
     userZoomed = true;
+    rememberViewport();
     redraw();
   }
 
@@ -107,6 +130,7 @@
     const barsPerPixel = visible / plotWidth;
     state.offset = clamp(Math.round((Number(state.offset) || 0) + dx * barsPerPixel), 0, Math.max(0, total - visible));
     userZoomed = true;
+    rememberViewport();
     redraw();
   }
 
@@ -120,16 +144,14 @@
     requestAnimationFrame(() => { wheelBusy = false; });
   }, { passive: false, capture: true });
 
-  // Desktop drag-to-pan. Existing drawing tools still work when another tool is selected.
-  let pan = null;
+  // Desktop drag-to-pan. Drawing tools remain owned by trading.js.
   canvas.addEventListener('pointerdown', (event) => {
     if (state.tool !== 'cursor' || state.pointers?.size > 1) return;
-    pan = { x: event.clientX, moved: false };
-    canvas.setPointerCapture?.(event.pointerId);
+    pan = { pointerId: event.pointerId, x: event.clientX, moved: false };
   }, { capture: true });
 
   canvas.addEventListener('pointermove', (event) => {
-    if (!pan || state.tool !== 'cursor' || (state.draft != null)) return;
+    if (!pan || pan.pointerId !== event.pointerId || state.tool !== 'cursor' || state.draft != null) return;
     const dx = pan.x - event.clientX;
     if (Math.abs(dx) < 2) return;
     pan.moved = true;
@@ -138,7 +160,10 @@
     event.stopImmediatePropagation();
   }, { capture: true });
 
-  const endPan = () => { pan = null; };
+  const endPan = (event) => {
+    if (!pan || (event && pan.pointerId !== event.pointerId)) return;
+    pan = null;
+  };
   canvas.addEventListener('pointerup', endPan, { capture: true });
   canvas.addEventListener('pointercancel', endPan, { capture: true });
 
@@ -161,34 +186,31 @@
     zoomOut: () => zoomAt(canvas.clientWidth / 2, 1.22)
   };
 
-  // trading.js refreshes the candles periodically. The old implementation reset the
-  // viewport to 90 bars on every refresh. Do not let that destroy the user's view.
+  // trading.js refreshes market data periodically and resets visibleBars to 90.
+  // Restore the user's viewport immediately after such a refresh, without polling redraws.
   setInterval(() => {
     const count = totalBars();
     if (!count) return;
 
     if (count !== lastCandleCount) {
       lastCandleCount = count;
-      if (!userZoomed) fitBarsToWidth();
-      else clampViewport();
+      if (userZoomed) restoreUserViewport();
+      else fitBarsToWidth();
       redraw();
       return;
     }
 
-    if (!userZoomed) {
-      // Initial data arrival and symbol/timeframe changes can happen without a resize.
-      // Always keep the automatic viewport sized to the actual chart width.
-      const width = wrap.clientWidth;
-      if (width && Math.abs(width - lastWidth) > 1) {
-        fitBarsToWidth();
-        lastWidth = width;
-        redraw();
-      }
+    if (userZoomed) {
+      if (restoreUserViewport()) redraw();
       return;
     }
 
-    clampViewport();
-    redraw();
+    const width = wrap.clientWidth;
+    if (width && Math.abs(width - lastWidth) > 1) {
+      fitBarsToWidth();
+      lastWidth = width;
+      redraw();
+    }
   }, 250);
 
   setTimeout(() => {
