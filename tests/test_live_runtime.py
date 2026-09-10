@@ -8,11 +8,16 @@ from live.execution_guard import ExecutionJournal
 
 
 class _Executor:
-    def __init__(self, tick_time):
+    def __init__(self, tick_time, deals=None):
         self.tick_time = tick_time
+        self.deals = deals or []
+        self.magic_number = 8808
         self.mt5 = SimpleNamespace(
             account_info=lambda: SimpleNamespace(trade_mode=2, trade_allowed=True, trade_expert=True),
             last_error=lambda: (0, "ok"),
+            DEAL_ENTRY_OUT=1,
+            DEAL_ENTRY_OUT_BY=3,
+            history_deals_get=lambda start, end: self.deals,
         )
 
     def get_account_snapshot(self):
@@ -44,9 +49,26 @@ class _Orchestrator:
 
     def __init__(self):
         self.calls = 0
+        self.kwargs = None
 
     def process_symbol(self, **kwargs):
         self.calls += 1
+        self.kwargs = kwargs
+
+
+def _runtime(tmp_path, *, now=None, tick_time=None, bar_time=None, deals=None, limits=None):
+    now = now or datetime.now(timezone.utc)
+    orchestrator = _Orchestrator()
+    runtime = LiveRuntime(
+        orchestrator=orchestrator,
+        feed=_Feed(bar_time if bar_time is not None else now - timedelta(seconds=1)),
+        executor=_Executor(tick_time if tick_time is not None else now, deals=deals),
+        journal=ExecutionJournal(tmp_path / "execution.json"),
+        limits=limits,
+        clock=lambda: now,
+    )
+    runtime.preflight = lambda: None
+    return runtime, orchestrator
 
 
 def test_daily_circuit_breaker_persists_and_blocks(tmp_path):
@@ -77,13 +99,42 @@ def test_runtime_preflight_blocks_unreconciled_journal(tmp_path):
 
 def test_runtime_skips_stale_tick(tmp_path):
     now = datetime.now(timezone.utc)
-    runtime = LiveRuntime(
-        orchestrator=_Orchestrator(), feed=_Feed(now - timedelta(minutes=15)),
-        executor=_Executor(now - timedelta(seconds=30)),
-        journal=ExecutionJournal(tmp_path / "execution.json"),
-        limits=RuntimeLimits(max_tick_age_seconds=10.0),
-        clock=lambda: now,
+    runtime, orchestrator = _runtime(
+        tmp_path, now=now, tick_time=now - timedelta(seconds=30),
+        bar_time=now - timedelta(minutes=1), limits=RuntimeLimits(max_tick_age_seconds=10.0),
     )
-    runtime.preflight = lambda: None
     assert runtime.process_once() == 0
-    assert runtime.orchestrator.calls == 0
+    assert orchestrator.calls == 0
+
+
+def test_runtime_skips_future_tick(tmp_path):
+    now = datetime.now(timezone.utc)
+    runtime, orchestrator = _runtime(tmp_path, now=now, tick_time=now + timedelta(seconds=1))
+    assert runtime.process_once() == 0
+    assert orchestrator.calls == 0
+
+
+def test_runtime_skips_future_candle(tmp_path):
+    now = datetime.now(timezone.utc)
+    runtime, orchestrator = _runtime(tmp_path, now=now, bar_time=now + timedelta(seconds=1))
+    assert runtime.process_once() == 0
+    assert orchestrator.calls == 0
+
+
+def test_runtime_forwards_realized_loss_to_strategy_boundary(tmp_path):
+    now = datetime(2026, 9, 10, 12, tzinfo=timezone.utc)
+    deals = [
+        SimpleNamespace(magic=8808, entry=1, profit=-75.0, swap=-2.0, commission=-3.0),
+        SimpleNamespace(magic=1234, entry=1, profit=-999.0, swap=0.0, commission=0.0),
+        SimpleNamespace(magic=8808, entry=0, profit=-50.0, swap=0.0, commission=0.0),
+    ]
+    runtime, orchestrator = _runtime(tmp_path, now=now, deals=deals)
+    assert runtime.process_once() == 1
+    assert orchestrator.kwargs["daily_realized_loss"] == 80.0
+
+
+def test_runtime_rejects_naive_tick_timestamp(tmp_path):
+    now = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    runtime, _ = _runtime(tmp_path, now=now, tick_time=datetime(2026, 9, 10, 12))
+    with pytest.raises(RuntimeError, match="tick timestamp must be timezone-aware"):
+        runtime.process_once()
