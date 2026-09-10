@@ -12,6 +12,14 @@ run_worker_first = ["/api/*"]
 name = "MT5_MARKET"
 class_name = "Mt5MarketStore"
 
+[[durable_objects.bindings]]
+name = "PAPER_RUNTIME_STATE"
+class_name = "PaperRuntimeStore"
+
 [exports.Mt5MarketStore]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.PaperRuntimeStore]
 type = "durable-object"
 storage = "sqlite"
