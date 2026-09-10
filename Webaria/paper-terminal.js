@@ -77,6 +77,54 @@
     }).join('');
   }
 
+  function renderMetrics() {
+    const node = $('paperMetrics');
+    if (!node) return;
+
+    const trades = state.history.filter(t => Number.isFinite(Number(t.pnl)));
+    const wins = trades.filter(t => Number(t.pnl) > 0);
+    const losses = trades.filter(t => Number(t.pnl) < 0);
+    const netPnl = trades.reduce((sum, t) => sum + Number(t.pnl), 0);
+    const grossProfit = wins.reduce((sum, t) => sum + Number(t.pnl), 0);
+    const grossLoss = Math.abs(losses.reduce((sum, t) => sum + Number(t.pnl), 0));
+    const winRate = trades.length ? (wins.length / trades.length) * 100 : 0;
+    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? Infinity : null);
+
+    let runningBalance = START_BALANCE;
+    let peakBalance = START_BALANCE;
+    let maxDrawdown = 0;
+    for (const trade of state.history) {
+      const result = Number(trade.pnl);
+      if (!Number.isFinite(result)) continue;
+      runningBalance += result;
+      peakBalance = Math.max(peakBalance, runningBalance);
+      maxDrawdown = Math.max(maxDrawdown, peakBalance - runningBalance);
+    }
+
+    const rValues = trades.map(t => {
+      const entry = Number(t.entry);
+      const stop = Number(t.sl);
+      const qty = Number(t.quantity);
+      const result = Number(t.pnl);
+      if (![entry, stop, qty, result].every(Number.isFinite) || qty <= 0 || entry === stop) return null;
+      const risk = Math.abs(entry - stop) * qty;
+      return risk > 0 ? result / risk : null;
+    }).filter(Number.isFinite);
+    const avgR = rValues.length ? rValues.reduce((sum, value) => sum + value, 0) / rValues.length : null;
+
+    const format = value => Number.isFinite(value) ? value.toFixed(2) : '—';
+    const pf = profitFactor === Infinity ? '∞' : format(profitFactor);
+
+    node.innerHTML = `
+      <div class="metric"><span>Trades</span><b>${trades.length}</b></div>
+      <div class="metric"><span>Win rate</span><b>${winRate.toFixed(1)}%</b></div>
+      <div class="metric"><span>Net P/L</span><b>${netPnl >= 0 ? '+' : ''}${format(netPnl)}</b></div>
+      <div class="metric"><span>Profit factor</span><b>${pf}</b></div>
+      <div class="metric"><span>Max drawdown</span><b>${format(maxDrawdown)}</b></div>
+      <div class="metric"><span>Avg R</span><b>${avgR == null ? '—' : `${avgR >= 0 ? '+' : ''}${avgR.toFixed(2)}R`}</b></div>
+    `;
+  }
+
   function render() {
     const position = state.position;
     const price = currentPrice();
@@ -90,6 +138,7 @@
     $('close').disabled = !position || !sameSymbol || !Number.isFinite(price);
     $('buy').disabled = !!position;
     $('sell').disabled = !!position;
+    renderMetrics();
     renderHistory();
   }
 
@@ -139,6 +188,8 @@
       side: position.side,
       quantity: position.quantity,
       entry: position.entry,
+      sl: position.sl ?? null,
+      tp: position.tp ?? null,
       exit: exitPrice,
       pnl: realized,
       reason,
@@ -247,7 +298,7 @@
       const latestBar = bars[bars.length - 1];
       if (!latestBar) return;
 
-      let anchor = timeValue(position.entry_bar_time);
+      const anchor = timeValue(position.entry_bar_time);
       if (!Number.isFinite(anchor)) {
         // Legacy positions are migrated without evaluating any old bar.
         position.entry_bar_time = latestBar.time;
