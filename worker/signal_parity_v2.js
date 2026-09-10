@@ -126,12 +126,13 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
   }
 
   const selectedScore = strategySignal.action === LONG || strategySignal.action === SHORT ? strategySignal.score ?? null : null;
+  const latestRawCandle = rawCandles[rawCandles.length - 1];
   return {
     signal: finalSignal.action,
     state: finalSignal.state ?? "APPROACH",
     reason: finalSignal.reason,
     price: currentPrice,
-    bar_time: candles[candles.length - 1].datetime ?? candles[candles.length - 1].time ?? null,
+    bar_time: latestRawCandle?.datetime ?? latestRawCandle?.time ?? null,
     structure_bias: finalSignal.structureBias ?? structure.bias,
     zone: finalSignal.zone ?? null,
     entry_reference: finalSignal.entryReference ?? null,
