@@ -1,11 +1,13 @@
 """Read-only HTTP bridge from a local MetaTrader 5 terminal to Webaria.
 
-This process exposes completed MT5 candles and the current bid/ask through a
-small authenticated HTTP API. It never calls order_check/order_send and does
-not change trading state.
+This process reads market data from a local MetaTrader 5 terminal. It can serve
+that data locally and, when `MT5_INGEST_URL` is configured, continuously push the
+same payload to the Webaria `/api/mt5/ingest` endpoint. It never calls
+order_check/order_send and never changes trading state.
 
-Run this on the same Windows host as the MT5 terminal. Put the endpoint behind
-HTTPS/reverse-proxy or a private tunnel before exposing it to Cloudflare.
+Run this on the same Windows host as the MT5 terminal. Keep the bridge token out
+of Git. The hosted Webaria path should receive data through the authenticated
+HTTPS ingest endpoint instead of exposing the MT5 machine directly.
 """
 
 from __future__ import annotations
@@ -14,9 +16,13 @@ import json
 import math
 import os
 import secrets
+import threading
+import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlparse
 
 try:
@@ -37,6 +43,7 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8787
 DEFAULT_COUNT = 100
 MAX_COUNT = 500
+DEFAULT_PUSH_INTERVAL_SECONDS = 3.0
 
 
 def _env_token() -> str:
@@ -109,11 +116,7 @@ def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
         "candles": completed[-count:],
         "live_candle": live,
         "price": midpoint,
-        "tick": {
-            "time": int(tick.time),
-            "bid": bid,
-            "ask": ask,
-        },
+        "tick": {"time": int(tick.time), "bid": bid, "ask": ask},
         "source": "mt5",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "received_at": int(datetime.now(timezone.utc).timestamp()),
@@ -121,8 +124,70 @@ def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
     }
 
 
+def push_to_ingest(payload: dict[str, Any]) -> None:
+    target = os.getenv("MT5_INGEST_URL", "").strip()
+    if not target:
+        raise RuntimeError("MT5_INGEST_URL is not configured")
+    token = _env_token()
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    request = Request(
+        target,
+        data=body,
+        method="POST",
+        headers={
+            "authorization": f"Bearer {token}",
+            "content-type": "application/json",
+            "content-length": str(len(body)),
+        },
+    )
+    try:
+        with urlopen(request, timeout=8) as response:
+            if response.status < 200 or response.status >= 300:
+                raise RuntimeError(f"MT5 ingest returned HTTP {response.status}")
+    except HTTPError as exc:
+        raise RuntimeError(f"MT5 ingest HTTP {exc.code}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"MT5 ingest connection failed: {exc.reason}") from exc
+
+
+def _configured_symbols() -> tuple[str, ...]:
+    raw = os.getenv("MT5_MARKET_SYMBOLS", "EURUSD")
+    symbols = tuple(_symbol_name(item) for item in raw.split(",") if item.strip())
+    if not symbols or len(set(symbols)) != len(symbols):
+        raise RuntimeError("MT5_MARKET_SYMBOLS must contain unique MT5 symbols")
+    return symbols
+
+
+def _configured_timeframes() -> tuple[str, ...]:
+    raw = os.getenv("MT5_MARKET_TIMEFRAMES", "1m,5m,15m,30m,1h,4h,1D")
+    values = tuple(_timeframe(item) for item in raw.split(",") if item.strip())
+    if not values or len(set(values)) != len(values):
+        raise RuntimeError("MT5_MARKET_TIMEFRAMES must contain unique supported timeframes")
+    return values
+
+
+def publish_loop(stop_event: threading.Event) -> None:
+    interval = float(os.getenv("MT5_PUSH_INTERVAL_SECONDS", str(DEFAULT_PUSH_INTERVAL_SECONDS)))
+    if not math.isfinite(interval) or interval < 1.0:
+        raise RuntimeError("MT5_PUSH_INTERVAL_SECONDS must be finite and >= 1 second")
+    symbols = _configured_symbols()
+    timeframes = _configured_timeframes()
+
+    while not stop_event.is_set():
+        cycle_started = time.monotonic()
+        for symbol in symbols:
+            for timeframe in timeframes:
+                try:
+                    payload = market_payload(symbol, timeframe, DEFAULT_COUNT)
+                    push_to_ingest(payload)
+                except Exception as exc:
+                    print(f"MT5 ingest failed for {symbol} {timeframe}: {exc}")
+        elapsed = time.monotonic() - cycle_started
+        stop_event.wait(max(0.0, interval - elapsed))
+
+
 class Handler(BaseHTTPRequestHandler):
-    server_version = "AriatradingMT5Bridge/1.0"
+    server_version = "AriatradingMT5Bridge/1.1"
 
     def _json(self, status: int, body: dict[str, Any]) -> None:
         payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
@@ -170,11 +235,21 @@ def main() -> None:
     host = os.getenv("MT5_MARKET_BRIDGE_HOST", DEFAULT_HOST).strip() or DEFAULT_HOST
     port = int(os.getenv("MT5_MARKET_BRIDGE_PORT", str(DEFAULT_PORT)))
     server = ThreadingHTTPServer((host, port), Handler)
+    stop_event = threading.Event()
+    publisher = None
+    if os.getenv("MT5_INGEST_URL", "").strip():
+        publisher = threading.Thread(target=publish_loop, args=(stop_event,), name="mt5-market-publisher", daemon=True)
+        publisher.start()
     print(f"Ariatrading MT5 market bridge listening on http://{host}:{port}/market")
     print("Read-only bridge: order execution is not available from this process.")
+    if publisher is not None:
+        print("Push mode enabled: MT5 -> Webaria /api/mt5/ingest")
     try:
         server.serve_forever()
     finally:
+        stop_event.set()
+        if publisher is not None:
+            publisher.join(timeout=5)
         server.shutdown()
         mt5.shutdown()
 
