@@ -21,5 +21,8 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit
+
       - name: Audit ML dependencies
         run: python -m pip_audit -r requirements-ml.txt
