@@ -54,14 +54,14 @@ A score of 50/50 is not permission to trade money. The release gate additionally
 | 46 | Broker/local clock-skew protection | Implemented |
 | 47 | Timezone-aware timestamps | Enforced on runtime clock/ticks/candles |
 | 48 | Strategy/backtest parity | Existing project work; must be verified continuously |
-| 49 | DEMO soak + shadow comparison | Release requirement |
-| 50 | Staged LIVE rollout / emergency rollback procedure | Runbook + release requirement |
+| 49 | DEMO soak + shadow comparison | Release requirement with runtime evidence |
+| 50 | Staged LIVE rollout / emergency rollback procedure | Runbook + kill switch + release requirement |
 
 ## Implementation boundary
 
 The guarded entrypoint is `python -m live.live_entry`. It is the intended operator path for DEMO/LIVE. `live/live_runtime.py` is the single safety control plane and delegates signal generation to the existing orchestrator; it does not create a second strategy.
 
-The legacy `run()` path in `live/runner.py` should be treated as compatibility code until it is fully redirected to the guarded runtime. Do not maintain two independent production polling loops.
+The legacy `run()` path in `live/runner.py` remains compatibility code and must not be used as a second independent production runtime. Future changes should redirect it to `LiveRuntime` rather than adding more gates to the legacy loop.
 
 ## Hard release gate
 
