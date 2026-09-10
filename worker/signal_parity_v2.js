@@ -117,10 +117,11 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
 
   let finalSignal = strategySignal;
   if (supervisor.action !== "ALLOW") {
+    // Python keeps the underlying strategy reason for diagnosis while the
+    // supervisor carries the blocking reason separately.
     finalSignal = {
       ...strategySignal,
       action: WAIT,
-      reason: `realtime supervisor: ${supervisor.reasons.join("; ")}`,
       protection: "BLOCKED",
     };
   }
