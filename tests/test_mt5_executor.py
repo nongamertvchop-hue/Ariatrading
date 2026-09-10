@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,7 +25,9 @@ class FakeMT5Module:
 
     def __init__(self) -> None:
         self.last_req = None
+        self.check_req = None
         self.should_fail = False
+        self.should_check_fail = False
 
     def initialize(self, **kwargs):
         return True
@@ -74,6 +77,12 @@ class FakeMT5Module:
 
         return Tick()
 
+    def order_check(self, req):
+        self.check_req = req
+        if self.should_check_fail:
+            return SimpleNamespace(retcode=10014, comment="Invalid volume")
+        return SimpleNamespace(retcode=0, comment="Check passed")
+
     def order_send(self, req):
         self.last_req = req
         if self.should_fail:
@@ -113,7 +122,6 @@ def test_mt5_executor_connect_and_contract():
     mock_mt5 = FakeMT5Module()
     executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
     assert executor.connect()
-
     contract = executor.get_symbol_contract("EURUSD")
     assert contract.symbol == "EURUSD"
     assert contract.digits == 5
@@ -124,9 +132,7 @@ def test_mt5_executor_connect_and_contract():
 def test_mt5_executor_reads_account_snapshot():
     executor = MT5LiveExecutor(mt5_module=FakeMT5Module())
     executor.connect()
-
     account = executor.get_account_snapshot()
-
     assert account.login == 123456
     assert account.balance == 10000.0
     assert account.equity == 9950.0
@@ -135,50 +141,52 @@ def test_mt5_executor_reads_account_snapshot():
     assert account.trade_expert is True
 
 
-def test_mt5_executor_buy_order_success():
+def test_mt5_executor_buy_order_runs_order_check_before_send():
     mock_mt5 = FakeMT5Module()
     executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
     executor.connect()
-
-    res = executor.send_market_order(
-        symbol="EURUSD",
-        direction=ORDER_BUY,
-        volume=0.5,
-        sl=1.09800,
-        tp=1.10400,
-        deviation_points=10,
-    )
+    res = executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0.5, sl=1.09800, tp=1.10400, deviation_points=10)
     assert res.success
-    assert res.ticket == 123456
+    assert mock_mt5.check_req == mock_mt5.last_req
     assert mock_mt5.last_req["type"] == mock_mt5.ORDER_TYPE_BUY
     assert mock_mt5.last_req["sl"] == 1.09800
     assert mock_mt5.last_req["tp"] == 1.10400
     assert mock_mt5.last_req["magic"] == 8808
 
 
+def test_mt5_executor_order_check_failure_never_sends():
+    mock_mt5 = FakeMT5Module()
+    mock_mt5.should_check_fail = True
+    executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
+    executor.connect()
+    res = executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0.5, sl=1.09800, tp=1.10400)
+    assert not res.success
+    assert "order_check rejected" in res.error_message
+    assert mock_mt5.last_req is None
+
+
 def test_mt5_executor_rejects_invalid_volume_and_tp():
     executor = MT5LiveExecutor(mt5_module=FakeMT5Module())
     executor.connect()
+    assert not executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0, sl=1.09800).success
+    assert not executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0.1, sl=1.09800, tp=0).success
 
-    assert not executor.send_market_order(
-        symbol="EURUSD", direction=ORDER_BUY, volume=0, sl=1.09800
-    ).success
-    assert not executor.send_market_order(
-        symbol="EURUSD", direction=ORDER_BUY, volume=0.1, sl=1.09800, tp=0
-    ).success
+
+def test_mt5_executor_rejects_invalid_volume_step():
+    mock_mt5 = FakeMT5Module()
+    executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
+    executor.connect()
+    res = executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0.015, sl=1.09800)
+    assert not res.success
+    assert "min/max/step" in res.error_message
+    assert mock_mt5.last_req is None
 
 
 def test_mt5_executor_sell_order_validation():
     mock_mt5 = FakeMT5Module()
     executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
     executor.connect()
-
-    res = executor.send_market_order(
-        symbol="EURUSD",
-        direction=ORDER_SELL,
-        volume=0.5,
-        sl=1.09000,
-    )
+    res = executor.send_market_order(symbol="EURUSD", direction=ORDER_SELL, volume=0.5, sl=1.09000)
     assert not res.success
     assert "SELL Stop Loss must be above entry price" in res.error_message
 
@@ -187,20 +195,16 @@ def test_mt5_executor_positions_and_close():
     mock_mt5 = FakeMT5Module()
     executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
     executor.connect()
-
     positions = executor.get_open_positions()
     assert len(positions) == 1
     assert positions[0].ticket == 123456
     assert positions[0].symbol == "EURUSD"
-
     close_res = executor.close_position(123456)
     assert close_res.success
     assert close_res.ticket == 123456
 
 
 def test_mt5_executor_cannot_close_foreign_strategy_position():
-    mock_mt5 = FakeMT5Module()
-
     class ForeignPositionModule(FakeMT5Module):
         def positions_get(self, **kwargs):
             rows = super().positions_get(**kwargs)
@@ -209,7 +213,6 @@ def test_mt5_executor_cannot_close_foreign_strategy_position():
 
     executor = MT5LiveExecutor(mt5_module=ForeignPositionModule(), magic_number=8808)
     executor.connect()
-
     result = executor.close_position(123456)
     assert not result.success
     assert "not owned by this strategy" in result.error_message
