@@ -1,98 +1,356 @@
 <!doctype html>
-<html lang="en">
+<html lang="th">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ARIA Paper Trading Dashboard</title>
+  <meta name="theme-color" content="#070b14">
+  <meta name="description" content="ARIA Paper Trading Dashboard — persistent paper runtime, equity, position and operational telemetry.">
+  <title>ARIA · Paper Runtime</title>
   <style>
-    :root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}
-    *{box-sizing:border-box}body{margin:0;background:#090c11;color:#eef2f7}main{max-width:1280px;margin:0 auto;padding:26px 18px 50px}
-    h1{margin:0;font-size:28px}.sub{margin:6px 0 20px;color:#8f9aab}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.card{background:#121722;border:1px solid #242c39;border-radius:12px;padding:15px}.wide{grid-column:span 2}.full{grid-column:1/-1}.label{color:#8f9aab;font-size:11px;text-transform:uppercase;letter-spacing:.08em}.value{font-size:20px;font-weight:700;margin-top:7px;word-break:break-word}
-    .controls{display:flex;gap:8px;flex-wrap:wrap}.controls button,.controls select{background:#1a2230;border:1px solid #354052;color:#fff;border-radius:9px;padding:9px 12px}.controls button{cursor:pointer}.controls button:hover{background:#222c3d}.danger{border-color:#6f3333!important}.status{display:inline-flex;align-items:center;gap:8px}.dot{width:9px;height:9px;border-radius:50%;background:#707987}.dot.run{background:#61d79f}.dot.halt{background:#ef7070}
-    .pipeline{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:10px}.step{padding:10px;border-radius:9px;background:#0f141d;border:1px solid #273040;text-align:center;font-size:12px}.step.active{border-color:#7fa8ff;box-shadow:0 0 0 1px #7fa8ff33 inset}.notice{padding:11px 12px;border-radius:9px;background:#1a1510;border:1px solid #4b3b22;color:#d7c398}
-    .events{max-height:380px;overflow:auto}.rt-event{display:grid;grid-template-columns:150px 190px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid #202837;font-size:13px}.rt-event span{font-weight:700}.rt-event small{color:#aab3c1}.chart{height:240px;width:100%;display:block;background:#0d1219;border-radius:9px}.security{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.6;color:#aeb8c8}
-    @media (max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:span 2}.pipeline{grid-template-columns:repeat(3,1fr)}.rt-event{grid-template-columns:1fr}}
-    @media (max-width:560px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}.pipeline{grid-template-columns:repeat(2,1fr)}}
+    :root{
+      color-scheme:dark;
+      --bg:#070b14;
+      --bg-2:#0a1020;
+      --panel:rgba(15,23,42,.82);
+      --panel-strong:#10192d;
+      --panel-soft:rgba(19,30,52,.64);
+      --line:rgba(148,163,184,.14);
+      --line-strong:rgba(148,163,184,.24);
+      --text:#f6f8fc;
+      --muted:#8f9ab0;
+      --muted-2:#647087;
+      --accent:#8bb6ff;
+      --accent-2:#66e0b0;
+      --danger:#ff6f7d;
+      --warning:#e8c46a;
+      --shadow:0 20px 55px rgba(0,0,0,.28);
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+    *{box-sizing:border-box}
+    html{background:var(--bg)}
+    body{
+      margin:0;min-height:100vh;color:var(--text);
+      background:
+        radial-gradient(circle at 8% -5%,rgba(105,145,255,.13),transparent 32%),
+        radial-gradient(circle at 93% 0%,rgba(84,220,176,.07),transparent 30%),
+        linear-gradient(180deg,#070b14 0%,#09101d 48%,#070b14 100%);
+    }
+    button,select{font:inherit}
+    button{border:0}
+    a{color:inherit;text-decoration:none}
+    .shell{max-width:1420px;margin:0 auto;padding:28px 20px 52px}
+    .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+    .brand{display:flex;align-items:center;gap:12px;min-width:0}
+    .brand-mark{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:linear-gradient(135deg,#9cc1ff,#607fe4);color:#081020;font-weight:900;letter-spacing:.04em;box-shadow:0 12px 28px rgba(98,134,236,.24)}
+    .brand-copy{min-width:0}
+    .eyebrow{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:800}
+    h1{margin:2px 0 3px;font-size:clamp(24px,3vw,36px);line-height:1.05;letter-spacing:-.035em}
+    .subtitle{margin:0;color:var(--muted);font-size:13px;max-width:760px}
+    .top-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:flex-end}
+    .ghost-link,.mini-badge{border:1px solid var(--line-strong);background:rgba(17,25,43,.7);padding:9px 12px;border-radius:10px;font-size:12px;color:#cbd4e3}
+    .hero{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,.75fr);gap:14px;margin-bottom:14px}
+    .panel{background:linear-gradient(180deg,rgba(17,26,46,.92),rgba(11,18,32,.88));border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);backdrop-filter:blur(14px)}
+    .hero-main{padding:22px;position:relative;overflow:hidden}
+    .hero-main:after{content:"";position:absolute;inset:auto -80px -110px auto;width:260px;height:260px;border-radius:50%;background:radial-gradient(circle,rgba(107,146,255,.15),transparent 68%);pointer-events:none}
+    .hero-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px}
+    .runtime-badge{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:rgba(102,224,176,.08);border:1px solid rgba(102,224,176,.2);color:#b6efd9;font-size:11px;font-weight:800;white-space:nowrap}
+    .dot{width:8px;height:8px;border-radius:50%;background:#7a8495;box-shadow:0 0 0 4px rgba(122,132,149,.08)}
+    .dot.run{background:var(--accent-2);box-shadow:0 0 0 4px rgba(102,224,176,.08),0 0 18px rgba(102,224,176,.4)}
+    .dot.halt{background:var(--danger);box-shadow:0 0 0 4px rgba(255,111,125,.08),0 0 18px rgba(255,111,125,.38)}
+    .hero-stat{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+    .stat-box{padding:13px 14px;border:1px solid var(--line);background:rgba(6,11,22,.34);border-radius:13px}
+    .stat-label{color:var(--muted-2);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em}
+    .stat-value{margin-top:6px;font-size:18px;font-weight:800;letter-spacing:-.02em}
+    .stat-value.big{font-size:25px}
+    .hero-side{padding:20px;display:flex;flex-direction:column;justify-content:space-between;min-height:240px}
+    .side-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+    .side-title{font-size:12px;text-transform:uppercase;letter-spacing:.1em;font-weight:800;color:var(--muted)}
+    .mode-card{padding:15px;border-radius:14px;background:linear-gradient(180deg,rgba(139,182,255,.08),rgba(139,182,255,.02));border:1px solid rgba(139,182,255,.16)}
+    .mode-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:800}
+    .mode-value{font-size:27px;font-weight:900;letter-spacing:-.04em;margin-top:5px}
+    .mode-copy{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5}
+    .health-list{display:grid;gap:7px;margin-top:12px}
+    .health-row{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px}
+    .health-row:last-child{border-bottom:0}
+    .health-key{color:var(--muted)}
+    .health-ok{color:#a9efd7;font-weight:800}
+    .health-warn{color:#f3d995;font-weight:800}
+    .health-bad{color:#ff9aa4;font-weight:800}
+
+    .toolbar{padding:13px;display:grid;grid-template-columns:1fr auto;gap:12px;margin-bottom:14px}
+    .toolbar-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .control,.select{height:38px;padding:0 12px;border-radius:10px;border:1px solid var(--line-strong);background:#0d1526;color:#eaf0fa;outline:none}
+    .control:focus,.select:focus{border-color:rgba(139,182,255,.7);box-shadow:0 0 0 3px rgba(139,182,255,.1)}
+    .btn{height:38px;padding:0 13px;border-radius:10px;background:#142039;color:#dfe8f8;border:1px solid rgba(139,182,255,.16);cursor:pointer;font-size:12px;font-weight:800;transition:transform .15s ease,background .15s ease,border-color .15s ease}
+    .btn:hover{transform:translateY(-1px);background:#1a2a49;border-color:rgba(139,182,255,.34)}
+    .btn.primary{background:linear-gradient(135deg,#88b5ff,#637fe0);color:#071020;border-color:transparent}
+    .btn.primary:hover{background:linear-gradient(135deg,#9cc2ff,#718cf0)}
+    .btn.soft{background:rgba(102,224,176,.07);border-color:rgba(102,224,176,.18);color:#b7eedc}
+    .btn.danger{background:rgba(255,111,125,.07);border-color:rgba(255,111,125,.2);color:#ffacb5}
+    .toolbar-note{display:flex;align-items:center;justify-content:flex-end;color:var(--muted);font-size:11px;text-align:right;line-height:1.4}
+
+    .section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 10px}
+    .section-title{font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.11em;color:#b7c2d3}
+    .section-meta{font-size:11px;color:var(--muted-2)}
+    .metric-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:14px}
+    .metric{padding:15px;border-radius:14px;background:rgba(13,20,35,.82);border:1px solid var(--line);min-width:0}
+    .metric .label{font-size:10px;color:var(--muted-2);font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+    .metric .value{font-size:18px;font-weight:850;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .metric .sub{font-size:10px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+    .layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(340px,.65fr);gap:14px}
+    .card{padding:18px}
+    .chart-wrap{height:300px;border-radius:13px;border:1px solid var(--line);background:linear-gradient(180deg,#0b1220,#09101b);overflow:hidden;position:relative}
+    .chart{height:100%;width:100%;display:block}
+    .chart-overlay{position:absolute;left:12px;top:12px;display:flex;gap:7px;flex-wrap:wrap}
+    .chip{padding:6px 9px;border-radius:999px;background:rgba(7,12,22,.76);border:1px solid rgba(148,163,184,.16);font-size:10px;color:#aeb9cb;backdrop-filter:blur(8px)}
+    .pipeline{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px;margin-top:11px}
+    .step{min-height:64px;padding:9px 7px;border:1px solid var(--line);border-radius:11px;background:#0b1424;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:5px}
+    .step-index{font-size:9px;color:var(--muted-2);font-weight:800}
+    .step-name{font-size:10px;font-weight:850;color:#c7d1e1}
+    .step.active{border-color:rgba(139,182,255,.54);background:linear-gradient(180deg,rgba(139,182,255,.13),rgba(139,182,255,.04));box-shadow:inset 0 0 0 1px rgba(139,182,255,.08),0 10px 28px rgba(71,103,186,.09)}
+    .step.active .step-name{color:#dce8ff}
+    .invariant{margin-top:12px;padding:11px 12px;border-radius:11px;border:1px solid rgba(102,224,176,.14);background:rgba(102,224,176,.045);font-size:11px;color:#a9cdbf;line-height:1.55}
+
+    .side-stack{display:grid;gap:14px;align-content:start}
+    .position{display:grid;gap:10px}
+    .position-main{padding:14px;border-radius:13px;background:#0b1423;border:1px solid var(--line)}
+    .position-side{font-size:11px;font-weight:900;letter-spacing:.1em}
+    .position-side.long{color:#a8efd9}.position-side.short{color:#ffadb6}.position-side.flat{color:#9aa7bb}
+    .position-price{font-size:24px;font-weight:900;margin-top:5px;letter-spacing:-.03em}
+    .position-detail{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+    .kv{padding:10px;border-radius:10px;background:rgba(7,12,22,.5);border:1px solid var(--line)}
+    .kv span{display:block}.kv .k{font-size:9px;color:var(--muted-2);text-transform:uppercase;letter-spacing:.08em}.kv .v{margin-top:3px;font-size:11px;font-weight:800;color:#dce4f2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+    .events{max-height:365px;overflow:auto;padding-right:2px}
+    .events::-webkit-scrollbar{width:7px}.events::-webkit-scrollbar-thumb{background:#202c42;border-radius:10px}
+    .rt-event{display:grid;grid-template-columns:120px minmax(130px,.7fr) minmax(0,1fr);gap:10px;padding:11px 0;border-bottom:1px solid var(--line);font-size:11px}
+    .rt-event span{font-weight:900;color:#d7e0ef}.rt-event small{color:var(--muted-2)}.rt-event div{color:#aeb9c9;overflow-wrap:anywhere}
+    .empty{padding:28px 10px;text-align:center;color:var(--muted-2);font-size:12px}
+
+    .security{font:11px/1.8 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#95a3b8;word-break:break-word;padding:13px 14px;border:1px solid var(--line);background:#08101d;border-radius:12px}
+    .footer-row{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-top:14px;color:var(--muted-2);font-size:10px}
+
+    @media (max-width:1180px){.metric-grid{grid-template-columns:repeat(3,1fr)}.hero{grid-template-columns:1fr}.layout{grid-template-columns:1fr}.toolbar{grid-template-columns:1fr}.toolbar-note{justify-content:flex-start;text-align:left}}
+    @media (max-width:760px){.shell{padding:18px 12px 38px}.topbar,.hero-title{align-items:flex-start;flex-direction:column}.top-actions{justify-content:flex-start}.hero-stat{grid-template-columns:1fr}.metric-grid{grid-template-columns:repeat(2,1fr)}.pipeline{grid-template-columns:repeat(3,1fr)}.position-detail{grid-template-columns:1fr 1fr}.rt-event{grid-template-columns:1fr}.toolbar-group{align-items:stretch}.control,.select,.btn{width:100%}.toolbar-group > *{flex:1 1 140px}.chart-wrap{height:250px}}
+    @media (max-width:460px){.metric-grid{grid-template-columns:1fr}.pipeline{grid-template-columns:repeat(2,1fr)}.position-detail{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
-<main>
-  <h1>ARIA Paper Trading Dashboard</h1>
-  <div class="sub">Realtime closed-candle paper execution · persistent checkpoint · P/L, equity & drawdown · no real broker</div>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">AR</div>
+        <div class="brand-copy">
+          <div class="eyebrow">ARIA Trading System</div>
+          <h1>Paper Runtime</h1>
+          <p class="subtitle">ศูนย์ควบคุม Paper Trading แบบปิดแท่งเทียน พร้อมสถานะบัญชี ตำแหน่ง และ telemetry แบบถาวร</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span class="mini-badge">PAPER ONLY</span>
+        <a class="ghost-link" href="/">← Main terminal</a>
+        <a class="ghost-link" href="/operational-console.html">Operations →</a>
+      </div>
+    </header>
 
-  <div class="card full">
-    <div class="controls">
-      <select id="paperRuntimeSymbol"><option>EUR/USD</option><option>GBP/USD</option><option>USD/JPY</option><option>AUD/USD</option><option>USD/CAD</option></select>
-      <select id="paperRuntimeTf"><option>1m</option><option selected>5m</option><option>15m</option><option>30m</option><option>1h</option><option>4h</option><option>1D</option></select>
-      <button id="start">Start runtime</button><button id="stop">Stop runtime</button><button id="recover">Crash / restart recovery</button>
-      <select id="failure"><option value="NONE">Failure injection: NONE</option><option value="TIMEOUT_AFTER_ACCEPT">Timeout after accept</option><option value="DISCONNECT_BEFORE_SUBMIT">Disconnect before submit</option><option value="REJECT">Order reject</option><option value="PARTIAL_FILL">Partial fill</option><option value="DISAPPEAR_POSITION">Broker position disappears</option><option value="CHECKPOINT_CORRUPTION">Checkpoint corruption test</option></select>
-      <button id="applyFailure">Apply failure</button><button id="soak">Run 10k replay</button><button id="export">Export snapshot</button><button id="reset" class="danger">Reset paper account</button>
-    </div>
-  </div>
+    <section class="hero">
+      <div class="panel hero-main">
+        <div class="hero-title">
+          <div>
+            <div class="eyebrow">Runtime status</div>
+            <h2 style="margin:6px 0 0;font-size:25px;letter-spacing:-.03em">Paper execution monitor</h2>
+          </div>
+          <div class="runtime-badge"><i id="rtDot" class="dot"></i><span id="rtMode">STOPPED</span></div>
+        </div>
+        <div class="hero-stat">
+          <div class="stat-box"><div class="stat-label">Lifecycle</div><div class="stat-value" id="rtState">FLAT</div></div>
+          <div class="stat-box"><div class="stat-label">Market</div><div class="stat-value" id="rtSymbol">EUR/USD · 5m</div></div>
+          <div class="stat-box"><div class="stat-label">Last closed candle</div><div class="stat-value" id="rtLastBar">—</div></div>
+        </div>
+      </div>
+      <aside class="panel hero-side">
+        <div>
+          <div class="side-head"><div class="side-title">Runtime contract</div><span class="mini-badge">v1</span></div>
+          <div class="mode-card">
+            <div class="mode-label">Execution mode</div>
+            <div class="mode-value">PAPER</div>
+            <div class="mode-copy">ไม่มีการส่งคำสั่งซื้อขายไปโบรกเกอร์จริง · execution = NONE</div>
+          </div>
+        </div>
+        <div class="health-list">
+          <div class="health-row"><span class="health-key">Checkpoint</span><span id="rtCheckpoint" class="health-ok">OK</span></div>
+          <div class="health-row"><span class="health-key">Heartbeat</span><span id="rtHeartbeat">—</span></div>
+          <div class="health-row"><span class="health-key">Failure mode</span><span id="rtFailure">NONE</span></div>
+        </div>
+      </aside>
+    </section>
 
-  <div class="grid" style="margin-top:12px">
-    <div class="card"><div class="label">Runtime</div><div class="value status"><i id="rtDot" class="dot"></i><span id="rtMode">STOPPED</span></div></div>
-    <div class="card"><div class="label">Lifecycle</div><div class="value" id="rtState">FLAT</div></div>
-    <div class="card"><div class="label">Market</div><div class="value" id="rtSymbol">EUR/USD · 5m</div></div>
-    <div class="card"><div class="label">Last closed candle</div><div class="value" id="rtLastBar">—</div></div>
-    <div class="card"><div class="label">Balance</div><div class="value" id="rtBalance">10000.00</div></div>
-    <div class="card"><div class="label">Equity</div><div class="value" id="rtEquity">10000.00</div></div>
-    <div class="card"><div class="label">Realized P/L</div><div class="value" id="rtRealized">+0.00</div></div>
-    <div class="card"><div class="label">Unrealized P/L</div><div class="value" id="rtUnrealized">+0.00</div></div>
-    <div class="card"><div class="label">Peak equity</div><div class="value" id="rtPeak">10000.00</div></div>
-    <div class="card"><div class="label">Drawdown</div><div class="value" id="rtDrawdown">0.00 (0.00%)</div></div>
-    <div class="card"><div class="label">Trades</div><div class="value" id="rtTrades">0</div></div>
-    <div class="card"><div class="label">Win rate</div><div class="value" id="rtWinRate">0.00%</div></div>
-    <div class="card wide"><div class="label">Position</div><div class="value" id="rtPosition">FLAT</div></div>
-    <div class="card wide"><div class="label">Failure mode</div><div class="value" id="rtFailure">NONE</div></div>
-    <div class="card"><div class="label">Checkpoint</div><div class="value" id="rtCheckpoint">OK</div></div>
-    <div class="card"><div class="label">Heartbeat</div><div class="value" id="rtHeartbeat">—</div></div>
-    <div class="card wide"><div class="label">Last soak</div><div class="value" id="rtSoak">—</div></div>
-    <div class="card full"><div class="label">Halt reason</div><div class="value" id="rtHalt">—</div></div>
-  </div>
+    <section class="panel toolbar">
+      <div class="toolbar-group">
+        <select id="paperRuntimeSymbol" class="select" aria-label="Paper symbol"><option>EUR/USD</option><option>GBP/USD</option><option>USD/JPY</option><option>AUD/USD</option><option>USD/CAD</option></select>
+        <select id="paperRuntimeTf" class="select" aria-label="Paper timeframe"><option>1m</option><option selected>5m</option><option>15m</option><option>30m</option><option>1h</option><option>4h</option><option>1D</option></select>
+        <button id="start" class="btn primary">Start runtime</button>
+        <button id="stop" class="btn">Stop</button>
+        <button id="recover" class="btn soft">Recover</button>
+        <select id="failure" class="select" aria-label="Failure injection"><option value="NONE">Failure injection: NONE</option><option value="TIMEOUT_AFTER_ACCEPT">Timeout after accept</option><option value="DISCONNECT_BEFORE_SUBMIT">Disconnect before submit</option><option value="REJECT">Order reject</option><option value="PARTIAL_FILL">Partial fill</option><option value="DISAPPEAR_POSITION">Broker position disappears</option><option value="CHECKPOINT_CORRUPTION">Checkpoint corruption test</option></select>
+        <button id="applyFailure" class="btn">Apply failure</button>
+        <button id="soak" class="btn">10k replay</button>
+        <button id="export" class="btn">Export</button>
+        <button id="reset" class="btn danger">Reset account</button>
+      </div>
+      <div class="toolbar-note">ระบบนี้ตั้งใจให้เป็น Paper / Demo เท่านั้น<br>สถานะหลักถูกส่งไปยัง durable runtime contract</div>
+    </section>
 
-  <div class="card full" style="margin-top:12px"><div class="label">Equity curve</div><canvas id="equityChart" class="chart"></canvas></div>
+    <section>
+      <div class="section-head"><div class="section-title">Account telemetry</div><div class="section-meta">Mark-to-market · peak-to-equity drawdown</div></div>
+      <div class="metric-grid">
+        <div class="metric"><div class="label">Balance</div><div class="value" id="rtBalance">10000.00</div><div class="sub">starting paper capital</div></div>
+        <div class="metric"><div class="label">Equity</div><div class="value" id="rtEquity">10000.00</div><div class="sub">balance + unrealized</div></div>
+        <div class="metric"><div class="label">Realized P/L</div><div class="value" id="rtRealized">+0.00</div><div class="sub">closed trades</div></div>
+        <div class="metric"><div class="label">Unrealized P/L</div><div class="value" id="rtUnrealized">+0.00</div><div class="sub">open position mark</div></div>
+        <div class="metric"><div class="label">Peak equity</div><div class="value" id="rtPeak">10000.00</div><div class="sub">highest observed</div></div>
+        <div class="metric"><div class="label">Drawdown</div><div class="value" id="rtDrawdown">0.00 (0.00%)</div><div class="sub">peak → current equity</div></div>
+        <div class="metric"><div class="label">Trades</div><div class="value" id="rtTrades">0</div><div class="sub">completed paper trades</div></div>
+        <div class="metric"><div class="label">Win rate</div><div class="value" id="rtWinRate">0.00%</div><div class="sub">based on closed trades</div></div>
+        <div class="metric" style="grid-column:span 2"><div class="label">Position</div><div class="value" id="rtPosition">FLAT</div><div class="sub">side · quantity · entry · SL · TP</div></div>
+        <div class="metric" style="grid-column:span 2"><div class="label">Last soak</div><div class="value" id="rtSoak">—</div><div class="sub">deterministic replay diagnostic</div></div>
+        <div class="metric" style="grid-column:span 2"><div class="label">Halt reason</div><div class="value" id="rtHalt">—</div><div class="sub">fail-closed protection</div></div>
+      </div>
+    </section>
 
-  <div class="card full" style="margin-top:12px">
-    <div class="label">Execution pipeline</div>
-    <div class="pipeline">
-      <div class="step" data-state="SIGNAL">SIGNAL</div><div class="step" data-state="APPROVED">APPROVED</div><div class="step" data-state="SUBMITTING">SUBMITTING</div><div class="step" data-state="ACKNOWLEDGED">ACK</div><div class="step" data-state="OPEN">OPEN</div><div class="step" data-state="EXIT_PENDING">EXIT</div>
-    </div>
-    <div class="notice" style="margin-top:12px">Safety invariant: every order has a stable client identity; every completed candle is processed at most once; ambiguous outcomes halt; checkpoint corruption is never silently reset.</div>
-  </div>
+    <section class="layout">
+      <div class="left-stack" style="display:grid;gap:14px;align-content:start">
+        <div class="panel card">
+          <div class="section-head"><div class="section-title">Equity curve</div><div class="section-meta">Last 500 runtime observations</div></div>
+          <div class="chart-wrap">
+            <canvas id="equityChart" class="chart" aria-label="Paper account equity curve"></canvas>
+            <div class="chart-overlay"><span class="chip">LIVE PAPER STATE</span><span class="chip">CLOSED CANDLE</span></div>
+          </div>
+        </div>
 
-  <div class="card full" style="margin-top:12px">
-    <div class="label">Operational security status</div>
-    <div class="security">MODE=PAPER_ONLY · REAL_BROKER=DISABLED · CLOSED_CANDLE_ONLY=TRUE · IDEMPOTENCY=ENABLED · CHECKPOINT=ATOMIC · UNKNOWN_OUTCOME=FAIL_CLOSED · P/L=MARK_TO_MARKET · DRAW_DOWN=PEAK_TO_EQUITY · REPLAY=DETERMINISTIC · DURABLE_STATE_CONTRACT=ARIA.PAPER-RUNTIME.V1</div>
-  </div>
+        <div class="panel card">
+          <div class="section-head"><div class="section-title">Execution pipeline</div><div class="section-meta">Lifecycle state</div></div>
+          <div class="pipeline">
+            <div class="step" data-state="SIGNAL"><div class="step-index">01</div><div class="step-name">SIGNAL</div></div>
+            <div class="step" data-state="APPROVED"><div class="step-index">02</div><div class="step-name">APPROVED</div></div>
+            <div class="step" data-state="SUBMITTING"><div class="step-index">03</div><div class="step-name">SUBMITTING</div></div>
+            <div class="step" data-state="ACKNOWLEDGED"><div class="step-index">04</div><div class="step-name">ACK</div></div>
+            <div class="step" data-state="OPEN"><div class="step-index">05</div><div class="step-name">OPEN</div></div>
+            <div class="step" data-state="EXIT_PENDING"><div class="step-index">06</div><div class="step-name">EXIT</div></div>
+          </div>
+          <div class="invariant"><strong>Safety invariant:</strong> client identity ต้องเสถียร · หนึ่งแท่งปิดประมวลผลได้ครั้งเดียว · outcome ที่คลุมเครือต้อง halt · checkpoint corruption ห้ามถูก reset แบบเงียบ</div>
+        </div>
 
-  <div class="card full" style="margin-top:12px"><div class="label">Runtime events</div><div class="events" id="rtEvents"></div></div>
-</main>
-<script src="paper-runtime.js"></script>
-<script>
-  const runtime = window.WebariaPaperRuntime; const $ = id => document.getElementById(id);
-  const publishDurableState = async () => {
-    try {
-      const s = runtime.state;
-      const account = {balance:s.balance,equity:s.equity,realizedPnl:s.realizedPnl,unrealizedPnl:s.unrealizedPnl,peakEquity:s.peakEquity,drawdown:s.drawdown,drawdownPct:s.drawdownPct,tradeCount:s.tradeCount,winRate:s.winRate};
-      await fetch('/api/paper-state',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contract:'aria.paper-runtime.v1',mode:'PAPER',lifecycle:s.lifecycle,running:!!s.running,halted:!!s.halted,haltReason:s.haltReason||'',heartbeat:s.heartbeat||new Date().toISOString(),lastBarTime:s.lastBarTime||null,lastProcessedBarTime:s.lastProcessedBarTime||null,account,position:s.position,pending:s.pending,events:s.events||[],history:s.equityCurve||[],alerts:(s.halted||s.pending)?[{severity:'CRITICAL',reason:s.haltReason||'pending paper execution'}]:[],updatedAt:new Date().toISOString()})});
-    } catch (_) {
-      /* Runtime remains functional when the optional durable telemetry endpoint is unavailable. */
-    }
-  };
-  $('start').onclick = () => { runtime.configureFromDom(); runtime.start(); void publishDurableState(); };
-  $('stop').onclick = () => { runtime.stop(); void publishDurableState(); };
-  $('recover').onclick = () => { runtime.recover(); void publishDurableState(); };
-  $('reset').onclick = () => { runtime.reset(); void publishDurableState(); };
-  $('applyFailure').onclick = () => { runtime.setFailureMode($('failure').value); void publishDurableState(); };
-  $('soak').onclick = () => { runtime.runSoak(10000); void publishDurableState(); };
-  $('export').onclick = () => runtime.exportSnapshot();
-  $('paperRuntimeSymbol').value = runtime.state.symbol; $('paperRuntimeTf').value = runtime.state.timeframe;
-  setInterval(() => {
-    const state = runtime.state; $('rtDot').className = `dot ${state.halted ? 'halt' : (state.running ? 'run' : '')}`;
-    document.querySelectorAll('.step').forEach(node => node.classList.toggle('active', node.dataset.state === state.lifecycle));
-    void publishDurableState();
-  }, 2500);
-</script>
+        <div class="panel card">
+          <div class="section-head"><div class="section-title">Operational security</div><div class="section-meta">Runtime invariants</div></div>
+          <div class="security">MODE=PAPER_ONLY · REAL_BROKER=DISABLED · CLOSED_CANDLE_ONLY=TRUE · IDEMPOTENCY=ENABLED · CHECKPOINT=ATOMIC · UNKNOWN_OUTCOME=FAIL_CLOSED · P/L=MARK_TO_MARKET · DRAW_DOWN=PEAK_TO_EQUITY · REPLAY=DETERMINISTIC · DURABLE_STATE_CONTRACT=ARIA.PAPER-RUNTIME.V1</div>
+          <div class="footer-row"><span>Persistent state is authoritative only when durable contract is healthy.</span><span>ARIA Paper Runtime</span></div>
+        </div>
+      </div>
+
+      <aside class="side-stack">
+        <div class="panel card">
+          <div class="section-head"><div class="section-title">Current position</div><div class="section-meta">Paper only</div></div>
+          <div class="position">
+            <div class="position-main">
+              <div id="positionSide" class="position-side flat">FLAT</div>
+              <div id="positionHeadline" class="position-price">No open position</div>
+            </div>
+            <div class="position-detail">
+              <div class="kv"><span class="k">Entry</span><span class="v" id="positionEntry">—</span></div>
+              <div class="kv"><span class="k">Stop</span><span class="v" id="positionSl">—</span></div>
+              <div class="kv"><span class="k">Target</span><span class="v" id="positionTp">—</span></div>
+              <div class="kv"><span class="k">Quantity</span><span class="v" id="positionQty">—</span></div>
+              <div class="kv"><span class="k">Symbol</span><span class="v" id="positionSymbol">—</span></div>
+              <div class="kv"><span class="k">Order ID</span><span class="v" id="positionOrderId">—</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel card">
+          <div class="section-head"><div class="section-title">Runtime events</div><div class="section-meta">Newest first</div></div>
+          <div class="events" id="rtEvents"><div class="empty">ยังไม่มี runtime events</div></div>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script src="paper-runtime.js?v=20260910-2030"></script>
+  <script>
+    (() => {
+      'use strict';
+      const runtime = window.WebariaPaperRuntime;
+      const $ = (id) => document.getElementById(id);
+
+      if (!runtime || !runtime.state) {
+        document.body.innerHTML = '<main style="min-height:100vh;display:grid;place-items:center;padding:24px;color:#fff;background:#070b14;font-family:system-ui"><div style="max-width:560px;border:1px solid #55303a;background:#171019;border-radius:16px;padding:22px"><b style="font-size:20px">ARIA Paper Runtime unavailable</b><p style="color:#b4bfce;line-height:1.6">ไม่สามารถโหลด runtime module ได้ กรุณารีเฟรชหน้าอีกครั้ง</p></div></main>';
+        return;
+      }
+
+      const publishDurableState = async () => {
+        try {
+          const s = runtime.state;
+          const account = {
+            balance:s.balance,equity:s.equity,realizedPnl:s.realizedPnl,unrealizedPnl:s.unrealizedPnl,
+            peakEquity:s.peakEquity,drawdown:s.drawdown,drawdownPct:s.drawdownPct,tradeCount:s.tradeCount,winRate:s.winRate
+          };
+          await fetch('/api/paper-state',{
+            method:'POST',cache:'no-store',headers:{'content-type':'application/json'},
+            body:JSON.stringify({
+              contract:'aria.paper-runtime.v1',mode:'PAPER',lifecycle:s.lifecycle,running:!!s.running,halted:!!s.halted,
+              haltReason:s.haltReason||'',heartbeat:s.heartbeat||new Date().toISOString(),lastBarTime:s.lastBarTime||null,
+              lastProcessedBarTime:s.lastProcessedBarTime||null,account,position:s.position,pending:s.pending,
+              events:s.events||[],history:s.equityCurve||[],
+              alerts:(s.halted||s.pending)?[{severity:'CRITICAL',reason:s.haltReason||'pending paper execution'}]:[],
+              updatedAt:new Date().toISOString()
+            })
+          });
+        } catch (_) {
+          /* UI remains usable when the durable telemetry endpoint is temporarily unavailable. */
+        }
+      };
+
+      const updatePositionCard = () => {
+        const p = runtime.state.position;
+        const side = $('positionSide');
+        const headline = $('positionHeadline');
+        side.className = `position-side ${p ? (p.side === 'LONG' ? 'long' : 'short') : 'flat'}`;
+        side.textContent = p ? p.side : 'FLAT';
+        headline.textContent = p ? `${p.quantity} @ ${p.entry}` : 'No open position';
+        $('positionEntry').textContent = p?.entry ?? '—';
+        $('positionSl').textContent = p?.sl ?? '—';
+        $('positionTp').textContent = p?.tp ?? '—';
+        $('positionQty').textContent = p?.quantity ?? '—';
+        $('positionSymbol').textContent = p?.symbol ?? '—';
+        $('positionOrderId').textContent = p?.orderId ?? '—';
+      };
+
+      const renderStatus = () => {
+        const s = runtime.state;
+        $('rtDot').className = `dot ${s.halted ? 'halt' : (s.running ? 'run' : '')}`;
+        $('rtMode').textContent = s.halted ? 'HALT' : (s.running ? 'RUNNING' : 'STOPPED');
+        document.querySelectorAll('.step').forEach((node) => node.classList.toggle('active', node.dataset.state === s.lifecycle));
+        updatePositionCard();
+        const checkpoint = $('rtCheckpoint');
+        checkpoint.className = s.checkpointOk ? 'health-ok' : 'health-bad';
+      };
+
+      $('paperRuntimeSymbol').value = runtime.state.symbol;
+      $('paperRuntimeTf').value = runtime.state.timeframe;
+
+      $('start').onclick = () => { runtime.configureFromDom(); runtime.start(); void publishDurableState(); renderStatus(); };
+      $('stop').onclick = () => { runtime.stop(); void publishDurableState(); renderStatus(); };
+      $('recover').onclick = () => { runtime.recover(); void publishDurableState(); renderStatus(); };
+      $('reset').onclick = () => { runtime.reset(); void publishDurableState(); renderStatus(); };
+      $('applyFailure').onclick = () => { runtime.setFailureMode($('failure').value); void publishDurableState(); renderStatus(); };
+      $('soak').onclick = () => { runtime.runSoak(10000); void publishDurableState(); renderStatus(); };
+      $('export').onclick = () => runtime.exportSnapshot();
+
+      renderStatus();
+      void publishDurableState();
+      setInterval(() => { renderStatus(); void publishDurableState(); }, 5000);
+    })();
+  </script>
 </body>
 </html>
