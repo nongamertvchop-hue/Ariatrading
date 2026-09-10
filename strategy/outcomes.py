@@ -90,10 +90,13 @@ def label_signal_outcome(
         raise ValueError("future_candles must be a list")
 
     risk = entry - stop if direction == LONG else stop - entry
-    if risk <= 0:
+    if not isfinite(risk) or risk <= 0:
         raise ValueError("stop must be beyond entry in the trade direction")
 
     target = entry + risk * target_r_multiple if direction == LONG else entry - risk * target_r_multiple
+    if not isfinite(target):
+        raise ValueError("computed target must be finite")
+
     sample = future_candles[:max_bars]
     mfe_r = 0.0
     mae_r = 0.0
@@ -111,6 +114,9 @@ def label_signal_outcome(
             adverse = (entry - high) / risk
             hit_stop = high >= stop
             hit_target = low <= target
+
+        if not isfinite(favorable) or not isfinite(adverse):
+            raise ValueError("computed MFE/MAE must be finite")
 
         mfe_r = max(mfe_r, favorable)
         mae_r = min(mae_r, adverse)
