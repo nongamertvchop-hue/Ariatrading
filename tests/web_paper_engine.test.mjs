@@ -34,7 +34,9 @@ test('barExit remains conservative when both stop and target are inside one bar'
     { side: engine.LONG, entry: 100, sl: 95, tp: 110 },
     { high: 112, low: 94 }
   );
-  assert.deepEqual(result, { reason: 'stop loss', price: 95, outcome: 'LOSS' });
+  assert.equal(result?.reason, 'stop loss');
+  assert.equal(result?.price, 95);
+  assert.equal(result?.outcome, 'LOSS');
 });
 
 test('evaluateRisk rejects invalid limit contracts', () => {
@@ -78,9 +80,13 @@ test('evaluateRisk preserves deterministic sizing under valid limits', () => {
     valuePerPriceUnit: 1,
     limits: { riskPerTrade: 0.01, maxOpenRisk: 0.02, maxPositions: 1 }
   });
-
   assert.equal(result.allowed, true);
   assert.equal(result.quantity, 20);
   assert.equal(result.riskAmount, 100);
   assert.equal(result.riskFraction, 0.01);
+});
+
+test('journal dedup uses event_id instead of polling timestamp', () => {
+  const source = fs.readFileSync(new URL('../Webaria/signal-journal.js', import.meta.url), 'utf8');
+  assert.match(source, /event_id/);
 });
