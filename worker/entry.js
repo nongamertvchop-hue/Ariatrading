@@ -30,9 +30,25 @@ const STALE_TTL_MS = Object.freeze({
   "/api/live-candle": 2 * 60_000,
   "/api/market": 30_000,
 });
+const MAX_RESPONSE_CACHE_ENTRIES = 256;
 const responseCache = new Map();
 
-function cacheKey(request) { return request.method + ":" + request.url; }
+function cacheKey(request) {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith("/api/")) return request.method + ":" + url.pathname;
+
+  // Cache only canonical market dimensions. Arbitrary query parameters must
+  // not create attacker-controlled cache entries.
+  const symbol = (url.searchParams.get("symbol") || "EUR/USD").trim().toUpperCase();
+  const timeframe = (url.searchParams.get("timeframe") || "15m").trim();
+  return `${request.method}:${url.pathname}:symbol=${symbol}:timeframe=${timeframe}`;
+}
+
+function evictOldestCacheEntry() {
+  if (responseCache.size < MAX_RESPONSE_CACHE_ENTRIES) return;
+  const oldest = responseCache.keys().next().value;
+  if (oldest !== undefined) responseCache.delete(oldest);
+}
 
 function cloneHeaders(response, extra = {}) {
   const headers = new Headers(response.headers);
@@ -163,7 +179,6 @@ export default {
       if (blocked) return blocked;
     }
 
-    // Status is never cached and always fresh.
     if (url.pathname === "/api/bodyguard/status") {
       return statusResponse();
     }
@@ -185,6 +200,7 @@ export default {
       const response = await resolveApi(request, env, ctx, url.pathname);
       if (response.ok) {
         const record = await readResponse(response);
+        evictOldestCacheEntry();
         responseCache.set(key, record);
         return cachedResponse(record, record.status, "MISS");
       }
