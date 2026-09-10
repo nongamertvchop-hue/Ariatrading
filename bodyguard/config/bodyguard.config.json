@@ -1,6 +1,7 @@
 {
   "name": "Bodyguard(Aria)",
-  "version": "0.04.0",
+  "version": "0.05.0",
+  "codename": "aegis-shield",
   "enabled": true,
   "mode": "enforce",
   "http": {
@@ -11,6 +12,14 @@
   },
   "api": {
     "publicRoutes": ["/api/signal", "/api/price", "/api/live-candle", "/api/bodyguard/status"],
+    "forbiddenExecutionPaths": [
+      "/api/order",
+      "/api/execute",
+      "/api/trade",
+      "/api/buy",
+      "/api/sell",
+      "/api/mt5"
+    ],
     "symbolPattern": "^[A-Z]{3}/[A-Z]{3}$",
     "allowedTimeframes": ["1m", "5m", "15m", "30m", "1h", "4h", "1D"],
     "rateLimit": {
@@ -24,21 +33,56 @@
       "banSeconds": 600
     }
   },
+  "payload": {
+    "maxBodyBytes": 8192,
+    "maxNestingDepth": 5,
+    "forbiddenProperties": ["__proto__", "constructor", "prototype", "$where"]
+  },
+  "cors": {
+    "allowedOrigins": [
+      "https://webaria.pages.dev",
+      "https://ariatrading.pages.dev",
+      "http://localhost:8787",
+      "http://127.0.0.1:8787"
+    ],
+    "allowedHeaders": ["content-type", "x-bodyguard", "x-requested-with"],
+    "maxAgeSeconds": 86400
+  },
   "alerts": {
     "probeWarn": 5,
     "blockWarn": 20,
     "rateLimitWarn": 10,
-    "softBanWarn": 1
+    "softBanWarn": 1,
+    "executionAttemptWarn": 1,
+    "corsWarn": 10
   },
   "privacy": {
     "scrubHeaders": ["authorization", "cookie", "x-api-key"],
-    "redactKeys": ["apikey", "api_key", "token", "secret", "password", "email", "phone"],
-    "forbidClientSecretNames": ["TWELVE_DATA_API_KEY", "CLOUDFLARE_API_TOKEN", "BROKER_"]
+    "redactKeys": [
+      "apikey",
+      "api_key",
+      "token",
+      "secret",
+      "password",
+      "email",
+      "phone",
+      "telegram_bot_token",
+      "chat_id",
+      "mt5_password"
+    ],
+    "forbidClientSecretNames": [
+      "TWELVE_DATA_API_KEY",
+      "CLOUDFLARE_API_TOKEN",
+      "TELEGRAM_BOT_TOKEN",
+      "BROKER_",
+      "MT5_"
+    ]
   },
   "headers": {
-    "x-bodyguard": "0.04.0",
+    "x-bodyguard": "0.05.0",
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
-    "x-frame-options": "DENY"
+    "x-frame-options": "DENY",
+    "permissions-policy": "interest-cohort=()"
   }
 }

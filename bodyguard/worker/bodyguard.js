@@ -1,24 +1,56 @@
 /**
- * Bodyguard(Aria) v0.04.0 — enforcement, audit counters, alert thresholds.
+ * Bodyguard(Aria) v0.05.0 — aegis-shield
+ *
+ * Enforcement, audit counters, alert thresholds, prototype pollution protection,
+ * execution boundary isolation, and strict CORS defense.
  */
 
-export const BODYGUARD_VERSION = "0.04.0";
+export const BODYGUARD_VERSION = "0.05.0";
 
 const DEFAULTS = Object.freeze({
   allowedMethods: ["GET", "HEAD", "OPTIONS"],
   maxQueryLength: 512,
+  maxBodyBytes: 8192,
+  maxNestingDepth: 5,
   symbolPattern: /^[A-Z]{3}\/[A-Z]{3}$/,
   allowedTimeframes: new Set(["1m", "5m", "15m", "30m", "1h", "4h", "1D"]),
-  allowedApiPaths: new Set(["/api/signal", "/api/price", "/api/live-candle", "/api/bodyguard/status"]),
+  allowedApiPaths: new Set([
+    "/api/signal",
+    "/api/price",
+    "/api/live-candle",
+    "/api/bodyguard/status",
+  ]),
+  forbiddenExecutionPaths: new Set([
+    "/api/order",
+    "/api/execute",
+    "/api/trade",
+    "/api/buy",
+    "/api/sell",
+    "/api/mt5",
+  ]),
+  allowedOrigins: new Set([
+    "https://webaria.pages.dev",
+    "https://ariatrading.pages.dev",
+    "http://localhost:8787",
+    "http://127.0.0.1:8787",
+  ]),
   rateWindowMs: 60_000,
   rateMax: 60,
   softBan: Object.freeze({ blockThreshold: 8, windowMs: 300_000, banMs: 600_000 }),
-  alerts: Object.freeze({ probeWarn: 5, blockWarn: 20, rateLimitWarn: 10, softBanWarn: 1 }),
+  alerts: Object.freeze({
+    probeWarn: 5,
+    blockWarn: 20,
+    rateLimitWarn: 10,
+    softBanWarn: 1,
+    executionAttemptWarn: 1,
+    corsWarn: 10,
+  }),
   securityHeaders: Object.freeze({
     "x-bodyguard": BODYGUARD_VERSION,
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
     "x-frame-options": "DENY",
+    "permissions-policy": "interest-cohort=()",
   }),
 });
 
@@ -34,16 +66,27 @@ const audit = {
   probes: 0,
   softBans: 0,
   statusCalls: 0,
+  executionAttempts: 0,
+  corsBlocked: 0,
+  payloadsBlocked: 0,
 };
 
-const PROBE_RE = /(\.\.|%2e%2e|%252e|\/etc\/passwd|\/proc\/|\/win(dows)?\/|<|>|javascript:|onerror=|onload=|union\s+select|drop\s+table|insert\s+into|xp_cmdshell|\$\{|\{\{|%3c%3c|%00)/i;
+const PROBE_RE = /(\.\.|%2e%2e|%252e|\/etc\/passwd|\/proc\/|\/win(dows)?\/|<|>|javascript:|onerror=|onload=|union\s+select|drop\s+table|insert\s+into|\bexec\b|xp_cmdshell|\$\{|\{\{|%3c%3c|%00)/i;
+const PROTO_POLLUTION_RE = /(__proto__|constructor|prototype|\$where)/i;
 
 function clientKey(request) {
   return request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "unknown";
 }
 
 export function securityEvent(level, reason, extra = {}) {
-  const row = { guard: "Bodyguard(Aria)", version: BODYGUARD_VERSION, level, reason, at: new Date().toISOString(), ...extra };
+  const row = {
+    guard: "Bodyguard(Aria)",
+    version: BODYGUARD_VERSION,
+    level,
+    reason,
+    at: new Date().toISOString(),
+    ...extra,
+  };
   console.log(JSON.stringify(row));
   return row;
 }
@@ -67,21 +110,99 @@ function noteOffense(key, reason) {
 function isSoftBanned(key) {
   const until = softBans.get(key);
   if (!until) return false;
-  if (Date.now() > until) { softBans.delete(key); return false; }
+  if (Date.now() > until) {
+    softBans.delete(key);
+    return false;
+  }
   return true;
 }
 
-export function applySecurityHeaders(response) {
+export function getCorsHeaders(request) {
+  const origin = request.headers.get("origin");
+  const headers = {};
+  if (origin && DEFAULTS.allowedOrigins.has(origin.trim())) {
+    headers["access-control-allow-origin"] = origin.trim();
+    headers["access-control-allow-methods"] = "GET, HEAD, OPTIONS";
+    headers["access-control-allow-headers"] = "content-type, x-bodyguard, x-requested-with";
+    headers["access-control-max-age"] = "86400";
+    headers["vary"] = "Origin";
+  }
+  return headers;
+}
+
+export function handleCorsPreflight(request) {
+  const origin = request.headers.get("origin");
+  if (!origin) return null;
+
+  if (!DEFAULTS.allowedOrigins.has(origin.trim())) {
+    audit.corsBlocked += 1;
+    securityEvent("block", "cors_origin_rejected", { origin });
+    return publicError(403, "cors_origin_rejected", "origin not permitted");
+  }
+
+  return new Response(null, {
+    status: 204,
+    headers: {
+      ...DEFAULTS.securityHeaders,
+      ...getCorsHeaders(request),
+    },
+  });
+}
+
+export function applySecurityHeaders(response, request = null) {
   const headers = new Headers(response.headers);
-  for (const [k, v] of Object.entries(DEFAULTS.securityHeaders)) if (!headers.has(k)) headers.set(k, v);
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  for (const [k, v] of Object.entries(DEFAULTS.securityHeaders)) {
+    if (!headers.has(k)) headers.set(k, v);
+  }
+  if (request) {
+    const cors = getCorsHeaders(request);
+    for (const [k, v] of Object.entries(cors)) {
+      headers.set(k, v);
+    }
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 export function detectProbe(request, url = new URL(request.url)) {
   const hay = `${url.pathname}?${url.search}`;
   if (PROBE_RE.test(hay)) return { ok: false, status: 403, reason: "probe_pattern_blocked" };
-  if (/[\u0000-\u001f\u007f]/.test(url.search)) return { ok: false, status: 400, reason: "control_chars_in_query" };
+
+  // Double URL-encoding detection
+  try {
+    const once = decodeURIComponent(hay);
+    const twice = decodeURIComponent(once);
+    if (once !== twice && PROBE_RE.test(twice)) {
+      return { ok: false, status: 403, reason: "double_encoded_probe_blocked" };
+    }
+  } catch (_) {
+    // Malformed URI sequence is hostile
+    return { ok: false, status: 400, reason: "malformed_uri_sequence" };
+  }
+
+  if (/[\u0000-\u001f\u007f]/.test(url.search)) {
+    return { ok: false, status: 400, reason: "control_chars_in_query" };
+  }
   return { ok: true, status: 200, reason: "ok" };
+}
+
+export function detectPrototypePollution(data, depth = 1) {
+  if (depth > DEFAULTS.maxNestingDepth) {
+    return { ok: false, reason: "payload_nesting_too_deep" };
+  }
+  if (data && typeof data === "object") {
+    for (const [k, v] of Object.entries(data)) {
+      if (PROTO_POLLUTION_RE.test(k)) {
+        return { ok: false, reason: "prototype_pollution_blocked", key: k };
+      }
+      const child = detectPrototypePollution(v, depth + 1);
+      if (!child.ok) return child;
+    }
+  }
+  return { ok: true, reason: "ok" };
 }
 
 export function scoreUserAgent(request) {
@@ -95,15 +216,36 @@ export function scoreUserAgent(request) {
 
 export function validatePublicApiRequest(request, url = new URL(request.url)) {
   const method = request.method.toUpperCase();
-  if (!DEFAULTS.allowedMethods.includes(method)) return { ok: false, status: 405, reason: "method_not_allowed" };
-  if (url.search.length > DEFAULTS.maxQueryLength) return { ok: false, status: 414, reason: "query_too_long" };
+  if (!DEFAULTS.allowedMethods.includes(method)) {
+    return { ok: false, status: 405, reason: "method_not_allowed" };
+  }
+  if (url.search.length > DEFAULTS.maxQueryLength) {
+    return { ok: false, status: 414, reason: "query_too_long" };
+  }
+
+  // R16: Strict execution boundary isolation
+  for (const forbidden of DEFAULTS.forbiddenExecutionPaths) {
+    if (url.pathname.toLowerCase().startsWith(forbidden)) {
+      audit.executionAttempts += 1;
+      return { ok: false, status: 403, reason: "execution_surface_forbidden" };
+    }
+  }
+
   if (url.pathname.startsWith("/api/")) {
-    if (!DEFAULTS.allowedApiPaths.has(url.pathname)) return { ok: false, status: 404, reason: "api_route_not_found" };
-    if (url.pathname === "/api/bodyguard/status") return { ok: true, status: 200, reason: "ok" };
+    if (!DEFAULTS.allowedApiPaths.has(url.pathname)) {
+      return { ok: false, status: 404, reason: "api_route_not_found" };
+    }
+    if (url.pathname === "/api/bodyguard/status") {
+      return { ok: true, status: 200, reason: "ok" };
+    }
     const symbol = (url.searchParams.get("symbol") || "EUR/USD").trim().toUpperCase();
-    if (!DEFAULTS.symbolPattern.test(symbol)) return { ok: false, status: 400, reason: "invalid_symbol" };
+    if (!DEFAULTS.symbolPattern.test(symbol)) {
+      return { ok: false, status: 400, reason: "invalid_symbol" };
+    }
     const timeframe = url.searchParams.get("timeframe");
-    if (timeframe && !DEFAULTS.allowedTimeframes.has(timeframe)) return { ok: false, status: 400, reason: "invalid_timeframe" };
+    if (timeframe && !DEFAULTS.allowedTimeframes.has(timeframe)) {
+      return { ok: false, status: 400, reason: "invalid_timeframe" };
+    }
   }
   return { ok: true, status: 200, reason: "ok" };
 }
@@ -147,10 +289,24 @@ export function publicError(status, reason, message) {
 
 function buildAlerts(counters) {
   const alerts = [];
-  if (counters.probes >= DEFAULTS.alerts.probeWarn) alerts.push({ level: "warn", code: "probes_elevated", message: `probes=${counters.probes}` });
-  if (counters.blocked >= DEFAULTS.alerts.blockWarn) alerts.push({ level: "warn", code: "blocks_elevated", message: `blocked=${counters.blocked}` });
-  if (counters.rate_limited >= DEFAULTS.alerts.rateLimitWarn) alerts.push({ level: "warn", code: "rate_limits_elevated", message: `rate_limited=${counters.rate_limited}` });
-  if (counters.soft_bans >= DEFAULTS.alerts.softBanWarn) alerts.push({ level: "warn", code: "soft_bans_present", message: `soft_bans=${counters.soft_bans}` });
+  if (counters.probes >= DEFAULTS.alerts.probeWarn) {
+    alerts.push({ level: "warn", code: "probes_elevated", message: `probes=${counters.probes}` });
+  }
+  if (counters.blocked >= DEFAULTS.alerts.blockWarn) {
+    alerts.push({ level: "warn", code: "blocks_elevated", message: `blocked=${counters.blocked}` });
+  }
+  if (counters.rate_limited >= DEFAULTS.alerts.rateLimitWarn) {
+    alerts.push({ level: "warn", code: "rate_limits_elevated", message: `rate_limited=${counters.rate_limited}` });
+  }
+  if (counters.soft_bans >= DEFAULTS.alerts.softBanWarn) {
+    alerts.push({ level: "warn", code: "soft_bans_present", message: `soft_bans=${counters.soft_bans}` });
+  }
+  if (counters.execution_attempts >= DEFAULTS.alerts.executionAttemptWarn) {
+    alerts.push({ level: "critical", code: "execution_attempt_blocked", message: `attempts=${counters.execution_attempts}` });
+  }
+  if (counters.cors_blocked >= DEFAULTS.alerts.corsWarn) {
+    alerts.push({ level: "warn", code: "cors_rejections_elevated", message: `cors_blocked=${counters.cors_blocked}` });
+  }
   return alerts;
 }
 
@@ -163,13 +319,18 @@ export function getStatusPayload() {
     probes: audit.probes,
     soft_bans: audit.softBans,
     status_calls: audit.statusCalls,
+    execution_attempts: audit.executionAttempts,
+    cors_blocked: audit.corsBlocked,
+    payloads_blocked: audit.payloadsBlocked,
   };
   return {
     guard: "Bodyguard(Aria)",
     version: BODYGUARD_VERSION,
+    codename: "aegis-shield",
     mode: "enforce",
     scope: "defensive-only",
-    execution: "NONE",
+    execution: "ISOLATED_NONE",
+    posture: counters.execution_attempts > 0 ? "UNDER_ATTACK" : (counters.probes > 10 ? "ELEVATED" : "HEALTHY"),
     started_at: audit.startedAt,
     counters,
     alerts: buildAlerts(counters),
@@ -191,6 +352,11 @@ export function statusResponse() {
 export function guardPublicRequest(request) {
   const url = new URL(request.url);
   const key = clientKey(request);
+
+  // Handle CORS Pre-flight
+  if (request.method === "OPTIONS") {
+    return handleCorsPreflight(request);
+  }
 
   if (isSoftBanned(key)) {
     securityEvent("block", "soft_banned", { path: url.pathname });
