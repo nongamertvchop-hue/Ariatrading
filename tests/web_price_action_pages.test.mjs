@@ -7,7 +7,7 @@ function candle(open, high, low, close) {
 }
 
 test("Pages price-action evaluator requires completed-candle history", () => {
-  const candles = Array.from({ length: 19 }, (_, i) => candle(1 + i * 0.001, 1.002 + i * 0.001, 0.998 + i * 0.001, 1.001 + i * 0.001));
+  const candles = Array.from({ length: 20 }, (_, i) => candle(1 + i * 0.001, 1.002 + i * 0.001, 0.998 + i * 0.001, 1.001 + i * 0.001));
   const result = evaluatePriceAction(candles, "15m");
   assert.equal(result.signal, "WAIT");
   assert.equal(result.strategy_version, "wiki-price-action-v1");
