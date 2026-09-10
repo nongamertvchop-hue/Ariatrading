@@ -19,6 +19,8 @@ class FakeMT5Module:
     SYMBOL_FILLING_IOC = 2
     TRADE_RETCODE_DONE = 10009
     TRADE_RETCODE_PLACED = 10008
+    DEAL_ENTRY_OUT = 1
+    DEAL_ENTRY_OUT_BY = 3
 
     def __init__(self) -> None:
         self.last_req = None
@@ -29,6 +31,20 @@ class FakeMT5Module:
 
     def shutdown(self):
         return True
+
+    def last_error(self):
+        return (0, "ok")
+
+    def account_info(self):
+        class Account:
+            login = 123456
+            balance = 10000.0
+            equity = 9950.0
+            margin_free = 9000.0
+            trade_allowed = True
+            trade_expert = True
+
+        return Account()
 
     def symbol_info(self, symbol):
         class SymbolInfo:
@@ -41,7 +57,7 @@ class FakeMT5Module:
             volume_max = 100.0
             volume_step = 0.01
             visible = True
-            filling_mode = 1  # FOK supported
+            filling_mode = 1
 
         return SymbolInfo()
 
@@ -62,7 +78,7 @@ class FakeMT5Module:
         self.last_req = req
         if self.should_fail:
             class FailedRes:
-                retcode = 10013  # Invalid request
+                retcode = 10013
                 comment = "Invalid volume"
 
             return FailedRes()
@@ -81,7 +97,7 @@ class FakeMT5Module:
         class Pos:
             ticket = 123456
             symbol = "EURUSD"
-            type = 0  # BUY
+            type = 0
             volume = 0.50
             price_open = 1.10015
             sl = 1.09800
@@ -105,6 +121,20 @@ def test_mt5_executor_connect_and_contract():
     assert contract.volume_min == 0.01
 
 
+def test_mt5_executor_reads_account_snapshot():
+    executor = MT5LiveExecutor(mt5_module=FakeMT5Module())
+    executor.connect()
+
+    account = executor.get_account_snapshot()
+
+    assert account.login == 123456
+    assert account.balance == 10000.0
+    assert account.equity == 9950.0
+    assert account.margin_free == 9000.0
+    assert account.trade_allowed is True
+    assert account.trade_expert is True
+
+
 def test_mt5_executor_buy_order_success():
     mock_mt5 = FakeMT5Module()
     executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
@@ -126,17 +156,28 @@ def test_mt5_executor_buy_order_success():
     assert mock_mt5.last_req["magic"] == 8808
 
 
+def test_mt5_executor_rejects_invalid_volume_and_tp():
+    executor = MT5LiveExecutor(mt5_module=FakeMT5Module())
+    executor.connect()
+
+    assert not executor.send_market_order(
+        symbol="EURUSD", direction=ORDER_BUY, volume=0, sl=1.09800
+    ).success
+    assert not executor.send_market_order(
+        symbol="EURUSD", direction=ORDER_BUY, volume=0.1, sl=1.09800, tp=0
+    ).success
+
+
 def test_mt5_executor_sell_order_validation():
     mock_mt5 = FakeMT5Module()
     executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
     executor.connect()
 
-    # SELL order must have SL above price (tick.bid is 1.10000)
     res = executor.send_market_order(
         symbol="EURUSD",
         direction=ORDER_SELL,
         volume=0.5,
-        sl=1.09000,  # Below price -> invalid for SELL
+        sl=1.09000,
     )
     assert not res.success
     assert "SELL Stop Loss must be above entry price" in res.error_message
@@ -155,3 +196,20 @@ def test_mt5_executor_positions_and_close():
     close_res = executor.close_position(123456)
     assert close_res.success
     assert close_res.ticket == 123456
+
+
+def test_mt5_executor_cannot_close_foreign_strategy_position():
+    mock_mt5 = FakeMT5Module()
+
+    class ForeignPositionModule(FakeMT5Module):
+        def positions_get(self, **kwargs):
+            rows = super().positions_get(**kwargs)
+            rows[0].magic = 9999
+            return rows
+
+    executor = MT5LiveExecutor(mt5_module=ForeignPositionModule(), magic_number=8808)
+    executor.connect()
+
+    result = executor.close_position(123456)
+    assert not result.success
+    assert "not owned by this strategy" in result.error_message
