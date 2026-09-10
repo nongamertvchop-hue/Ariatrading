@@ -31,3 +31,13 @@ jobs:
           node-version: "22"
       - name: Check Bodyguard JavaScript
         run: node --check bodyguard/worker/bodyguard.js && node --check bodyguard/worker/redaction.js && node --check worker/entry.js
+
+  bodyguard-regression-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run Bodyguard security regression suite
+        run: node --test tests/test_bodyguard_worker.mjs
