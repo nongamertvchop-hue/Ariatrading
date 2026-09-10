@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.15.0**
+**Current version: 0.16.0**
 
 ## Core idea
 
@@ -58,73 +58,38 @@ The project is layered so every stage can be used together without duplicating s
 39. **Paper Trading Dashboard** — runtime lifecycle, balance/equity/P&L/drawdown, position, heartbeat, checkpoint status, event stream, equity curve, snapshot export, recovery controls, and explicit fault injection.
 40. **Massive Replay / Soak** — deterministic 10,000-bar replay harness with repeatability checks and both LONG/SHORT exit paths.
 41. **Failure Injection + Operational Review** — reproducible timeout, disconnect, reject, partial-fill, missing-position, duplicate-bar, out-of-order-bar, and checkpoint-corruption scenarios with a documented paper/demo release gate.
-42. **Production Bot 30-Component Contract** — explicit readiness map for Python, provider adapters, market data, realtime transport, secrets, deployment, persistence, rate limiting, strategy, backtesting, paper/demo, risk, exits, sizing, order semantics, observability, and Telegram alerting. MT5-first mappings are kept distinct from exchange-only concepts. See `docs/REAL_BOT_30_COMPONENTS.md`.
+42. **Historical Data Gate** — strict CSV ingestion for real-market OHLCV fixtures, including schema, geometry, finite values, timezone and chronological checks.
+43. **Backtest/Realtime/Paper Parity Gate** — backtest and realtime now share all-zone candidate selection and score/tie semantics; release validation compares the common decision boundary and paper-runtime determinism on the same historical window.
+44. **Long-Term Paper History** — separate append-only SHA-256 hash-chained equity/accounting history survives checkpoint replacement and fails closed on corruption.
+45. **Operational Console** — standalone Webaria console for health, heartbeat, lifecycle, live market reachability, account metrics, alerts, release checks, event history, equity visualization and snapshot export.
+46. **Final Release Gate CI** — `.github/workflows/release-gate.yml` downloads a pinned real EURUSD 5-minute historical sample and runs the final paper-only gate plus the full Python regression suite.
 
 ## Key modules
 
-- `strategy/candles.py` — candle structure, descriptive pressure, and OHLC input invariants.
-- `strategy/levels.py` — legacy detector kept for compatibility.
-- `strategy/levels_v2.py` — primary confirmed-swing zones, independent reactions, and broken-zone filtering.
-- `strategy/market_structure.py` — HH/HL/LH/LL structural context.
-- `strategy/sequence.py` — primary two-setup multi-candle logic.
-- `strategy/fake_breakout.py` — breakout/reclaim classification.
-- `strategy/protection.py` — level safety checks.
-- `strategy/timeframe.py` — adaptive distances for 1m through 1D.
-- `strategy/mtf.py` — structural context and timestamp alignment.
-- `strategy/scoring.py` — explainable setup quality score.
-- `strategy/engine.py` — central LONG/SHORT/WAIT strategy interface with runtime research-contract enforcement.
-- `strategy/research_rules.py` — executable research/innovation contract and fail-closed runtime boundaries.
-- `strategy/risk.py` — hypothetical risk plans and baseline exit simulation.
-- `strategy/risk_engine.py` — account-level sizing and hard risk limits, including broker minimum/maximum quantity.
-- `strategy/portfolio_risk.py` — stateful daily-loss, drawdown and consecutive-loss kill switch.
-- `strategy/backtest.py` — sequential backtest plus bounded research windows, explicit entry timing, and optional MTF/execution integration.
-- `strategy/execution.py` — research-only execution-friction simulation and centralized entry/exit price adjustments.
-- `strategy/validation.py` — research metrics and chronological validation tools.
-- `strategy/walk_forward.py` — rolling out-of-sample research windows.
-- `strategy/ml_features.py` — causal signal features and future-only supervised labels.
-- `strategy/ml_meta.py` — chronological classical ML meta-filter.
-- `strategy/ml_walk_forward.py` — leakage-safe expanding-history ML evaluation.
-- `strategy/ml_drift.py` — training-boundary feature distribution drift diagnostics.
-- `strategy/ml_behavior.py` — fold-by-fold ML filter impact diagnostics.
-- `strategy/ml_model_health.py` — descriptive performance, calibration, and score-distribution diagnostics.
-- `strategy/ml_stability.py` — permutation feature stability diagnostics.
-- `strategy/ml_evidence_gate.py` — explicit ML evidence completeness/readiness policy.
-- `strategy/ml_model_comparison.py` — fixed-window HGB/LSTM/Transformer challenger comparison without automatic model selection.
-- `strategy/deep_learning.py` — optional PyTorch LSTM and Transformer sequence challengers.
-- `strategy/deep_learning_walk_forward.py` — fold-by-fold chronological LSTM/Transformer research with optional provenance persistence.
-- `strategy/research_provenance.py` — deterministic provenance fingerprints, comparability checks, and atomic persistence.
-- `strategy/research_validation.py` — aggregated, fingerprinted research evidence.
-- `strategy/research_audit.py` — temporal and evidence consistency checks.
-- `strategy/research_gate.py` — baseline research evidence completeness gate.
-- `strategy/feed_integrity.py` — strict timestamped OHLC feed validation.
+- `strategy/backtest.py` — chronological backtest with parity-aligned all-zone signal selection.
+- `strategy/historical_data.py` — strict external historical OHLCV CSV loader.
 - `strategy/realtime.py` — closed-candle realtime monitor with feed-integrity gating and deterministic event identity.
 - `strategy/realtime_replay.py` — deterministic historical replay of the realtime monitor plus causal outcome attachment.
-- `strategy/outcomes.py` — causal paper-signal outcome labels and MFE/MAE diagnostics.
-- `strategy/paper.py` — deterministic single-position paper simulator.
-- `strategy/paper_session.py` — realtime-to-paper orchestration with next-bar entry and idempotency.
-- `strategy/journal.py` — SIGNAL/OPEN/CLOSE research event journal.
+- `strategy/paper_accounting.py` — realized/unrealized P/L, equity, peak-equity and drawdown accounting.
+- `strategy/paper_history.py` — durable append-only hash-chained paper accounting history.
+- `strategy/paper_runtime_checkpoint.py` — atomic versioned continuous-runtime checkpoint persistence.
+- `strategy/paper_runtime_engine.py` — continuous closed-candle paper runtime, restart recovery and deterministic exits.
+- `strategy/paper_soak.py` — deterministic 10,000-bar replay and failure-injection harness.
+- `strategy/release_gate.py` — final historical/replay/paper parity and operational release checks.
 - `strategy/order_state.py` — deterministic order lifecycle state machine.
 - `strategy/order_persistence.py` — crash-safe order-state snapshot persistence.
 - `strategy/execution_audit.py` — append-only hash-chain execution audit journal.
 - `strategy/execution_recovery.py` — fail-closed post-restart execution consistency gate.
 - `strategy/paper_trading_loop.py` — end-to-end paper execution coordinator and reconciliation path.
-- `strategy/paper_accounting.py` — realized/unrealized P/L, equity, peak-equity and drawdown accounting.
-- `strategy/paper_runtime_checkpoint.py` — atomic versioned continuous-runtime checkpoint persistence.
-- `strategy/paper_runtime_engine.py` — continuous closed-candle paper runtime, restart recovery and deterministic exits.
-- `strategy/paper_soak.py` — deterministic 10,000-bar replay and failure-injection harness.
 - `strategy/position_reconciliation.py` — normalized local/broker position reconciliation with average-entry and contract checks.
 - `strategy/system_gate.py` — final fail-closed pre-execution readiness contract.
 - `strategy/broker_contract.py` — normalized broker-symbol contract checks.
 - `adapters/mt5_feed.py` — read-only MT5 market-data adapter.
 - `adapters/paper_broker.py` — broker-like paper/demo simulator for deterministic execution tests.
 - `polyglot/runner.py` — bounded JSONL worker execution and fail-closed consensus validation.
-- `polyglot/languages.json` — requested language/capability registry.
-- `polyglot/protocol.schema.json` — language-neutral worker message contract.
-- `polyglot/README.md` — Polyglot architecture and research roles.
-- `Webaria/chart-quality.js` — canvas bitmap/viewport quality layer aligned with the actual chart state.
-- `Webaria/paper-engine.js` — browser-safe paper risk primitives; no broker calls.
 - `Webaria/paper-runtime.html` — Paper Trading Dashboard shell.
-- `Webaria/paper-runtime.js` — continuous browser paper runtime, P/L/equity/drawdown, recovery and soak diagnostics.
+- `Webaria/paper-runtime.js` — continuous browser paper runtime and recovery controls.
+- `Webaria/operational-console.html` — operational monitoring console.
 - `Webaria/signal-advisor.html` — single-timeframe realtime Signal Advisor.
 - `Webaria/mtf-advisor.html` — multi-timeframe Signal Advisor and local signal journal.
 - `worker/signal_parity.js` — Worker-side low-level strategy parity primitives.
@@ -155,41 +120,35 @@ APPROACH -> TEST -> RECLAIM/REJECT -> CONFIRM
 LONG / SHORT / WAIT
         |
         +---- Historical path -> Risk -> Backtest -> Validation
+        |                         |
+        |                         +---- Real historical fixture
+        |                         +---- Backtest/Realtime parity
         |
         +---- Realtime path -> Supervisor -> Event ID -> Paper Runtime
         |                                                   |
-        |                                                   +---- closed candle once-only guard
-        |                                                   +---- paper order state / recovery
+        |                                                   +---- once-only closed candle
+        |                                                   +---- checkpoint/restart recovery
         |                                                   +---- position reconciliation
         |                                                   +---- P/L -> Equity -> Drawdown
-        |                                                   +---- audit + checkpoint
-        |                                                   +---- causal outcome/replay review
+        |                                                   +---- long-term hash-chained history
+        |                                                   +---- Operational Console
         |
-        +---- Research path -> MTF comparison -> Quality Report -> ML/DL
+        +---- Polyglot Validation Fabric -> independent workers
         |
-        +---- Polyglot Validation Fabric -> independent language workers
-                                             |
-                                             +---- contract validation
-                                             +---- deterministic replay
-                                             +---- research metrics
-                                             +---- disagreement evidence
+        +---- Final Release Gate -> CI/security/soak/failure evidence
 ```
 
 ## Research safety contract
 
 Ariatrading is a research and paper/demo system. MT5 integration remains read-only, and the paper runtime does not place or manage real broker orders.
 
-The Paper Trading Dashboard is explicitly labeled **PAPER**. Ambiguous execution outcomes remain unresolved until a trustworthy source of truth is available; they are never converted into a synthetic fill merely to keep the runtime moving.
+The Paper Trading Dashboard and Operational Console are explicitly **PAPER/DEMO**. Ambiguous execution outcomes remain unresolved until a trustworthy source of truth is available; they are never converted into a synthetic fill merely to keep the runtime moving.
 
-## Research & innovation contract
+## Final release gate
 
-Ariatrading does not treat novelty as proof. New mechanisms are hypotheses until measured, compared, and validated. Failures and negative results are retained as research evidence. Safety, causal data boundaries, reproducibility, and paper/demo isolation always override experimental novelty.
+Version 0.16.0 adds a final release-gate workflow over real historical EURUSD 5-minute OHLCV data, hard process-termination recovery tests, backtest/realtime/paper parity checks, long-term hash-chained accounting history, deterministic 10,000-bar soak validation, explicit failure injection, and an operational console.
 
-## Paper runtime release gate
-
-The 0.15.0 release adds crash/restart recovery, first-class P/L/equity/drawdown state, a continuous closed-candle Paper Runtime, a browser dashboard, deterministic 10,000-bar replay/soak, reproducible failure injection, and a final operational checklist in `docs/PAPER_OPERATIONAL_REVIEW.md`.
-
-Passing these tests demonstrates that the tested paper/demo boundary behaves deterministically under the modeled scenarios. It is **not** evidence of profitability, future performance, or suitability for real-money use.
+Passing the release gate demonstrates the tested engineering/research properties for the selected revision and fixture. It is **not** evidence of profitability, future performance, or authorization for real-money execution.
 
 ## Polyglot implementation status
 
