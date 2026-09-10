@@ -6,6 +6,7 @@
  */
 
 import app from "./index.js";
+import { onRequestGet as marketRequest } from "../Webaria/functions/api/market.js";
 import { handleSignalParityV2, evaluateRealtimeSignalParity } from "./signal_parity_v2.js";
 import { buildSignalEventId } from "./signal_event.js";
 import { fallbackCandles, fallbackPrice, FALLBACK_SOURCE, TIMEFRAME_SECONDS } from "./fallback_market.js";
@@ -21,11 +22,13 @@ const FRESH_TTL_MS = Object.freeze({
   "/api/price": 10_000,
   "/api/signal": 30_000,
   "/api/live-candle": 10_000,
+  "/api/market": 2_000,
 });
 const STALE_TTL_MS = Object.freeze({
   "/api/price": 5 * 60_000,
   "/api/signal": 5 * 60_000,
   "/api/live-candle": 2 * 60_000,
+  "/api/market": 30_000,
 });
 const responseCache = new Map();
 
@@ -128,6 +131,18 @@ function fallbackCandleResponse(request) {
 
 async function resolveApi(request, env, ctx, pathname) {
   if (pathname === "/api/bodyguard/status") return statusResponse();
+
+  if (pathname === "/api/market") {
+    if (!env.TWELVE_DATA_API_KEY) {
+      return json({
+        error: "live_data_unavailable",
+        message: "TWELVE_DATA_API_KEY is not configured",
+        source: "unavailable",
+        execution: "NONE",
+      }, 503);
+    }
+    return marketRequest({ request, env, ctx });
+  }
 
   if (!env.TWELVE_DATA_API_KEY) {
     if (pathname === "/api/signal") return fallbackSignalResponse(request);
