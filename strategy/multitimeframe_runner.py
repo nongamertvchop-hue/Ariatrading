@@ -33,6 +33,25 @@ class MultiTimeframeResearchResult:
     inputs: tuple[TimeframeResearchInput, ...]
 
 
+class _FeedBar:
+    __slots__ = ("time", "open", "high", "low", "close")
+
+    def __init__(self, raw: dict, timeframe: str) -> None:
+        timestamp = raw.get("time")
+        if not isinstance(timestamp, datetime) or timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            raise ValueError(
+                f"research candles for {timeframe} require timezone-aware datetime 'time'"
+            )
+        try:
+            self.time = timestamp
+            self.open = float(raw["open"])
+            self.high = float(raw["high"])
+            self.low = float(raw["low"])
+            self.close = float(raw["close"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"research candle for {timeframe} has invalid OHLC fields") from exc
+
+
 def _validate_mapping_keys(
     candles_by_timeframe: Mapping[str, list[dict]],
     expected_timeframes: tuple[str, ...],
@@ -45,31 +64,6 @@ def _validate_mapping_keys(
         raise ValueError(
             f"timeframe set mismatch; missing={sorted(missing)}, extra={sorted(extra)}"
         )
-
-
-def _validate_timezone_aware_bars(candles: list[dict]) -> None:
-    """Convert the strategy's dict-based candles into feed-integrity records."""
-
-    class Bar:
-        __slots__ = ("time", "open", "high", "low", "close")
-
-        def __init__(self, raw: dict) -> None:
-            timestamp = raw.get("time")
-            if not isinstance(timestamp, datetime):
-                raise ValueError("research candles require timezone-aware datetime 'time'")
-            self.time = timestamp
-            self.open = float(raw["open"])
-            self.high = float(raw["high"])
-            self.low = float(raw["low"])
-            self.close = float(raw["close"])
-
-    # Feed validation owns structural and chronological checks. This adapter only
-    # provides the protocol fields it expects and keeps the strategy candle shape
-    # unchanged for the existing backtest engine.
-    bars = [Bar(candle) for candle in candles]
-    report = validate_feed_batch(bars, "15m", require_contiguous=False)
-    if not report.ok:
-        raise ValueError(f"feed integrity failed: {report.reason}")
 
 
 def run_multitimeframe_research(
@@ -103,23 +97,9 @@ def run_multitimeframe_research(
         if not isinstance(candles, list):
             raise ValueError(f"candles for {timeframe} must be a list")
 
-        class Bar:
-            __slots__ = ("time", "open", "high", "low", "close")
-
-            def __init__(self, raw: dict) -> None:
-                timestamp = raw.get("time")
-                if not isinstance(timestamp, datetime):
-                    raise ValueError(
-                        f"research candles for {timeframe} require timezone-aware datetime 'time'"
-                    )
-                self.time = timestamp
-                self.open = float(raw["open"])
-                self.high = float(raw["high"])
-                self.low = float(raw["low"])
-                self.close = float(raw["close"])
-
+        feed_bars = [_FeedBar(candle, timeframe) for candle in candles]
         integrity = validate_feed_batch(
-            [Bar(candle) for candle in candles],
+            feed_bars,
             timeframe,
             require_utc=True,
             require_contiguous=require_contiguous,
