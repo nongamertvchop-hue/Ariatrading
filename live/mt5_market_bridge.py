@@ -62,9 +62,13 @@ def _require_mt5() -> Any:
 
 def _timeframe_value(value: str) -> Any:
     raw = TIMEFRAME_MAP[value]
-    if isinstance(raw, str):
-        return getattr(_require_mt5(), raw)
-    return raw
+    if not isinstance(raw, str):
+        return raw
+    terminal = _require_mt5()
+    direct = getattr(terminal, raw, None)
+    if direct is not None:
+        return direct
+    return getattr(terminal, f"TIMEFRAME_{raw}", raw)
 
 
 def _initialize() -> None:
