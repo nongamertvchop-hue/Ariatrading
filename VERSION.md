@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.17.7**
+Current version: **0.17.6**
 
 ## Versioning rule
 
@@ -11,7 +11,7 @@ Use semantic versioning:
 - **MINOR**: new strategy capability that remains backward compatible.
 - **PATCH**: bug fix, test improvement, documentation, or non-strategy correction.
 
-## Current milestone — 0.17.7 — MT5 runtime contract error fixes
+## Current milestone — 0.17.6 — MT5 canonical symbol contract
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
 - Backtest/realtime/paper decision semantics remain on one normalized three-way decision stream.
@@ -28,7 +28,7 @@ Use semantic versioning:
 
 ## Release interpretation
 
-A 0.17.7 PASS means the tested engineering properties held for the selected code revision and fixtures. It does not establish profitability, future performance, or authorization to use real money.
+A 0.17.6 PASS means the tested engineering properties held for the selected code revision and fixtures. It does not establish profitability, future performance, or authorization to use real money.
 
 ## Promotion boundary
 
