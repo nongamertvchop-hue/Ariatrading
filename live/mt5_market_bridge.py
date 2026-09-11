@@ -12,6 +12,7 @@ HTTPS ingest endpoint instead of exposing the MT5 machine directly.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -102,6 +103,27 @@ def _candle(row: Any) -> dict[str, Any]:
     return {"time": timestamp, **values}
 
 
+def _canonical_price(value: float) -> str:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("non-finite price in fingerprint")
+    return f"{number:.12f}"
+
+
+def canonical_completed_payload(symbol: str, timeframe: str, candles: list[dict[str, Any]]) -> str:
+    lines = [f"{symbol}\n{timeframe}"]
+    lines.extend(
+        f"{int(candle['time'])}|{_canonical_price(candle['open'])}|{_canonical_price(candle['high'])}|{_canonical_price(candle['low'])}|{_canonical_price(candle['close'])}"
+        for candle in candles
+    )
+    return "\n".join(lines)
+
+
+def completed_fingerprint(symbol: str, timeframe: str, candles: list[dict[str, Any]]) -> str:
+    payload = canonical_completed_payload(symbol, timeframe, candles).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
     terminal = _require_mt5()
     if not terminal.symbol_select(symbol, True):
@@ -114,7 +136,12 @@ def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
 
     completed = [_candle(row) for row in rates]
     completed.sort(key=lambda row: row["time"])
+    for previous, current in zip(completed, completed[1:]):
+        if current["time"] <= previous["time"]:
+            raise RuntimeError("MT5 returned non-chronological completed candles")
     live = _candle(live_rates[-1]) if len(live_rates) else None
+    if live is not None and completed and live["time"] <= completed[-1]["time"]:
+        raise RuntimeError("MT5 forming candle is not newer than completed history")
     tick = terminal.symbol_info_tick(symbol)
     if tick is None:
         raise RuntimeError(f"MT5 symbol_info_tick failed: {terminal.last_error()}")
@@ -124,14 +151,16 @@ def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
     if not (math.isfinite(bid) and math.isfinite(ask) and bid > 0 and ask > 0 and ask >= bid):
         raise RuntimeError("MT5 tick is invalid")
     midpoint = (bid + ask) / 2.0
+    completed = completed[-count:]
 
     return {
         "symbol": symbol,
         "timeframe": timeframe,
-        "candles": completed[-count:],
+        "candles": completed,
         "live_candle": live,
         "price": midpoint,
         "tick": {"time": int(tick.time), "bid": bid, "ask": ask},
+        "market_fingerprint": completed_fingerprint(symbol, timeframe, completed),
         "source": "mt5",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "received_at": int(datetime.now(timezone.utc).timestamp()),
@@ -202,7 +231,7 @@ def publish_loop(stop_event: threading.Event) -> None:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "AriatradingMT5Bridge/1.1"
+    server_version = "AriatradingMT5Bridge/1.2"
 
     def _json(self, status: int, body: dict[str, Any]) -> None:
         payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
