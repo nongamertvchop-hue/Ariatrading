@@ -23,8 +23,10 @@ function mockEnv(payload) {
 
 test("/api/signal reads candles from the MT5 market binding", async () => {
   const symbol = "GBP/USD";
+  const now = Math.floor(Date.now() / 1000);
+  const base = (now // 900 - 12) * 900;
   const candles = Array.from({ length: 12 }, (_, i) => ({
-    time: 1_700_000_000 + i * 900,
+    time: base + i * 900,
     open: 1.1000 + i * 0.0001,
     high: 1.1005 + i * 0.0001,
     low: 1.0995 + i * 0.0001,
