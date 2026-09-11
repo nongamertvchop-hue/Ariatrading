@@ -22,6 +22,7 @@ function mockEnv(payload) {
 }
 
 test("/api/signal reads candles from the MT5 market binding", async () => {
+  const symbol = "GBP/USD";
   const candles = Array.from({ length: 12 }, (_, i) => ({
     time: 1_700_000_000 + i * 900,
     open: 1.1000 + i * 0.0001,
@@ -31,10 +32,10 @@ test("/api/signal reads candles from the MT5 market binding", async () => {
   }));
   const fingerprint = "a".repeat(64);
   const response = await handleSignalParityV2(
-    new Request("https://example.test/api/signal?symbol=EUR/USD&timeframe=15m"),
+    new Request(`https://example.test/api/signal?symbol=${encodeURIComponent(symbol)}&timeframe=15m`),
     mockEnv({
       source: "mt5",
-      symbol: "EUR/USD",
+      symbol,
       timeframe: "15m",
       candles,
       live_candle: { ...candles.at(-1), time: candles.at(-1).time + 900 },
@@ -53,7 +54,7 @@ test("/api/signal reads candles from the MT5 market binding", async () => {
 
 test("/api/signal fails closed when MT5 data is unavailable", async () => {
   const response = await handleSignalParityV2(
-    new Request("https://example.test/api/signal?symbol=EUR/USD&timeframe=15m"),
+    new Request("https://example.test/api/signal?symbol=CHF/USD&timeframe=15m"),
     {
       MT5_MARKET: {
         idFromName() { return "market-id"; },
