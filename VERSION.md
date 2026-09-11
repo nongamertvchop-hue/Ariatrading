@@ -1,6 +1,6 @@
 # Ariatrading Version
 
-Current version: **0.17.2**
+Current version: **0.17.3**
 
 ## Versioning rule
 
@@ -11,23 +11,22 @@ Use semantic versioning:
 - **MINOR**: new strategy capability that remains backward compatible.
 - **PATCH**: bug fix, test improvement, documentation, or non-strategy correction.
 
-## Current milestone — 0.17.2 — MT5 realtime boundary hardening
+## Current milestone — 0.17.3 — Webaria MT5 single-source runtime
 
 - Core strategy remains exactly two setups: LONG at support and SHORT at resistance.
-- Backtest/realtime/paper decision semantics are certified through one normalized three-way decision stream.
-- MT5 epoch-second and epoch-millisecond candle timestamps are accepted by the Worker realtime feed guard.
-- The `/api/strategy` MT5 path now passes through the same realtime feed-integrity boundary before strategy evaluation and advances the duplicate cursor only after accepted evaluation.
-- Duplicate, out-of-order, malformed, misaligned, future, and stale realtime observations remain fail-closed.
-- A real child-process termination test verifies durable checkpoint + restart recovery; unknown execution remains fail-closed HALT.
-- A 10,000-bar deterministic paper soak remains required, plus a 10,000-bar shadow run over pinned real EURUSD 5-minute historical data.
-- The Operational Console reads the `aria.paper-runtime.v1` contract from a Durable Object and refuses to treat browser-local state as authoritative.
-- The durable contract carries lifecycle, heartbeat, account/equity, position, pending state, alerts, history, events, recovery snapshot and export data.
-- The runtime publishing page remains PAPER/DEMO only; the supported configuration rejects `BOT_MODE=live`.
-- No real broker order path is enabled by the release gate or supported bot configuration.
+- Backtest/realtime/paper decision semantics remain on one normalized three-way decision stream.
+- MT5 epoch-second and epoch-millisecond candle timestamps are accepted by the realtime feed guard.
+- The `/api/strategy` MT5 path remains guarded before strategy evaluation and only advances its duplicate cursor after accepted evaluation.
+- The runnable `live/mt5_market_bridge.py` provides read-only MT5 market data, separates completed/forming candles, exposes bid/ask, authenticates requests, and never calls `order_send()` or `order_check()`.
+- Webaria `/api/market` and `/api/signal` now share the same MT5 market source; `/api/signal` fails closed rather than switching to another provider.
+- Browser strategy evaluation uses completed MT5 candles; the forming candle is display context only.
+- The Webaria live terminal reports `MT5 LIVE · STRATEGY LIVE` only when both market and strategy paths accept the MT5 feed.
+- A dedicated regression test verifies MT5-backed signal evaluation and fail-closed behavior.
+- The runtime remains PAPER/DEMO only; real-money execution is outside the supported release boundary.
 
 ## Release interpretation
 
-A 0.17.2 PASS means the tested engineering properties held for the selected code revision and historical fixture. It does not establish profitability, future performance, or authorization to use real money.
+A 0.17.3 PASS means the tested engineering properties held for the selected code revision and fixtures. It does not establish profitability, future performance, or authorization to use real money.
 
 ## Promotion boundary
 
