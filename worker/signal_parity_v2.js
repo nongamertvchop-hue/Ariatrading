@@ -146,8 +146,12 @@ export async function handleSignalParityV2(request, env) {
   const market = await fetchMt5Market(env, symbol, timeframe);
   if (!market.response.ok) return market.response;
   const payload = await market.response.json();
-  if (payload.source !== "mt5" || !Array.isArray(payload.candles) || typeof payload.market_fingerprint !== "string" || !payload.market_fingerprint) {
+  if (payload.source !== "mt5" || !Array.isArray(payload.candles) || !/^[0-9a-f]{64}$/.test(payload.market_fingerprint || "")) {
     return json({ error: "mt5_market_contract_rejected", message: "MT5 market contract or snapshot fingerprint rejected", source: "unavailable", execution: "NONE" }, 503);
+  }
+
+  if (!Array.isArray(payload.candles) || payload.candles.length < 5) {
+    return json({ error: "mt5_market_contract_rejected", message: "MT5 market returned too few completed candles", source: "unavailable", execution: "NONE" }, 503);
   }
 
   const candles = payload.candles.map((candle) => ({
