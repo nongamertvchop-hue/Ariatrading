@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,7 +18,8 @@ class FakeMT5:
     TIMEFRAME_D1 = "D1"
 
     def __init__(self) -> None:
-        base = 1_700_000_000
+        current = int(time.time())
+        base = (current // 900 - 20) * 900
         self.completed = [
             SimpleNamespace(
                 time=base + index * 900,
