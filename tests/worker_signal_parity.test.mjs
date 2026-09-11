@@ -149,6 +149,31 @@ test("supervisor blocks low-confidence forecast and preserves fail-closed behavi
   assert.ok(decision.reasons.includes("forecast confidence below threshold"));
 });
 
+test("realtime feed guard accepts MT5 epoch-second timestamps and preserves the same alignment rules", () => {
+  resetRealtimeFeedGuard();
+  const candles = [
+    { open: 1, high: 1.01, low: 0.99, close: 1, time: 1788894000 },
+    { open: 1, high: 1.01, low: 0.99, close: 1, time: 1788894900 },
+  ];
+  const result = validateRealtimeFeed(candles, "15m", "EUR/USD", new Date(1788894960 * 1000));
+  assert.equal(result.ok, true);
+  assert.equal(result.latest_time, "2026-09-08T19:15:00.000Z");
+  resetRealtimeFeedGuard();
+});
+
+test("realtime feed guard rejects duplicate and out-of-order MT5 epoch bars", () => {
+  resetRealtimeFeedGuard();
+  const base = [
+    { open: 1, high: 1.01, low: 0.99, close: 1, time: 1788894000 },
+    { open: 1, high: 1.01, low: 0.99, close: 1, time: 1788894900 },
+  ];
+  const duplicate = [...base.slice(0, 1), base[0]];
+  assert.equal(validateRealtimeFeed(duplicate, "15m", "EUR/USD", new Date(1788894960 * 1000)).reason, "duplicate bar timestamps");
+  const outOfOrder = [base[1], base[0]];
+  assert.equal(validateRealtimeFeed(outOfOrder, "15m", "EUR/USD", new Date(1788894960 * 1000)).reason, "bars must be strictly chronological");
+  resetRealtimeFeedGuard();
+});
+
 test("realtime feed guard rejects stale and duplicate observations", () => {
   resetRealtimeFeedGuard();
   const candles = [
