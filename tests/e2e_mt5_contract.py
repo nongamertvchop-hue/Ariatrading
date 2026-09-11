@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from live import mt5_market_bridge as bridge
+ROOT = Path(__file__).resolve().parents[1]
+MODULE_PATH = ROOT / "live" / "mt5_market_bridge.py"
+spec = importlib.util.spec_from_file_location("ariatrading_mt5_market_bridge", MODULE_PATH)
+if spec is None or spec.loader is None:
+    raise RuntimeError(f"unable to load MT5 bridge module from {MODULE_PATH}")
+bridge = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(bridge)
 
 
 class FakeMT5:
@@ -65,13 +72,18 @@ def main() -> None:
         "1D": fake.TIMEFRAME_D1,
     })
     payload = bridge.market_payload("EURUSD", "15m", 20)
+    assert payload["symbol"] == "EUR/USD"
     assert payload["source"] == "mt5"
     assert payload["execution"] == "NONE"
     assert len(payload["candles"]) == 20
     assert payload["live_candle"]["time"] > payload["candles"][-1]["time"]
+    assert len(payload["market_fingerprint"]) == 64
+    assert payload["market_fingerprint"] == bridge.completed_fingerprint(
+        payload["symbol"], payload["timeframe"], payload["candles"]
+    )
     assert payload["tick"]["bid"] <= payload["price"] <= payload["tick"]["ask"]
 
-    target = Path(".github/e2e_mt5_payload.json")
+    target = ROOT / ".github" / "e2e_mt5_payload.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     print(f"wrote {target}")
