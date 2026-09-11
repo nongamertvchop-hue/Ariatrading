@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,7 +18,8 @@ class FakeMT5:
     TIMEFRAME_D1 = "D1"
 
     def __init__(self) -> None:
-        base = 1_700_000_000
+        current = int(time.time())
+        base = (current // 900 - 20) * 900
         self.completed = [
             SimpleNamespace(
                 time=base + index * 900,
@@ -28,9 +30,7 @@ class FakeMT5:
             )
             for index in range(20)
         ]
-        self.live = [
-            SimpleNamespace(time=base + 20 * 900, open=1.1020, high=1.1028, low=1.1018, close=1.1024)
-        ]
+        self.live = [SimpleNamespace(time=base + 20 * 900, open=1.1020, high=1.1028, low=1.1018, close=1.1024)]
         self.tick = SimpleNamespace(time=base + 20 * 900 + 30, bid=1.1023, ask=1.1025)
 
     def symbol_select(self, symbol: str, enabled: bool) -> bool:
@@ -55,17 +55,15 @@ class FakeMT5:
 def main() -> None:
     fake = FakeMT5()
     bridge.mt5 = fake
-    bridge.TIMEFRAME_MAP.update(
-        {
-            "1m": fake.TIMEFRAME_M1,
-            "5m": fake.TIMEFRAME_M5,
-            "15m": fake.TIMEFRAME_M15,
-            "30m": fake.TIMEFRAME_M30,
-            "1h": fake.TIMEFRAME_H1,
-            "4h": fake.TIMEFRAME_H4,
-            "1D": fake.TIMEFRAME_D1,
-        }
-    )
+    bridge.TIMEFRAME_MAP.update({
+        "1m": fake.TIMEFRAME_M1,
+        "5m": fake.TIMEFRAME_M5,
+        "15m": fake.TIMEFRAME_M15,
+        "30m": fake.TIMEFRAME_M30,
+        "1h": fake.TIMEFRAME_H1,
+        "4h": fake.TIMEFRAME_H4,
+        "1D": fake.TIMEFRAME_D1,
+    })
     payload = bridge.market_payload("EURUSD", "15m", 20)
     assert payload["source"] == "mt5"
     assert payload["execution"] == "NONE"
