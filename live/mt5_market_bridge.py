@@ -82,6 +82,13 @@ def _symbol_name(raw: str) -> str:
     return symbol
 
 
+def _market_symbol(raw: str) -> str:
+    symbol = _symbol_name(raw)
+    if len(symbol) == 6:
+        return f"{symbol[:3]}/{symbol[3:]}"
+    raise ValueError("MT5 market bridge requires a six-letter FX symbol such as EURUSD")
+
+
 def _timeframe(raw: str) -> str:
     value = raw.strip()
     if value not in TIMEFRAME_MAP:
@@ -125,12 +132,14 @@ def completed_fingerprint(symbol: str, timeframe: str, candles: list[dict[str, A
 
 
 def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
+    terminal_symbol = _symbol_name(symbol)
+    market_symbol = _market_symbol(terminal_symbol)
     terminal = _require_mt5()
-    if not terminal.symbol_select(symbol, True):
-        raise RuntimeError(f"MT5 symbol_select failed for {symbol}: {terminal.last_error()}")
+    if not terminal.symbol_select(terminal_symbol, True):
+        raise RuntimeError(f"MT5 symbol_select failed for {terminal_symbol}: {terminal.last_error()}")
 
-    rates = terminal.copy_rates_from_pos(symbol, _timeframe_value(timeframe), 1, count)
-    live_rates = terminal.copy_rates_from_pos(symbol, _timeframe_value(timeframe), 0, 1)
+    rates = terminal.copy_rates_from_pos(terminal_symbol, _timeframe_value(timeframe), 1, count)
+    live_rates = terminal.copy_rates_from_pos(terminal_symbol, _timeframe_value(timeframe), 0, 1)
     if rates is None or live_rates is None:
         raise RuntimeError(f"MT5 copy_rates_from_pos failed: {terminal.last_error()}")
 
@@ -142,7 +151,7 @@ def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
     live = _candle(live_rates[-1]) if len(live_rates) else None
     if live is not None and completed and live["time"] <= completed[-1]["time"]:
         raise RuntimeError("MT5 forming candle is not newer than completed history")
-    tick = terminal.symbol_info_tick(symbol)
+    tick = terminal.symbol_info_tick(terminal_symbol)
     if tick is None:
         raise RuntimeError(f"MT5 symbol_info_tick failed: {terminal.last_error()}")
 
@@ -154,13 +163,13 @@ def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
     completed = completed[-count:]
 
     return {
-        "symbol": symbol,
+        "symbol": market_symbol,
         "timeframe": timeframe,
         "candles": completed,
         "live_candle": live,
         "price": midpoint,
         "tick": {"time": int(tick.time), "bid": bid, "ask": ask},
-        "market_fingerprint": completed_fingerprint(symbol, timeframe, completed),
+        "market_fingerprint": completed_fingerprint(market_symbol, timeframe, completed),
         "source": "mt5",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "received_at": int(datetime.now(timezone.utc).timestamp()),
