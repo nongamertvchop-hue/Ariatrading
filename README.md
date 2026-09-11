@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.17.3**
+**Current version: 0.17.4**
 
 ## Core idea
 
@@ -69,6 +69,7 @@ The project is layered so every stage can be used together without duplicating s
 50. **Durable Bodyguard Telemetry Bridge** — Webaria `/api/bodyguard/status` reads sanitized runtime SQLite events and heartbeat data, giving the dashboard near-real-time durable incident visibility without exposing IPs, secrets, request bodies or PII.
 51. **Canonical MT5 strategy boundary** — MT5-sourced `/api/strategy` requests pass through the realtime feed-integrity guard before strategy evaluation, including epoch timestamp normalization and duplicate-cursor protection.
 52. **Webaria MT5 single-source runtime** — `/api/market` and `/api/signal` consume the same MT5 market store; the browser evaluates strategy on completed MT5 candles and fails closed on broker-data mismatch or unavailability.
+53. **MT5 end-to-end contract certification** — a Python bridge-shaped payload is exercised through the JavaScript `Mt5MarketStore` and canonical `/api/signal` adapter in CI, including completed/forming separation and fail-closed contract checks.
 
 ## Key modules
 
