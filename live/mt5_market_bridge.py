@@ -27,17 +27,17 @@ from urllib.parse import parse_qs, urlparse
 
 try:
     import MetaTrader5 as mt5  # type: ignore
-except ImportError as exc:  # pragma: no cover - exercised on deployment host
-    raise RuntimeError("MetaTrader5 package is required; install requirements-realtime.txt") from exc
+except ImportError:  # pragma: no cover - deployment host dependency
+    mt5 = None
 
 TIMEFRAME_MAP = {
-    "1m": mt5.TIMEFRAME_M1,
-    "5m": mt5.TIMEFRAME_M5,
-    "15m": mt5.TIMEFRAME_M15,
-    "30m": mt5.TIMEFRAME_M30,
-    "1h": mt5.TIMEFRAME_H1,
-    "4h": mt5.TIMEFRAME_H4,
-    "1D": mt5.TIMEFRAME_D1,
+    "1m": "TIMEFRAME_M1",
+    "5m": "TIMEFRAME_M5",
+    "15m": "TIMEFRAME_M15",
+    "30m": "TIMEFRAME_M30",
+    "1h": "TIMEFRAME_H1",
+    "4h": "TIMEFRAME_H4",
+    "1D": "TIMEFRAME_D1",
 }
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8787
@@ -53,11 +53,25 @@ def _env_token() -> str:
     return token
 
 
+def _require_mt5() -> Any:
+    if mt5 is None:
+        raise RuntimeError("MetaTrader5 package is required; install requirements-realtime.txt")
+    return mt5
+
+
+def _timeframe_value(value: str) -> Any:
+    raw = TIMEFRAME_MAP[value]
+    if isinstance(raw, str):
+        return getattr(_require_mt5(), raw)
+    return raw
+
+
 def _initialize() -> None:
+    terminal = _require_mt5()
     terminal_path = os.getenv("MT5_TERMINAL_PATH", "").strip()
-    ok = mt5.initialize(path=terminal_path) if terminal_path else mt5.initialize()
+    ok = terminal.initialize(path=terminal_path) if terminal_path else terminal.initialize()
     if not ok:
-        raise RuntimeError(f"MT5 initialize failed: {mt5.last_error()}")
+        raise RuntimeError(f"MT5 initialize failed: {terminal.last_error()}")
 
 
 def _symbol_name(raw: str) -> str:
@@ -89,20 +103,21 @@ def _candle(row: Any) -> dict[str, Any]:
 
 
 def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
-    if not mt5.symbol_select(symbol, True):
-        raise RuntimeError(f"MT5 symbol_select failed for {symbol}: {mt5.last_error()}")
+    terminal = _require_mt5()
+    if not terminal.symbol_select(symbol, True):
+        raise RuntimeError(f"MT5 symbol_select failed for {symbol}: {terminal.last_error()}")
 
-    rates = mt5.copy_rates_from_pos(symbol, TIMEFRAME_MAP[timeframe], 1, count)
-    live_rates = mt5.copy_rates_from_pos(symbol, TIMEFRAME_MAP[timeframe], 0, 1)
+    rates = terminal.copy_rates_from_pos(symbol, _timeframe_value(timeframe), 1, count)
+    live_rates = terminal.copy_rates_from_pos(symbol, _timeframe_value(timeframe), 0, 1)
     if rates is None or live_rates is None:
-        raise RuntimeError(f"MT5 copy_rates_from_pos failed: {mt5.last_error()}")
+        raise RuntimeError(f"MT5 copy_rates_from_pos failed: {terminal.last_error()}")
 
     completed = [_candle(row) for row in rates]
     completed.sort(key=lambda row: row["time"])
     live = _candle(live_rates[-1]) if len(live_rates) else None
-    tick = mt5.symbol_info_tick(symbol)
+    tick = terminal.symbol_info_tick(symbol)
     if tick is None:
-        raise RuntimeError(f"MT5 symbol_info_tick failed: {mt5.last_error()}")
+        raise RuntimeError(f"MT5 symbol_info_tick failed: {terminal.last_error()}")
 
     bid = float(tick.bid)
     ask = float(tick.ask)
@@ -231,6 +246,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     _env_token()
+    terminal = _require_mt5()
     _initialize()
     host = os.getenv("MT5_MARKET_BRIDGE_HOST", DEFAULT_HOST).strip() or DEFAULT_HOST
     port = int(os.getenv("MT5_MARKET_BRIDGE_PORT", str(DEFAULT_PORT)))
@@ -251,7 +267,7 @@ def main() -> None:
         if publisher is not None:
             publisher.join(timeout=5)
         server.shutdown()
-        mt5.shutdown()
+        terminal.shutdown()
 
 
 if __name__ == "__main__":
