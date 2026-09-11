@@ -61,11 +61,21 @@ def test_market_payload_separates_completed_and_live_candles(fake):
     payload = bridge.market_payload("EURUSD", "15m", 100)
     assert payload["source"] == "mt5"
     assert payload["execution"] == "NONE"
+    assert payload["symbol"] == "EUR/USD"
     assert len(payload["candles"]) == len(completed)
     assert payload["candles"][-1]["time"] == completed[-1].time
     assert payload["live_candle"]["time"] == live[0].time
     assert payload["live_candle"]["close"] == live[0].close
     assert payload["price"] == pytest.approx((tick.bid + tick.ask) / 2)
+    assert payload["market_fingerprint"] and len(payload["market_fingerprint"]) == 64
+
+
+def test_market_payload_fingerprint_changes_when_completed_candle_changes(fake):
+    completed, _live, _tick = fake
+    first = bridge.market_payload("EURUSD", "15m", 100)
+    completed[0].close += 0.0001
+    second = bridge.market_payload("EURUSD", "15m", 100)
+    assert first["market_fingerprint"] != second["market_fingerprint"]
 
 
 def test_market_payload_rejects_invalid_tick(fake, monkeypatch):
