@@ -10,21 +10,27 @@ function json(data, status = 200, extraHeaders = {}) {
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store, no-cache, must-revalidate",
-      "x-webaria-market-contract": "mt5-runtime-v2",
+      "x-webaria-market-contract": "mt5-runtime-v6",
       ...extraHeaders,
     },
   });
 }
 
 function validateCandle(raw) {
+  const rawTime = raw?.datetime ?? raw?.time;
+  const datetime = typeof rawTime === "number"
+    ? new Date((Math.abs(rawTime) < 1e11 ? rawTime * 1000 : rawTime)).toISOString()
+    : String(rawTime || "");
+  const parsed = Date.parse(datetime);
   const candle = {
-    datetime: String(raw?.datetime || ""),
+    datetime,
+    time: Number.isFinite(parsed) ? Math.floor(parsed / 1000) : NaN,
     open: Number(raw?.open),
     high: Number(raw?.high),
     low: Number(raw?.low),
     close: Number(raw?.close),
   };
-  if (!candle.datetime || ![candle.open, candle.high, candle.low, candle.close].every(Number.isFinite)) {
+  if (!candle.datetime || !Number.isFinite(candle.time) || ![candle.open, candle.high, candle.low, candle.close].every(Number.isFinite)) {
     throw new Error("runtime returned invalid OHLC");
   }
   if (candle.high < Math.max(candle.open, candle.close) || candle.low > Math.min(candle.open, candle.close) || candle.high < candle.low) {
@@ -37,7 +43,7 @@ function normalizeRuntimePayload(payload, symbol, timeframe) {
   if (!payload || payload.source !== "mt5" || payload.execution !== "NONE") {
     throw new Error("runtime market contract rejected");
   }
-  if (typeof payload.market_fingerprint !== "string" || payload.market_fingerprint.length !== 64 || !/^[0-9a-f]{64}$/.test(payload.market_fingerprint)) {
+  if (typeof payload.market_fingerprint !== "string" || !/^[0-9a-f]{64}$/.test(payload.market_fingerprint)) {
     throw new Error("runtime market fingerprint rejected");
   }
   if (!Array.isArray(payload.candles) || payload.candles.length < 21) {
@@ -45,14 +51,12 @@ function normalizeRuntimePayload(payload, symbol, timeframe) {
   }
   const candles = payload.candles.map(validateCandle);
   for (let i = 1; i < candles.length; i += 1) {
-    if (Date.parse(candles[i].datetime) <= Date.parse(candles[i - 1].datetime)) {
+    if (candles[i].time <= candles[i - 1].time) {
       throw new Error("runtime candles are not strictly chronological");
     }
   }
   const live = validateCandle(payload.live_candle);
-  const completedLast = Date.parse(candles.at(-1).datetime);
-  const liveTime = Date.parse(live.datetime);
-  if (!Number.isFinite(completedLast) || !Number.isFinite(liveTime) || liveTime <= completedLast) {
+  if (live.time <= candles.at(-1).time) {
     throw new Error("runtime forming candle must be newer than completed history");
   }
   const price = Number(payload.price);
@@ -60,8 +64,8 @@ function normalizeRuntimePayload(payload, symbol, timeframe) {
   return {
     symbol,
     timeframe,
-    candles,
-    live_candle: live,
+    candles: candles.map(({ time: _time, ...candle }) => candle),
+    live_candle: (({ time: _time, ...candle }) => candle)(live),
     price,
     tick: payload.tick || null,
     source: "mt5",
