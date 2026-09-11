@@ -95,7 +95,7 @@ async function resolveApi(request,env,ctx,pathname){
     const id=env.MT5_MARKET.idFromName("market");
     return env.MT5_MARKET.get(id).fetch(request);
   }
-  if(!env.TWELVE_DATA_API_KEY){if(pathname==="/api/signal")return fallbackSignalResponse(request);if(pathname==="/api/price")return fallbackPriceResponse(request);if(pathname==="/api/live-candle")return fallbackCandleResponse(request);}
+  if(!env.TWELVE_DATA_API_KEY){if(pathname==="/api/price")return fallbackPriceResponse(request);if(pathname==="/api/live-candle")return fallbackCandleResponse(request);}
   if(pathname==="/api/signal")return handleSignalParityV2(request,env);
   return app.fetch(request,env,ctx);
 }
