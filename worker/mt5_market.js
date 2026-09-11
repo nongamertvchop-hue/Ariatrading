@@ -2,7 +2,7 @@ const TIMEFRAME_SECONDS = Object.freeze({"1m":60,"5m":300,"15m":900,"30m":1800,"
 const MAX_CANDLES = 500;
 const MAX_AGE_SECONDS = 90;
 const MAX_INGEST_BYTES = 256 * 1024;
-const MARKET_CONTRACT_VERSION = "mt5-market-v5";
+const MARKET_CONTRACT_VERSION = "mt5-market-v6";
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type":"application/json; charset=utf-8", "cache-control":"no-store", "x-webaria-market-contract": MARKET_CONTRACT_VERSION, ...extraHeaders } });
@@ -15,6 +15,23 @@ function validateCandle(raw) {
   if (high<Math.max(open,close)||low>Math.min(open,close)||high<low) throw new Error("invalid candle OHLC relationship");
   return {time,open,high,low,close};
 }
+function assertCompletedChronology(candles) {
+  for (let i=1;i<candles.length;i+=1) {
+    if (candles[i].time<=candles[i-1].time) throw new Error("completed candles must be strictly chronological and unique");
+  }
+}
+function assertCompletedCandleSeparation(candles, liveCandle) {
+  if (!liveCandle) return;
+  if (candles.some(c => c.time === liveCandle.time)) throw new Error("live candle must not be duplicated in completed candles");
+  if (candles.length && liveCandle.time <= candles.at(-1).time) throw new Error("live candle must be newer than the latest completed candle");
+}
+function canonicalCompletedPayload(symbol, timeframe, candles) {
+  return JSON.stringify({symbol,timeframe,candles:candles.map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close}))});
+}
+async function completedFingerprint(symbol, timeframe, candles) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalCompletedPayload(symbol,timeframe,candles)));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2,"0")).join("");
+}
 function validatePayload(payload) {
   const symbol=String(payload?.symbol||"").trim().toUpperCase(), timeframe=String(payload?.timeframe||"").trim();
   if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)) throw new Error("invalid symbol");
@@ -22,17 +39,17 @@ function validatePayload(payload) {
   const candles=Array.isArray(payload?.candles)?payload.candles:[];
   if(candles.length>MAX_CANDLES) throw new Error("too many candles");
   const normalized=candles.map(c=>validateCandle(c));
+  assertCompletedChronology(normalized);
   const liveCandle=payload?.live_candle?validateCandle(payload.live_candle):null;
+  assertCompletedCandleSeparation(normalized, liveCandle);
   const receivedAt=Number(payload?.received_at??Math.floor(Date.now()/1000));
+  const now=Math.floor(Date.now()/1000);
   if(!Number.isInteger(receivedAt)||receivedAt<=0) throw new Error("invalid received_at");
-  if(Math.floor(Date.now()/1000)-receivedAt>MAX_AGE_SECONDS) throw new Error("stale bridge payload");
+  if(receivedAt>now+15) throw new Error("bridge payload timestamp is too far in the future");
+  if(now-receivedAt>MAX_AGE_SECONDS) throw new Error("stale bridge payload");
   const price=Number(payload?.price);
-  if(!Number.isFinite(price)) throw new Error("invalid price");
+  if(!Number.isFinite(price)||price<=0) throw new Error("invalid price");
   return {symbol,timeframe,candles:normalized,liveCandle,receivedAt,price};
-}
-function assertCompletedCandleSeparation(candles, liveCandle) {
-  if (!liveCandle) return;
-  if (candles.some(c => c.time === liveCandle.time)) throw new Error("live candle must not be duplicated in completed candles");
 }
 
 export class Mt5MarketStore {
@@ -45,17 +62,25 @@ export class Mt5MarketStore {
     if(!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)||!Object.prototype.hasOwnProperty.call(TIMEFRAME_SECONDS,timeframe)) return json({error:"bad_request",message:"invalid symbol or timeframe",source:"mt5"},400);
     const stored=await this.state.storage.get(key(symbol,timeframe));
     if(!stored) return json({error:"mt5_feed_unavailable",message:"no MT5 data received",source:"mt5",contract:MARKET_CONTRACT_VERSION},503);
-    const age=Math.max(0,Math.floor(Date.now()/1000)-stored.received_at);
+    const age=Math.max(0,Math.floor(Date.now()/1000)-Number(stored.received_at));
     if(age>MAX_AGE_SECONDS) return json({error:"mt5_feed_unavailable",message:"MT5 bridge data is stale",source:"mt5",age_seconds:age,contract:MARKET_CONTRACT_VERSION},503);
-    return json({symbol,timeframe,candles:stored.candles,live_candle:stored.live_candle,price:stored.price,source:"mt5",data_quality:{ok:true,age_seconds:age,mode:"BROKER_FEED"},received_at:stored.received_at,execution:"NONE"});
+    const candles=Array.isArray(stored.candles)?stored.candles:[];
+    try {
+      assertCompletedChronology(candles);
+      assertCompletedCandleSeparation(candles, stored.live_candle);
+    } catch(error) {
+      return json({error:"mt5_market_contract_rejected",message:error?.message||"stored market snapshot is invalid",source:"mt5",execution:"NONE"},503);
+    }
+    const fingerprint=stored.market_fingerprint||await completedFingerprint(symbol,timeframe,candles);
+    return json({symbol,timeframe,candles,live_candle:stored.live_candle,price:stored.price,source:"mt5",market_fingerprint:fingerprint,data_quality:{ok:true,age_seconds:age,mode:"BROKER_FEED"},received_at:stored.received_at,execution:"NONE"});
   }
   async diagnostics(symbol) {
     const now=Math.floor(Date.now()/1000), rows=[];
     for(const timeframe of Object.keys(TIMEFRAME_SECONDS)){
       const stored=await this.state.storage.get(key(symbol,timeframe));
-      if(!stored){rows.push({timeframe,state:"NO_DATA",age_seconds:null,candles:0,live_candle:false});continue;}
+      if(!stored){rows.push({timeframe,state:"NO_DATA",age_seconds:null,candles:0,live_candle:false,market_fingerprint:null});continue;}
       const age=Math.max(0,now-Number(stored.received_at));
-      rows.push({timeframe,state:age>MAX_AGE_SECONDS?"STALE":"LIVE",age_seconds:age,candles:Array.isArray(stored.candles)?stored.candles.length:0,live_candle:Boolean(stored.live_candle),price:Number(stored.price)});
+      rows.push({timeframe,state:age>MAX_AGE_SECONDS?"STALE":"LIVE",age_seconds:age,candles:Array.isArray(stored.candles)?stored.candles.length:0,live_candle:Boolean(stored.live_candle),price:Number(stored.price),market_fingerprint:stored.market_fingerprint||null});
     }
     return json({source:"mt5",contract:MARKET_CONTRACT_VERSION,symbol,timeframes:rows,summary:{live:rows.filter(r=>r.state==="LIVE").length,no_data:rows.filter(r=>r.state==="NO_DATA").length,stale:rows.filter(r=>r.state==="STALE").length}});
   }
@@ -64,14 +89,14 @@ export class Mt5MarketStore {
       const body=await request.arrayBuffer();
       if(body.byteLength>MAX_INGEST_BYTES) return json({error:"payload_too_large",message:"MT5 bridge payload exceeds 256 KiB"},413);
       const payload=validatePayload(JSON.parse(new TextDecoder().decode(body)));
-      assertCompletedCandleSeparation(payload.candles,payload.liveCandle);
-      const candles=payload.candles.sort((a,b)=>a.time-b.time), latest=payload.liveCandle||candles.at(-1);
+      const candles=payload.candles.slice(-MAX_CANDLES), latest=payload.liveCandle||candles.at(-1);
       if(!latest) throw new Error("payload contains no candle");
       const existing=await this.state.storage.get(key(payload.symbol,payload.timeframe)), existingLatest=existing?.live_candle||existing?.candles?.at(-1);
       if(existingLatest&&latest.time<existingLatest.time) return json({error:"out_of_order",message:"older candle payload rejected"},409);
-      await this.state.storage.put(key(payload.symbol,payload.timeframe),{candles:candles.slice(-MAX_CANDLES),live_candle:payload.liveCandle,price:payload.price,received_at:payload.receivedAt});
-      return json({ok:true,symbol:payload.symbol,timeframe:payload.timeframe,source:"mt5",contract:MARKET_CONTRACT_VERSION});
+      const fingerprint=await completedFingerprint(payload.symbol,payload.timeframe,candles);
+      await this.state.storage.put(key(payload.symbol,payload.timeframe),{candles,live_candle:payload.liveCandle,price:payload.price,received_at:payload.receivedAt,market_fingerprint:fingerprint});
+      return json({ok:true,symbol:payload.symbol,timeframe:payload.timeframe,source:"mt5",contract:MARKET_CONTRACT_VERSION,market_fingerprint:fingerprint});
     } catch(error) { return json({error:"bad_request",message:error?.message||"invalid MT5 payload"},400); }
   }
 }
-export { TIMEFRAME_SECONDS, MARKET_CONTRACT_VERSION };
+export { TIMEFRAME_SECONDS, MARKET_CONTRACT_VERSION, canonicalCompletedPayload, completedFingerprint, validateCandle, assertCompletedChronology, assertCompletedCandleSeparation };
