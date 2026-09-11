@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { handleSignalParityV2 } from "../worker/signal_parity_v2.js";
 
 function mockEnv(payload) {
@@ -60,4 +61,10 @@ test("/api/signal fails closed when MT5 data is unavailable", async () => {
     },
   );
   assert.equal(response.status, 503);
+});
+
+test("Worker entry does not route /api/signal to the legacy synthetic fallback", () => {
+  const source = fs.readFileSync(new URL("../worker/entry.js", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /if\(!env\.TWELVE_DATA_API_KEY\)\{if\(pathname===\"\/api\/signal\"\)/);
+  assert.match(source, /if\(!env\.TWELVE_DATA_API_KEY\)\{if\(pathname===\"\/api\/price\"\)/);
 });
