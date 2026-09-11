@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.17.4**
+**Current version: 0.17.5**
 
 ## Core idea
 
@@ -70,6 +70,7 @@ The project is layered so every stage can be used together without duplicating s
 51. **Canonical MT5 strategy boundary** — MT5-sourced `/api/strategy` requests pass through the realtime feed-integrity guard before strategy evaluation, including epoch timestamp normalization and duplicate-cursor protection.
 52. **Webaria MT5 single-source runtime** — `/api/market` and `/api/signal` consume the same MT5 market store; the browser evaluates strategy on completed MT5 candles and fails closed on broker-data mismatch or unavailability.
 53. **MT5 end-to-end contract certification** — a Python bridge-shaped payload is exercised through the JavaScript `Mt5MarketStore` and canonical `/api/signal` adapter in CI, including completed/forming separation and fail-closed contract checks.
+54. **MT5 snapshot fingerprint certification** — the Python bridge, Durable Object market store, signal adapter, Pages compatibility path, and browser runtime share a deterministic SHA-256 identity for the completed-candle snapshot; chart/strategy mismatches fail closed.
 
 ## Key modules
 
@@ -89,8 +90,10 @@ The project is layered so every stage can be used together without duplicating s
 - `worker/paper_runtime_store.js` — Durable Object implementation of the authoritative paper-runtime state contract.
 - `worker/realtime_feed_guard.js` — closed-candle validation shared by the Worker realtime signal path and MT5 strategy boundary.
 - `worker/signal_parity_v2.js` — canonical MT5-backed realtime signal adapter used by Webaria `/api/signal`.
-- `Webaria/live-market.js` — browser live market loop that keeps chart and strategy on the same MT5 source.
+- `worker/mt5_market.js` — authoritative MT5 market snapshot store and canonical completed-candle fingerprint source.
+- `Webaria/live-market.js` — browser live market loop that keeps chart and strategy on the same MT5 source and rejects mixed snapshots.
 - `tests/e2e_mt5_contract.py` + `tests/e2e_mt5_contract.test.mjs` — cross-language MT5 contract certification used by CI.
+- `tests/test_mt5_snapshot_fingerprint.mjs` — completed-candle fingerprint and chart/strategy fail-closed regression suite.
 
 ## Safety boundary
 
