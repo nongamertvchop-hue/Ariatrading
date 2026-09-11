@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { Mt5MarketStore } from "../worker/mt5_market.js";
+import { Mt5MarketStore, completedFingerprint } from "../worker/mt5_market.js";
 import { handleSignalParityV2 } from "../worker/signal_parity_v2.js";
 
 function storageContext() {
@@ -56,6 +56,14 @@ test("MT5 market store fingerprints the completed candle snapshot", async () => 
   assert.equal(market.status, 200);
   const marketBody = await market.json();
   assert.equal(marketBody.market_fingerprint, body.market_fingerprint);
+});
+
+test("Python-generated MT5 fixture fingerprint matches the Worker canonical algorithm", async () => {
+  const fixturePath = ".github/e2e_mt5_payload.json";
+  if (!fs.existsSync(fixturePath)) return;
+  const payload = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+  const fingerprint = await completedFingerprint("EUR/USD", "15m", payload.candles);
+  assert.equal(fingerprint, payload.market_fingerprint);
 });
 
 test("MT5 market store rejects duplicate or out-of-order completed timestamps", async () => {
