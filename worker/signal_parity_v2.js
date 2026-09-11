@@ -146,7 +146,9 @@ export async function handleSignalParityV2(request, env) {
   const market = await fetchMt5Market(env, symbol, timeframe);
   if (!market.response.ok) return market.response;
   const payload = await market.response.json();
-  if (payload.source !== "mt5" || !Array.isArray(payload.candles)) return json({ error: "mt5_market_contract_rejected", message: "MT5 market contract rejected", source: "unavailable", execution: "NONE" }, 503);
+  if (payload.source !== "mt5" || !Array.isArray(payload.candles) || typeof payload.market_fingerprint !== "string" || !payload.market_fingerprint) {
+    return json({ error: "mt5_market_contract_rejected", message: "MT5 market contract or snapshot fingerprint rejected", source: "unavailable", execution: "NONE" }, 503);
+  }
 
   const candles = payload.candles.map((candle) => ({
     open: candle.open,
@@ -158,13 +160,13 @@ export async function handleSignalParityV2(request, env) {
   const quality = validateRealtimeFeed(candles, timeframe, symbol);
   if (!quality.ok) {
     if (quality.reason === "duplicate or old closed bar") {
-      return json({ symbol, timeframe, signal: WAIT, state: "NO_UPDATE", reason: quality.reason, data_quality: quality, no_update: true, source: "mt5", execution: "NONE" });
+      return json({ symbol, timeframe, signal: WAIT, state: "NO_UPDATE", reason: quality.reason, data_quality: quality, no_update: true, source: "mt5", market_fingerprint: payload.market_fingerprint, execution: "NONE" });
     }
-    return json({ error: "realtime_data_rejected", message: quality.reason, data_quality: quality, source: "mt5", execution: "NONE" }, 503);
+    return json({ error: "realtime_data_rejected", message: quality.reason, data_quality: quality, market_fingerprint: payload.market_fingerprint, source: "mt5", execution: "NONE" }, 503);
   }
 
   const result = evaluateRealtimeSignalParity(candles, timeframe);
-  const response = { symbol, timeframe, ...result, price: Number(payload.price), live_candle: payload.live_candle ?? null, source: "mt5", data_quality: { ...quality, broker_age_seconds: payload.data_quality?.age_seconds ?? null }, generated_at: new Date().toISOString(), execution: "NONE" };
+  const response = { symbol, timeframe, ...result, price: Number(payload.price), live_candle: payload.live_candle ?? null, source: "mt5", market_fingerprint: payload.market_fingerprint, data_quality: { ...quality, broker_age_seconds: payload.data_quality?.age_seconds ?? null }, generated_at: new Date().toISOString(), execution: "NONE" };
   response.event_id = await buildSignalEventId(response);
   acceptRealtimeFeed(candles, timeframe, symbol);
   return json(response);
