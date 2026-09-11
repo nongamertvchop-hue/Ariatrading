@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: "22"
       - name: Run Worker and Webaria tests
-        run: node --test tests/worker_signal_parity.test.mjs tests/realtime_full_parity.test.mjs tests/web_signal_journal.test.mjs tests/web_paper_engine.test.mjs tests/web_chart_data_compat.test.mjs tests/web_price_action_pages.test.mjs
+        run: node --test tests/worker_signal_parity.test.mjs tests/realtime_full_parity.test.mjs tests/web_signal_journal.test.mjs tests/web_paper_engine.test.mjs tests/web_chart_data_compat.test.mjs tests/web_price_action_pages.test.mjs tests/test_worker_mt5_single_source.mjs
 
   worker-syntax:
     runs-on: ubuntu-latest
@@ -44,7 +44,7 @@ jobs:
         with:
           node-version: "22"
       - name: Check Worker, Pages signal, chart, and Bodyguard JavaScript syntax
-        run: node --check worker/index.js && node --check worker/entry.js && node --check worker/signal_parity.js && node --check worker/signal_parity_v2.js && node --check Webaria/functions/api/signal.js && node --check Webaria/functions/api/market.js && node --check Webaria/functions/api/bodyguard/status.js && node --check Webaria/chart-data-compat.js && node --check Webaria/paper-runtime.js && node --check Webaria/trading.js
+        run: node --check worker/index.js && node --check worker/entry.js && node --check worker/signal_parity.js && node --check worker/signal_parity_v2.js && node --check Webaria/functions/api/signal.js && node --check Webaria/functions/api/market.js && node --check Webaria/functions/api/bodyguard/status.js && node --check Webaria/chart-data-compat.js && node --check Webaria/paper-runtime.js && node --check Webaria/trading.js && node --check Webaria/live-market.js && node --check tests/test_worker_mt5_single_source.mjs
 
   polyglot-build:
     runs-on: ubuntu-latest
