@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.17.1**
+**Current version: 0.17.2**
 
 ## Core idea
 
@@ -67,6 +67,7 @@ The project is layered so every stage can be used together without duplicating s
 48. **Final Release Gate CI** — `.github/workflows/release-gate.yml` combines historical data validation, 10k synthetic soak, three-way parity, process-death recovery and long real-history paper shadow.
 49. **Canonical MT5 Web Market Bridge** — Webaria `/api/market` proxies an authenticated runtime `/market` endpoint; MT5 is the chart source of truth and provider fallback is intentionally disabled to prevent price/strategy drift.
 50. **Durable Bodyguard Telemetry Bridge** — Webaria `/api/bodyguard/status` reads sanitized runtime SQLite events and heartbeat data, giving the dashboard near-real-time durable incident visibility without exposing IPs, secrets, request bodies or PII.
+51. **Canonical MT5 strategy boundary** — MT5-sourced `/api/strategy` requests pass through the realtime feed-integrity guard before strategy evaluation, including epoch timestamp normalization and duplicate-cursor protection.
 
 ## Key modules
 
@@ -84,6 +85,7 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/release_gate.py` — final paper-only historical/parity/crash/shadow release checks.
 - `worker/paper_runtime_store.js` — Durable Object implementation of the authoritative paper-runtime state contract.
 - `Webaria/operational-console.html` — authoritative operational dashboard backed by `/api/paper-state`.
+- `worker/realtime_feed_guard.js` — closed-candle validation shared by the Worker realtime signal path and MT5 strategy boundary.
 
 ## Safety boundary
 

@@ -20,6 +20,12 @@ const lastEvaluated = new Map();
 
 function parseTime(value) {
   if (value instanceof Date) return value;
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    // MT5 sends Unix epoch seconds. Accept milliseconds too for generic callers.
+    const milliseconds = value < 100_000_000_000 ? value * 1000 : value;
+    const date = new Date(milliseconds);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
   if (typeof value !== "string" || !value.trim()) return null;
   const normalized = value.includes("T") ? value : value.replace(" ", "T");
   const withZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(normalized) ? normalized : `${normalized}Z`;
@@ -30,7 +36,7 @@ function parseTime(value) {
 function validateFeedBatch(candles, timeframe) {
   const duration = TIMEFRAME_SECONDS[timeframe];
   if (!duration) return { ok: false, reason: `unsupported timeframe: ${timeframe}` };
-  if (!candles.length) return { ok: false, reason: "empty feed" };
+  if (!Array.isArray(candles) || !candles.length) return { ok: false, reason: "empty feed" };
 
   let previousMs = null;
   for (const candle of candles) {
