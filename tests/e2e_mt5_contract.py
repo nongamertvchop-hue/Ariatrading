@@ -57,22 +57,17 @@ class FakeMT5:
 def main() -> None:
     fake = FakeMT5()
     bridge.mt5 = fake
-    bridge.TIMEFRAME_MAP.update(
-        {
-            "1m": fake.TIMEFRAME_M1,
-            "5m": fake.TIMEFRAME_M5,
-            "15m": fake.TIMEFRAME_M15,
-            "30m": fake.TIMEFRAME_M30,
-            "1h": fake.TIMEFRAME_H1,
-            "4h": fake.TIMEFRAME_H4,
-            "1D": fake.TIMEFRAME_D1,
-        }
-    )
+
     payload = bridge.market_payload("EURUSD", "15m", 20)
+    assert payload["symbol"] == "EUR/USD"
     assert payload["source"] == "mt5"
     assert payload["execution"] == "NONE"
     assert len(payload["candles"]) == 20
     assert payload["live_candle"]["time"] > payload["candles"][-1]["time"]
+    assert len(payload["market_fingerprint"]) == 64
+    assert payload["market_fingerprint"] == bridge.completed_fingerprint(
+        payload["symbol"], payload["timeframe"], payload["candles"]
+    )
     assert payload["tick"]["bid"] <= payload["price"] <= payload["tick"]["ask"]
 
     target = Path(".github/e2e_mt5_payload.json")
