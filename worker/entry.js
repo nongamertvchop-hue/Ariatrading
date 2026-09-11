@@ -4,6 +4,7 @@ import { PaperRuntimeStore } from "./paper_runtime_store.js";
 import { handleSignalParityV2, evaluateRealtimeSignalParity } from "./signal_parity_v2.js";
 import { buildSignalEventId } from "./signal_event.js";
 import { fallbackCandles, fallbackPrice, FALLBACK_SOURCE, TIMEFRAME_SECONDS } from "./fallback_market.js";
+import { validateRealtimeFeed, acceptRealtimeFeed } from "./realtime_feed_guard.js";
 import { guardPublicRequest, applySecurityHeaders, statusResponse, BODYGUARD_VERSION } from "../bodyguard/worker/bodyguard.js";
 import { sanitizeForBoundary } from "../bodyguard/worker/redaction.js";
 
@@ -59,10 +60,20 @@ async function handleStrategyRequest(request){
     if(!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol))return json({error:"bad_request",message:"symbol must look like EUR/USD"},400);
     if(!TIMEFRAME_SECONDS[timeframe])return json({error:"bad_request",message:`unsupported timeframe: ${timeframe}`},400);
     if(!Array.isArray(body?.candles)||body.candles.length<5||body.candles.length>500)return json({error:"bad_request",message:"candles must contain 5..500 rows"},400);
-    const result=evaluateRealtimeSignalParity(body.candles,timeframe);
     const source=body?.source==="mt5"?"mt5":"simulation";
+    if(source==="mt5"){
+      const quality=validateRealtimeFeed(body.candles,timeframe,symbol);
+      if(!quality.ok){
+        if(quality.reason==="duplicate or old closed bar"){
+          return json({symbol,timeframe,signal:"WAIT",state:"NO_UPDATE",reason:quality.reason,data_quality:quality,no_update:true,execution:"NONE"},409);
+        }
+        return json({error:"realtime_data_rejected",message:quality.reason,data_quality:quality,execution:"NONE"},503);
+      }
+    }
+    const result=evaluateRealtimeSignalParity(body.candles,timeframe);
     const response={symbol,timeframe,...result,source,execution:"NONE",generated_at:new Date().toISOString()};
     response.event_id=await buildSignalEventId(response);
+    if(source==="mt5") acceptRealtimeFeed(body.candles,timeframe,symbol);
     return json(response);
   }catch(error){return json({error:"strategy_rejected",message:error?.message||"strategy payload rejected",execution:"NONE"},400);}
 }
