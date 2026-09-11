@@ -25,8 +25,15 @@ function assertCompletedCandleSeparation(candles, liveCandle) {
   if (candles.some(c => c.time === liveCandle.time)) throw new Error("live candle must not be duplicated in completed candles");
   if (candles.length && liveCandle.time <= candles.at(-1).time) throw new Error("live candle must be newer than the latest completed candle");
 }
+function canonicalPrice(value) {
+  const number=Number(value);
+  if(!Number.isFinite(number)) throw new Error("non-finite price in fingerprint");
+  return number.toFixed(12);
+}
 function canonicalCompletedPayload(symbol, timeframe, candles) {
-  return JSON.stringify({symbol,timeframe,candles:candles.map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close}))});
+  const lines=[`${symbol}\n${timeframe}`];
+  for(const candle of candles) lines.push(`${Number(candle.time)}|${canonicalPrice(candle.open)}|${canonicalPrice(candle.high)}|${canonicalPrice(candle.low)}|${canonicalPrice(candle.close)}`);
+  return lines.join("\n");
 }
 async function completedFingerprint(symbol, timeframe, candles) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalCompletedPayload(symbol,timeframe,candles)));
