@@ -29,6 +29,7 @@ test("/api/signal reads candles from the MT5 market binding", async () => {
     low: 1.0995 + i * 0.0001,
     close: 1.1002 + i * 0.0001,
   }));
+  const fingerprint = "a".repeat(64);
   const response = await handleSignalParityV2(
     new Request("https://example.test/api/signal?symbol=EUR/USD&timeframe=15m"),
     mockEnv({
@@ -36,8 +37,9 @@ test("/api/signal reads candles from the MT5 market binding", async () => {
       symbol: "EUR/USD",
       timeframe: "15m",
       candles,
-      live_candle: candles.at(-1),
+      live_candle: { ...candles.at(-1), time: candles.at(-1).time + 900 },
       price: candles.at(-1).close,
+      market_fingerprint: fingerprint,
       data_quality: { ok: true, age_seconds: 1 },
     }),
   );
@@ -46,6 +48,7 @@ test("/api/signal reads candles from the MT5 market binding", async () => {
   assert.equal(body.source, "mt5");
   assert.equal(body.candles_used, candles.length);
   assert.equal(body.price, candles.at(-1).close);
+  assert.equal(body.market_fingerprint, fingerprint);
 });
 
 test("/api/signal fails closed when MT5 data is unavailable", async () => {
