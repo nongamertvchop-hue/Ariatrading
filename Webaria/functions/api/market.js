@@ -10,7 +10,7 @@ function json(data, status = 200, extraHeaders = {}) {
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store, no-cache, must-revalidate",
-      "x-webaria-market-contract": "mt5-runtime-v1",
+      "x-webaria-market-contract": "mt5-runtime-v2",
       ...extraHeaders,
     },
   });
@@ -37,6 +37,9 @@ function normalizeRuntimePayload(payload, symbol, timeframe) {
   if (!payload || payload.source !== "mt5" || payload.execution !== "NONE") {
     throw new Error("runtime market contract rejected");
   }
+  if (typeof payload.market_fingerprint !== "string" || payload.market_fingerprint.length !== 64 || !/^[0-9a-f]{64}$/.test(payload.market_fingerprint)) {
+    throw new Error("runtime market fingerprint rejected");
+  }
   if (!Array.isArray(payload.candles) || payload.candles.length < 21) {
     throw new Error("runtime returned too few completed candles");
   }
@@ -47,6 +50,11 @@ function normalizeRuntimePayload(payload, symbol, timeframe) {
     }
   }
   const live = validateCandle(payload.live_candle);
+  const completedLast = Date.parse(candles.at(-1).datetime);
+  const liveTime = Date.parse(live.datetime);
+  if (!Number.isFinite(completedLast) || !Number.isFinite(liveTime) || liveTime <= completedLast) {
+    throw new Error("runtime forming candle must be newer than completed history");
+  }
   const price = Number(payload.price);
   if (!Number.isFinite(price) || price <= 0) throw new Error("runtime returned invalid price");
   return {
@@ -57,6 +65,7 @@ function normalizeRuntimePayload(payload, symbol, timeframe) {
     price,
     tick: payload.tick || null,
     source: "mt5",
+    market_fingerprint: payload.market_fingerprint,
     candles_used: candles.length,
     generated_at: new Date().toISOString(),
     runtime_generated_at: payload.generated_at || null,
