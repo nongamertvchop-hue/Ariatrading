@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
+
+# When executed as `python tests/e2e_mt5_contract.py`, Python places `tests/`
+# rather than the repository root on sys.path. Add the root explicitly so the
+# repository's namespace packages (for example `live`) resolve consistently
+# in local runs and CI.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from live import mt5_market_bridge as bridge
 
