@@ -99,7 +99,8 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
   const currentPrice = candles[candles.length - 1].close;
   const support = nearestSupport(currentPrice, supports);
   const resistance = nearestResistance(currentPrice, resistances);
-  const indicators = calculateIndicators(history);
+  // The latest candle is closed at evaluation time, so it is valid indicator input.
+  const indicators = calculateIndicators(candles);
   const forecastResult = forecast(candles, [1, 3, 5], support, resistance);
   const supervisor = supervise(strategySignal, forecastResult, null, minForecastConfidence);
   let finalSignal = strategySignal;
@@ -107,7 +108,7 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
     finalSignal = { ...strategySignal, action: WAIT, reason: `realtime supervisor: ${supervisor.reasons.join("; ")}`, protection: "BLOCKED" };
   }
   const indicatorDirection = finalSignal.action === LONG || finalSignal.action === SHORT ? finalSignal.action : null;
-  const indicatorContextResult = indicatorContext(history, indicatorDirection);
+  const indicatorContextResult = indicatorContext(candles, indicatorDirection);
   const selectedScore = strategySignal.action === LONG || strategySignal.action === SHORT ? strategySignal.score ?? null : null;
   const latestRawCandle = rawCandles[rawCandles.length - 1];
   return {
