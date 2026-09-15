@@ -23,6 +23,7 @@ import {
   findSupportZones,
   scoreSetup,
 } from "../worker/signal_parity.js";
+import { indicatorContext } from "../worker/indicators.js";
 import { forecast, supervise } from "../worker/forecast_parity.js";
 import { evaluateRealtimeSignalParity } from "../worker/signal_parity_v2.js";
 import { validateRealtimeFeed, acceptRealtimeFeed, resetRealtimeFeedGuard } from "../worker/realtime_feed_guard.js";
@@ -34,66 +35,48 @@ const candle = (open, high, low, close, datetime = undefined) => ({ open, high, 
 
 function makeRangeFixture() {
   return [
-    candle(1.1000, 1.1010, 1.0995, 1.1005),
-    candle(1.1005, 1.1015, 1.1000, 1.1010),
-    candle(1.1010, 1.1020, 1.1002, 1.1014),
-    candle(1.1014, 1.1020, 1.0990, 1.0995),
-    candle(1.0995, 1.1005, 1.0985, 1.0990),
-    candle(1.0990, 1.1010, 1.0980, 1.1007),
-    candle(1.1007, 1.1022, 1.1000, 1.1018),
-    candle(1.1018, 1.1030, 1.1008, 1.1026),
-    candle(1.1026, 1.1032, 1.1005, 1.1010),
+    candle(1.1000, 1.1010, 1.0995, 1.1005), candle(1.1005, 1.1015, 1.1000, 1.1010), candle(1.1010, 1.1020, 1.1002, 1.1014),
+    candle(1.1014, 1.1020, 1.0990, 1.0995), candle(1.0995, 1.1005, 1.0985, 1.0990), candle(1.0990, 1.1010, 1.0980, 1.1007),
+    candle(1.1007, 1.1022, 1.1000, 1.1018), candle(1.1018, 1.1030, 1.1008, 1.1026), candle(1.1026, 1.1032, 1.1005, 1.1010),
     candle(1.1010, 1.1015, 1.0990, 1.1000),
   ];
 }
 
 test("golden vectors: Worker breakout classification matches Python contract", () => {
   for (const vector of golden.breakout) {
-    const result = vector.direction === LONG
-      ? classifySupportBreakout(vector.candle, vector.zone, vector.buffer)
-      : classifyResistanceBreakout(vector.candle, vector.zone, vector.buffer);
+    const result = vector.direction === LONG ? classifySupportBreakout(vector.candle, vector.zone, vector.buffer) : classifyResistanceBreakout(vector.candle, vector.zone, vector.buffer);
     assert.equal(result.state, vector.expected_state, vector.name);
   }
 });
 
 test("golden vectors: Worker zone centers match PriceZone.center", () => {
-  for (const vector of golden.zone_center) {
-    assert.equal((vector.low + vector.high) / 2, vector.expected_center);
-  }
+  for (const vector of golden.zone_center) assert.equal((vector.low + vector.high) / 2, vector.expected_center);
 });
 
 test("support fake breakout matches Python contract", () => {
   const zone = { low: 1.0000, high: 1.0100, center: 1.0050, kind: SUPPORT, touches: 2 };
-  const result = classifySupportBreakout(candle(1.0040, 1.0060, 0.9995, 1.0045), zone, 0.0020);
-  assert.equal(result.state, FAKE_BREAKOUT);
+  assert.equal(classifySupportBreakout(candle(1.0040, 1.0060, 0.9995, 1.0045), zone, 0.0020).state, FAKE_BREAKOUT);
 });
 
 test("support decisive close matches Python true-break contract", () => {
   const zone = { low: 1.0000, high: 1.0100, center: 1.0050, kind: SUPPORT, touches: 2 };
-  const result = classifySupportBreakout(candle(1.0020, 1.0030, 0.9970, 0.9979), zone, 0.0020);
-  assert.equal(result.state, TRUE_BREAKOUT);
+  assert.equal(classifySupportBreakout(candle(1.0020, 1.0030, 0.9970, 0.9979), zone, 0.0020).state, TRUE_BREAKOUT);
 });
 
 test("resistance fake breakout is mirrored correctly", () => {
   const zone = { low: 1.0000, high: 1.0100, center: 1.0050, kind: RESISTANCE, touches: 2 };
-  const result = classifyResistanceBreakout(candle(1.0060, 1.0105, 1.0045, 1.0065), zone, 0.0020);
-  assert.equal(result.state, FAKE_BREAKOUT);
+  assert.equal(classifyResistanceBreakout(candle(1.0060, 1.0105, 1.0045, 1.0065), zone, 0.0020).state, FAKE_BREAKOUT);
 });
 
 test("resistance decisive close matches Python true-break contract", () => {
   const zone = { low: 1.0000, high: 1.0100, center: 1.0050, kind: RESISTANCE, touches: 2 };
-  const result = classifyResistanceBreakout(candle(1.0120, 1.0135, 1.0110, 1.0121), zone, 0.0020);
-  assert.equal(result.state, TRUE_BREAKOUT);
+  assert.equal(classifyResistanceBreakout(candle(1.0120, 1.0135, 1.0110, 1.0121), zone, 0.0020).state, TRUE_BREAKOUT);
 });
 
 test("Worker zone centers include the tolerance exactly like PriceZone.center", () => {
   const candles = [
-    candle(1.10, 1.11, 1.09, 1.10),
-    candle(1.10, 1.105, 1.08, 1.09),
-    candle(1.09, 1.095, 1.085, 1.09),
-    candle(1.09, 1.11, 1.09, 1.10),
-    candle(1.10, 1.105, 1.08, 1.09),
-    candle(1.09, 1.095, 1.085, 1.09),
+    candle(1.10, 1.11, 1.09, 1.10), candle(1.10, 1.105, 1.08, 1.09), candle(1.09, 1.095, 1.085, 1.09),
+    candle(1.09, 1.11, 1.09, 1.10), candle(1.10, 1.105, 1.08, 1.09), candle(1.09, 1.095, 1.085, 1.09),
     candle(1.09, 1.10, 1.088, 1.095),
   ];
   const tolerance = adaptiveZoneTolerance(candles, "15m");
@@ -101,9 +84,31 @@ test("Worker zone centers include the tolerance exactly like PriceZone.center", 
   for (const zone of zones) assert.equal(zone.center, (zone.low + zone.high) / 2);
 });
 
+test("indicator context supports a LONG when two of three directional checks agree", () => {
+  const candles = Array.from({ length: 60 }, (_, index) => {
+    const close = 1 + index * 0.001;
+    return candle(close - 0.0002, close + 0.0005, close - 0.0005, close);
+  });
+  const context = indicatorContext(candles, LONG);
+  assert.ok(context.confirmations >= 2);
+  assert.equal(context.allowed, true);
+  assert.notEqual(context.confirmation_state, "OPPOSED");
+});
+
+test("indicator context vetoes a direction only when all three checks oppose it", () => {
+  const candles = Array.from({ length: 60 }, (_, index) => {
+    const close = 2 - index * 0.001;
+    return candle(close + 0.0002, close + 0.0005, close - 0.0005, close);
+  });
+  const context = indicatorContext(candles, LONG);
+  assert.equal(context.opposing, 3);
+  assert.equal(context.confirmations, 0);
+  assert.equal(context.allowed, false);
+  assert.equal(context.confirmation_state, "OPPOSED");
+});
+
 test("realtime evaluator returns WAIT instead of error when no zones exist", () => {
-  const result = evaluateRealtimeSignalParity(makeRangeFixture(), "15m");
-  assert.equal(result.signal, WAIT);
+  assert.equal(evaluateRealtimeSignalParity(makeRangeFixture(), "15m").signal, WAIT);
 });
 
 test("forecast probabilities and confidence are deterministic and bounded", () => {
@@ -138,12 +143,7 @@ test("supervisor blocks an otherwise directional setup when forecast is unavaila
 });
 
 test("supervisor blocks low-confidence forecast and preserves fail-closed behavior", () => {
-  const decision = supervise(
-    { action: SHORT, protection: "SAFE", breakoutState: NO_BREAKOUT },
-    { confidence: 0.1, horizons: [{ direction: "FLAT" }] },
-    null,
-    0.45,
-  );
+  const decision = supervise({ action: SHORT, protection: "SAFE", breakoutState: NO_BREAKOUT }, { confidence: 0.1, horizons: [{ direction: "FLAT" }] }, null, 0.45);
   assert.equal(decision.action, WAIT);
   assert.equal(decision.allowed, false);
   assert.ok(decision.reasons.includes("forecast confidence below threshold"));
@@ -167,73 +167,33 @@ test("realtime feed guard rejects duplicate and out-of-order MT5 epoch bars", ()
     { open: 1, high: 1.01, low: 0.99, close: 1, time: 1788894000 },
     { open: 1, high: 1.01, low: 0.99, close: 1, time: 1788894900 },
   ];
-  const duplicate = [...base.slice(0, 1), base[0]];
-  assert.equal(validateRealtimeFeed(duplicate, "15m", "EUR/USD", new Date(1788894960 * 1000)).reason, "duplicate bar timestamps");
-  const outOfOrder = [base[1], base[0]];
-  assert.equal(validateRealtimeFeed(outOfOrder, "15m", "EUR/USD", new Date(1788894960 * 1000)).reason, "bars must be strictly chronological");
+  assert.equal(validateRealtimeFeed([...base.slice(0, 1), base[0]], "15m", "EUR/USD", new Date(1788894960 * 1000)).reason, "duplicate bar timestamps");
+  assert.equal(validateRealtimeFeed([base[1], base[0]], "15m", "EUR/USD", new Date(1788894960 * 1000)).reason, "bars must be strictly chronological");
   resetRealtimeFeedGuard();
 });
 
 test("realtime feed guard rejects stale and duplicate observations", () => {
   resetRealtimeFeedGuard();
-  const candles = [
-    candle(1, 1.01, 0.99, 1, "2026-09-08T19:00:00Z"),
-    candle(1, 1.01, 0.99, 1, "2026-09-08T19:15:00Z"),
-  ];
-  const fresh = validateRealtimeFeed(candles, "15m", "EUR/USD", new Date("2026-09-08T19:16:00Z"));
-  assert.equal(fresh.ok, true);
+  const candles = [candle(1, 1.01, 0.99, 1, "2026-09-08T19:00:00Z"), candle(1, 1.01, 0.99, 1, "2026-09-08T19:15:00Z")];
+  assert.equal(validateRealtimeFeed(candles, "15m", "EUR/USD", new Date("2026-09-08T19:16:00Z")).ok, true);
   acceptRealtimeFeed(candles, "15m", "EUR/USD");
-  const duplicate = validateRealtimeFeed(candles, "15m", "EUR/USD", new Date("2026-09-08T19:16:00Z"));
-  assert.equal(duplicate.reason, "duplicate or old closed bar");
-  const stale = validateRealtimeFeed(candles, "15m", "GBP/USD", new Date("2026-09-08T20:00:01Z"));
-  assert.equal(stale.reason, "feed is stale");
+  assert.equal(validateRealtimeFeed(candles, "15m", "EUR/USD", new Date("2026-09-08T19:16:00Z")).reason, "duplicate or old closed bar");
+  assert.equal(validateRealtimeFeed(candles, "15m", "GBP/USD", new Date("2026-09-08T20:00:01Z")).reason, "feed is stale");
   resetRealtimeFeedGuard();
 });
 
 test("signal event id is deterministic, independent of generated_at, and matches Python contract", async () => {
-  const base = {
-    symbol: "EUR/USD",
-    timeframe: "15m",
-    bar_time: "2026-09-08T19:15:00Z",
-    signal: WAIT,
-    state: "APPROACH",
-    breakout_state: NO_BREAKOUT,
-    price: 1.1025,
-    entry_reference: null,
-    stop_reference: null,
-    structure_bias: "RANGE",
-    score: null,
-    zone: null,
-    generated_at: "2026-09-08T19:16:00Z",
-  };
+  const base = { symbol: "EUR/USD", timeframe: "15m", bar_time: "2026-09-08T19:15:00Z", signal: WAIT, state: "APPROACH", breakout_state: NO_BREAKOUT, price: 1.1025, entry_reference: null, stop_reference: null, structure_bias: "RANGE", score: null, zone: null, generated_at: "2026-09-08T19:16:00Z" };
   const a = await buildSignalEventId(base);
   const b = await buildSignalEventId({ ...base, generated_at: "2026-09-08T19:17:00Z" });
   assert.equal(a, b);
   assert.equal(a, "sig_9bf358bd9e1b18cc12aff86774938787");
-  assert.equal(
-    canonicalSignalEvent(base),
-    '["EUR/USD","15m","2026-09-08T19:15:00Z","WAIT","APPROACH","NO_BREAKOUT",1.1025,null,null,"RANGE",null,null]',
-  );
+  assert.equal(canonicalSignalEvent(base), '["EUR/USD","15m","2026-09-08T19:15:00Z","WAIT","APPROACH","NO_BREAKOUT",1.1025,null,null,"RANGE",null,null]');
 });
 
 test("signal event id changes when the closed-candle decision identity changes", async () => {
-  const base = {
-    symbol: "EUR/USD",
-    timeframe: "15m",
-    bar_time: "2026-09-08T19:15:00Z",
-    signal: WAIT,
-    state: "APPROACH",
-    breakout_state: NO_BREAKOUT,
-    price: 1.1025,
-    entry_reference: null,
-    stop_reference: null,
-    structure_bias: "RANGE",
-    score: null,
-    zone: null,
-  };
-  const first = await buildSignalEventId(base);
-  const changed = await buildSignalEventId({ ...base, signal: LONG });
-  assert.notEqual(first, changed);
+  const base = { symbol: "EUR/USD", timeframe: "15m", bar_time: "2026-09-08T19:15:00Z", signal: WAIT, state: "APPROACH", breakout_state: NO_BREAKOUT, price: 1.1025, entry_reference: null, stop_reference: null, structure_bias: "RANGE", score: null, zone: null };
+  assert.notEqual(await buildSignalEventId(base), await buildSignalEventId({ ...base, signal: LONG }));
 });
 
 test("structure and score enums remain compatible with Python contract", () => {
