@@ -33,6 +33,61 @@ def zone_payload(zone):
     }
 
 
+def indicator_payload(signal):
+    values = signal.indicators
+    if values is None:
+        return None
+    return {
+        "ema20": values.ema20,
+        "ema50": values.ema50,
+        "ema200": values.ema200,
+        "rsi14": values.rsi14,
+        "atr14": values.atr14,
+        "adx14": values.adx14,
+        "macd": values.macd,
+        "macd_signal": values.macd_signal,
+        "macd_histogram": values.macd_histogram,
+    }
+
+
+def indicator_context(signal):
+    values = signal.indicators
+    if values is None:
+        return {
+            "values": None,
+            "trend": "UNAVAILABLE",
+            "momentum": "UNAVAILABLE",
+            "macd_momentum": "UNAVAILABLE",
+            "trend_strength": "UNAVAILABLE",
+            "direction": None,
+            "confirmations": 0,
+            "confirmation_state": "NEUTRAL",
+        }
+    trend = "UNAVAILABLE"
+    if values.ema20 is not None and values.ema50 is not None:
+        trend = "BULLISH" if values.ema20 > values.ema50 else "BEARISH" if values.ema20 < values.ema50 else "NEUTRAL"
+    momentum = "UNAVAILABLE" if values.rsi14 is None else "BULLISH" if values.rsi14 > 50 else "BEARISH" if values.rsi14 < 50 else "NEUTRAL"
+    macd_momentum = "UNAVAILABLE" if values.macd is None or values.macd_signal is None else "BULLISH" if values.macd > values.macd_signal else "BEARISH" if values.macd < values.macd_signal else "NEUTRAL"
+    trend_strength = "UNAVAILABLE" if values.adx14 is None else "TRENDING" if values.adx14 >= 25 else "RANGING"
+    direction = signal.action if signal.action in {"LONG", "SHORT"} else None
+    def matches(bias):
+        return (direction == "LONG" and bias == "BULLISH") or (direction == "SHORT" and bias == "BEARISH")
+    confirmations = sum(matches(bias) for bias in (trend, momentum, macd_momentum)) if direction else 0
+    state = "SUPPORTIVE" if confirmations >= 2 else "MIXED" if confirmations == 1 else "OPPOSED"
+    if direction is None:
+        state = "NEUTRAL"
+    return {
+        "values": indicator_payload(signal),
+        "trend": trend,
+        "momentum": momentum,
+        "macd_momentum": macd_momentum,
+        "trend_strength": trend_strength,
+        "direction": direction,
+        "confirmations": confirmations,
+        "confirmation_state": state,
+    }
+
+
 def signal_payload(evaluation):
     signal = evaluation.signal
     snapshot = evaluation.snapshot
@@ -50,6 +105,8 @@ def signal_payload(evaluation):
         "breakout_state": signal.breakout_state,
         "protection": signal.protection,
         "score": None if signal.score is None else {"total": signal.score.total},
+        "indicators": indicator_payload(signal),
+        "indicator_context": indicator_context(signal),
         "support": zone_payload(evaluation.support),
         "resistance": zone_payload(evaluation.resistance),
         "forecast": {
