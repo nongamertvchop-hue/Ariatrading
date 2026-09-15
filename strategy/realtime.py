@@ -8,7 +8,7 @@ consistent with historical backtests.
 No order execution is implemented here.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Protocol, Sequence
 
@@ -16,6 +16,7 @@ from .candles import Candle
 from .engine import EngineSignal, WAIT, evaluate_long, evaluate_short
 from .feed_integrity import validate_feed_batch
 from .forecast import ForecastResult, forecast
+from .indicators import calculate_indicators
 from .levels_v2 import PriceZone, find_resistance_zones, find_support_zones
 from .market_snapshot import MarketSnapshot
 from .realtime_guard import RealtimeGuard
@@ -150,6 +151,8 @@ class RealtimeMonitor:
             [evaluate_short(candles, zone, self.timeframe) for zone in resistances]
         ) if resistances else EngineSignal(WAIT, "no resistance zone", self.timeframe)
         signal = self._select_signal(long_signal, short_signal)
+        if signal.indicators is None:
+            signal = replace(signal, indicators=calculate_indicators(history))
 
         support = self._nearest_support(latest.close, supports)
         resistance = self._nearest_resistance(latest.close, resistances)
