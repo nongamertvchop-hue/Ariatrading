@@ -64,7 +64,7 @@ def _effective_login(args: argparse.Namespace) -> int | None:
 
 
 def _validate_live_startup(args: argparse.Namespace, symbols: list[str]) -> None:
-    """Apply the production policy even when this CLI is invoked directly."""
+    """Apply the production policy before establishing a LIVE session."""
     if args.mode != "LIVE":
         return
     policy = ProductionStage1Policy.from_env()
@@ -82,6 +82,27 @@ def _validate_live_startup(args: argparse.Namespace, symbols: list[str]) -> None
         raise RuntimeError("MT5 server does not match LIVE Stage-1 server policy")
 
 
+def _resolve_stage1_connection_config(
+    args: argparse.Namespace, policy: ProductionStage1Policy | None
+) -> tuple[int | None, str, str]:
+    """Return the effective MT5 login/password/server without logging the password."""
+    login = _effective_login(args)
+    server = args.server.strip()
+    password = args.password
+    if policy is not None:
+        login = policy.account_login if login is None else login
+        server = policy.server if not server else server
+    return login, password, server
+
+
+def _validate_connected_live_account(executor: MT5LiveExecutor, policy: ProductionStage1Policy) -> None:
+    """Reject a connected account unless it exactly matches the Stage-1 allowlist."""
+    if executor.mt5 is None:
+        raise RuntimeError("MT5 module unavailable")
+    account_info = executor.mt5.account_info()
+    policy.validate_account_identity(account_info)
+
+
 def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     args = build_parser().parse_args(argv)
@@ -90,6 +111,7 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit("--symbols must contain at least one symbol")
     if args.magic_number <= 0:
         raise SystemExit("--magic-number must be positive")
+
     login = _effective_login(args)
     if login is not None and login <= 0:
         raise SystemExit("MT5_LOGIN/--login must be positive")
@@ -99,12 +121,14 @@ def main(argv: list[str] | None = None) -> None:
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
 
+    policy = ProductionStage1Policy.from_env() if args.mode == "LIVE" else None
+    login, password, server = _resolve_stage1_connection_config(args, policy)
     executor = MT5LiveExecutor(
         terminal_path=args.terminal_path or None,
         magic_number=args.magic_number,
         login=login,
-        password=args.password,
-        server=args.server,
+        password=password,
+        server=server,
     )
     feed = None
     journal = ExecutionJournal("data/execution_journal.json")
@@ -120,6 +144,8 @@ def main(argv: list[str] | None = None) -> None:
         # execution. A second initialize()/shutdown() pair can race the same
         # terminal session and makes account state harder to reason about.
         executor.connect()
+        if policy is not None:
+            _validate_connected_live_account(executor, policy)
         feed = MT5BarFeed(mt5_module=executor.mt5, manage_connection=False)
         orchestrator = ForexLiveOrchestrator(
             symbols=symbols,
