@@ -1,10 +1,4 @@
-"""CLI entry point for the hardened continuous MT5 runtime.
-
-This module intentionally keeps ALERT_ONLY out of the execution runtime. Use
-DEMO for broker-demo execution and LIVE only after the Stage-1 deployment gate
-has been explicitly armed. The persistent control plane defaults to STOP, so
-starting the process never implies permission to place an order.
-"""
+"""CLI entry point for the hardened continuous MT5 runtime."""
 
 from __future__ import annotations
 
@@ -19,12 +13,12 @@ from live.live_runtime import DailyCircuitBreaker, LiveRuntime, RuntimeLimits
 from live.mt5_executor import MT5LiveExecutor
 from live.production_stage1 import ProductionStage1Policy
 from live.runner import ForexLiveOrchestrator
+from live.runtime_status import RuntimeStatusStore
 
 logger = logging.getLogger("ariatrading.live_runtime_cli")
 
 
 def _positive_float(value: str) -> float:
-    """Parse a finite positive float so invalid runtime limits fail at startup."""
     try:
         parsed = float(value)
     except ValueError as exc:
@@ -36,22 +30,22 @@ def _positive_float(value: str) -> float:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Ariatrading hardened MT5 trading runtime")
-    parser.add_argument("--symbols", default="EURUSD", help="Comma-separated broker symbols")
+    parser.add_argument("--symbols", default="EURUSD")
     parser.add_argument("--mode", choices=["DEMO", "LIVE"], default="DEMO")
-    parser.add_argument("--timeframe", default="15m", help="Candle timeframe (1m, 5m, 15m, 30m, 1h, 4h, 1D)")
-    parser.add_argument("--risk", type=_positive_float, default=0.0025, help="Risk fraction per trade")
-    parser.add_argument("--interval", type=_positive_float, default=5.0, help="Runtime cycle interval in seconds")
-    parser.add_argument("--max-tick-age", type=_positive_float, default=5.0, help="Maximum accepted broker tick age")
-    parser.add_argument("--max-spread-points", type=_positive_float, default=20.0, help="Maximum accepted spread in points")
-    parser.add_argument("--max-daily-drawdown", type=_positive_float, default=0.01, help="Daily equity drawdown circuit-breaker fraction")
-    parser.add_argument("--terminal-path", default="", help="Optional MT5 terminal executable path")
-    parser.add_argument("--magic-number", type=int, default=8808, help="Strategy magic number used for position ownership")
-    parser.add_argument("--control-path", default="data/bot_control.json", help="Persistent RUN/PAUSE/STOP control state")
+    parser.add_argument("--timeframe", default="15m")
+    parser.add_argument("--risk", type=_positive_float, default=0.0025)
+    parser.add_argument("--interval", type=_positive_float, default=5.0)
+    parser.add_argument("--max-tick-age", type=_positive_float, default=5.0)
+    parser.add_argument("--max-spread-points", type=_positive_float, default=20.0)
+    parser.add_argument("--max-daily-drawdown", type=_positive_float, default=0.01)
+    parser.add_argument("--terminal-path", default="")
+    parser.add_argument("--magic-number", type=int, default=8808)
+    parser.add_argument("--control-path", default="data/bot_control.json")
+    parser.add_argument("--status-path", default="data/bot_status.json")
     return parser
 
 
 def _validate_live_startup(args: argparse.Namespace, symbols: list[str]) -> None:
-    """Apply the production policy even when this CLI is invoked directly."""
     if args.mode != "LIVE":
         return
     policy = ProductionStage1Policy.from_env()
@@ -78,22 +72,14 @@ def main(argv: list[str] | None = None) -> None:
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
 
-    executor = MT5LiveExecutor(
-        terminal_path=args.terminal_path or None,
-        magic_number=args.magic_number,
-    )
+    executor = MT5LiveExecutor(terminal_path=args.terminal_path or None, magic_number=args.magic_number)
     feed = None
     journal = ExecutionJournal("data/execution_journal.json")
-    circuit_breaker = DailyCircuitBreaker(
-        "data/daily_circuit_breaker.json",
-        max_drawdown_fraction=args.max_daily_drawdown,
-    )
+    circuit_breaker = DailyCircuitBreaker("data/daily_circuit_breaker.json", max_drawdown_fraction=args.max_daily_drawdown)
     control = BotControlPlane(args.control_path)
+    status = RuntimeStatusStore(args.status_path)
 
     try:
-        # One MT5 connection is the source of truth for both market data and
-        # execution. A second initialize()/shutdown() pair can race the same
-        # terminal session and makes account state harder to reason about.
         executor.connect()
         feed = MT5BarFeed(mt5_module=executor.mt5, manage_connection=False)
         orchestrator = ForexLiveOrchestrator(
@@ -117,8 +103,9 @@ def main(argv: list[str] | None = None) -> None:
             ),
             circuit_breaker=circuit_breaker,
             control=control,
+            status=status,
         )
-        logger.info("Starting hardened Ariatrading runtime: mode=%s symbols=%s control=%s", args.mode, symbols, control.read().state)
+        logger.info("Starting hardened Ariatrading runtime: mode=%s symbols=%s control=%s status=%s", args.mode, symbols, control.read().state, args.status_path)
         runtime.run_forever(args.interval)
     finally:
         if feed is not None:
