@@ -41,14 +41,23 @@ def test_runtime_opens_and_closes_on_completed_bars(tmp_path: Path):
     engine = PaperRuntimeEngine(checkpoint_path=tmp_path / "runtime.json")
     assert engine.start().accepted
     opened = engine.process_bar(
-        bar("1", 100), RuntimeSignal("LONG", 100, 95, "support reclaim")
+        bar("1", 100), RuntimeSignal("LONG", 100, 95, "support reclaim", symbol="EURUSD")
     )
     assert opened.lifecycle is RuntimeLifecycle.OPEN
+    assert engine.account.position is not None
+    assert engine.account.position.symbol == "EURUSD"
     closed = engine.process_bar(bar("2", 110, high=111, low=99), RuntimeSignal())
     assert closed.event.event_type in {"CLOSED", "NO_UPDATE"}
-    # Target is 110 and the bar reaches it, so the account must be flat.
     assert engine.account.position is None
     assert engine.account.snapshot().trade_count == 1
+
+
+def test_runtime_rejects_missing_symbol_for_executable_signal(tmp_path: Path):
+    engine = PaperRuntimeEngine(checkpoint_path=tmp_path / "runtime.json")
+    engine.start()
+    result = engine.process_bar(bar("1", 100), RuntimeSignal("LONG", 100, 95, "entry"))
+    assert result.lifecycle is RuntimeLifecycle.HALT
+    assert "symbol" in result.reason
 
 
 def test_duplicate_and_out_of_order_bars_fail_safely(tmp_path: Path):
@@ -66,7 +75,7 @@ def test_restart_recovery_restores_equity_and_last_bar(tmp_path: Path):
     checkpoint = tmp_path / "runtime.json"
     first = PaperRuntimeEngine(checkpoint_path=checkpoint)
     first.start()
-    first.process_bar(bar("1", 100), RuntimeSignal("LONG", 100, 95, "entry"))
+    first.process_bar(bar("1", 100), RuntimeSignal("LONG", 100, 95, "entry", symbol="EURUSD"))
     first.process_bar(bar("2", 103), RuntimeSignal())
 
     second = PaperRuntimeEngine(checkpoint_path=checkpoint)
@@ -83,7 +92,7 @@ def test_pending_execution_never_promotes_to_filled_after_restart(tmp_path: Path
     first = PaperRuntimeEngine(checkpoint_path=checkpoint)
     first.set_failure_mode(FailureMode.TIMEOUT_AFTER_ACCEPT)
     first.start()
-    result = first.process_bar(bar("1", 100), RuntimeSignal("LONG", 100, 95, "entry"))
+    result = first.process_bar(bar("1", 100), RuntimeSignal("LONG", 100, 95, "entry", symbol="EURUSD"))
     assert result.lifecycle is RuntimeLifecycle.HALT
 
     second = PaperRuntimeEngine(checkpoint_path=checkpoint)
@@ -109,14 +118,14 @@ def test_corrupt_checkpoint_fails_closed_without_overwriting_it(tmp_path: Path):
 )
 def test_final_failure_injection_modes_halt(tmp_path: Path, mode: FailureMode):
     engine = PaperRuntimeEngine(checkpoint_path=tmp_path / f"{mode.value}.json")
-    result = inject_failure(engine, mode, bar=bar("1", 100), signal=RuntimeSignal("LONG", 100, 95, "entry"))
+    result = inject_failure(engine, mode, bar=bar("1", 100), signal=RuntimeSignal("LONG", 100, 95, "entry", symbol="EURUSD"))
     assert result.halted
     assert result.checkpoint_created
 
 
 def test_rejection_does_not_open_position(tmp_path: Path):
     engine = PaperRuntimeEngine(checkpoint_path=tmp_path / "reject.json")
-    result = inject_failure(engine, FailureMode.REJECT, bar=bar("1", 100), signal=RuntimeSignal("LONG", 100, 95, "entry"))
+    result = inject_failure(engine, FailureMode.REJECT, bar=bar("1", 100), signal=RuntimeSignal("LONG", 100, 95, "entry", symbol="EURUSD"))
     assert not result.halted
     assert engine.account.position is None
     assert engine.account.snapshot().trade_count == 0
