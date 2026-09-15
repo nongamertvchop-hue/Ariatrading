@@ -2,7 +2,8 @@
 
 This module intentionally keeps ALERT_ONLY out of the execution runtime. Use
 DEMO for broker-demo execution and LIVE only after the Stage-1 deployment gate
-has been explicitly armed.
+has been explicitly armed. The persistent control plane defaults to STOP, so
+starting the process never implies permission to place an order.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import logging
 import math
 
 from adapters.mt5_feed import MT5BarFeed
+from live.control_plane import BotControlPlane
 from live.execution_guard import ExecutionJournal
 from live.live_runtime import DailyCircuitBreaker, LiveRuntime, RuntimeLimits
 from live.mt5_executor import MT5LiveExecutor
@@ -44,6 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-daily-drawdown", type=_positive_float, default=0.01, help="Daily equity drawdown circuit-breaker fraction")
     parser.add_argument("--terminal-path", default="", help="Optional MT5 terminal executable path")
     parser.add_argument("--magic-number", type=int, default=8808, help="Strategy magic number used for position ownership")
+    parser.add_argument("--control-path", default="data/bot_control.json", help="Persistent RUN/PAUSE/STOP control state")
     return parser
 
 
@@ -85,6 +88,7 @@ def main(argv: list[str] | None = None) -> None:
         "data/daily_circuit_breaker.json",
         max_drawdown_fraction=args.max_daily_drawdown,
     )
+    control = BotControlPlane(args.control_path)
 
     try:
         # One MT5 connection is the source of truth for both market data and
@@ -112,8 +116,9 @@ def main(argv: list[str] | None = None) -> None:
                 max_daily_drawdown_fraction=args.max_daily_drawdown,
             ),
             circuit_breaker=circuit_breaker,
+            control=control,
         )
-        logger.info("Starting hardened Ariatrading runtime: mode=%s symbols=%s", args.mode, symbols)
+        logger.info("Starting hardened Ariatrading runtime: mode=%s symbols=%s control=%s", args.mode, symbols, control.read().state)
         runtime.run_forever(args.interval)
     finally:
         if feed is not None:
