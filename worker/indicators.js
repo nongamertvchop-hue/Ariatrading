@@ -1,4 +1,5 @@
-// same as existing deterministic indicator implementation; context uses literal actions to avoid hidden dependencies
+// Deterministic, causal indicator implementation shared by the MT5-backed
+// Worker signal path. Indicators are context only and never create a setup.
 
 function finite(value, name) { const number = Number(value); if (!Number.isFinite(number)) throw new Error(`${name} must be finite`); return number; }
 function closes(candles) { return candles.map((candle) => finite(candle.close, "close")); }
@@ -20,4 +21,25 @@ export function macdSeries(candles, fastPeriod = 12, slowPeriod = 26, signalPeri
 
 export function calculateIndicators(candles) { const macdValues = macdSeries(candles); const ema20 = emaSeries(candles, 20); const ema50 = emaSeries(candles, 50); const ema200 = emaSeries(candles, 200); const rsi14 = rsiSeries(candles, 14); const atr14 = atrSeries(candles, 14); const adx14 = adxSeries(candles, 14); const last = candles.length - 1; return { ema20: last >= 0 ? ema20[last] : null, ema50: last >= 0 ? ema50[last] : null, ema200: last >= 0 ? ema200[last] : null, rsi14: last >= 0 ? rsi14[last] : null, atr14: last >= 0 ? atr14[last] : null, adx14: last >= 0 ? adx14[last] : null, macd: last >= 0 ? macdValues.line[last] : null, macd_signal: last >= 0 ? macdValues.signal[last] : null, macd_histogram: last >= 0 ? macdValues.histogram[last] : null }; }
 
-export function indicatorContext(candles, direction) { const values = calculateIndicators(candles); const trendReady = values.ema20 !== null && values.ema50 !== null; const trend = !trendReady ? "UNAVAILABLE" : values.ema20 > values.ema50 ? "BULLISH" : values.ema20 < values.ema50 ? "BEARISH" : "NEUTRAL"; const momentum = values.rsi14 === null ? "UNAVAILABLE" : values.rsi14 > 50 ? "BULLISH" : values.rsi14 < 50 ? "BEARISH" : "NEUTRAL"; const macdMomentum = values.macd === null || values.macd_signal === null ? "UNAVAILABLE" : values.macd > values.macd_signal ? "BULLISH" : values.macd < values.macd_signal ? "BEARISH" : "NEUTRAL"; const strength = values.adx14 === null ? "UNAVAILABLE" : values.adx14 >= 25 ? "TRENDING" : "RANGING"; const directionMatches = (bias) => direction === "LONG" ? bias === "BULLISH" : direction === "SHORT" ? bias === "BEARISH" : false; const confirmations = [trend, momentum, macdMomentum].filter((bias) => directionMatches(bias)).length; return { values, trend, momentum, macd_momentum: macdMomentum, trend_strength: strength, direction: direction ?? null, confirmations, confirmation_state: direction ? (confirmations >= 2 ? "SUPPORTIVE" : confirmations === 1 ? "MIXED" : "OPPOSED") : "NEUTRAL" }; }
+export function indicatorContext(candles, direction) {
+  const values = calculateIndicators(candles);
+  const trend = values.ema20 === null || values.ema50 === null ? "UNAVAILABLE" : values.ema20 > values.ema50 ? "BULLISH" : values.ema20 < values.ema50 ? "BEARISH" : "NEUTRAL";
+  const momentum = values.rsi14 === null ? "UNAVAILABLE" : values.rsi14 > 50 ? "BULLISH" : values.rsi14 < 50 ? "BEARISH" : "NEUTRAL";
+  const macdMomentum = values.macd === null || values.macd_signal === null ? "UNAVAILABLE" : values.macd > values.macd_signal ? "BULLISH" : values.macd < values.macd_signal ? "BEARISH" : "NEUTRAL";
+  const strength = values.adx14 === null ? "UNAVAILABLE" : values.adx14 >= 25 ? "TRENDING" : "RANGING";
+  const directionMatches = (bias) => direction === "LONG" ? bias === "BULLISH" : direction === "SHORT" ? bias === "BEARISH" : false;
+  const confirmations = [trend, momentum, macdMomentum].filter((bias) => directionMatches(bias)).length;
+  const opposing = [trend, momentum, macdMomentum].filter((bias) => direction === "LONG" ? bias === "BEARISH" : direction === "SHORT" ? bias === "BULLISH" : false).length;
+  return {
+    values,
+    trend,
+    momentum,
+    macd_momentum: macdMomentum,
+    trend_strength: strength,
+    direction: direction ?? null,
+    confirmations,
+    opposing,
+    confirmation_state: !direction ? "NEUTRAL" : opposing === 3 ? "OPPOSED" : confirmations > opposing ? "SUPPORTIVE" : "MIXED",
+    allowed: !direction || opposing < 3,
+  };
+}
