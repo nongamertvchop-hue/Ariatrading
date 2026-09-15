@@ -302,16 +302,28 @@ class MT5LiveExecutor:
 
         result = self.mt5.order_send(request)
         if result is None:
-            return OrderResult(False, -1, error_message=f"MT5 order_send returned no result: {self.mt5.last_error()}")
+            # No broker result means the client cannot distinguish rejection from
+            # an accepted trade whose response was lost. The caller must reconcile
+            # broker state before attempting another order.
+            raise RuntimeError(f"MT5 order_send returned no result: {self.mt5.last_error()}")
+
         retcode = int(getattr(result, "retcode", -1))
-        if retcode != int(getattr(self.mt5, "TRADE_RETCODE_DONE", 10009)):
+        done = int(getattr(self.mt5, "TRADE_RETCODE_DONE", 10009))
+        done_partial = int(getattr(self.mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010))
+        if retcode not in {done, done_partial}:
             return OrderResult(False, retcode, error_message=str(getattr(result, "comment", "MT5 order rejected")))
+
+        confirmed_volume = float(getattr(result, "volume", volume))
+        if not isfinite(confirmed_volume) or confirmed_volume <= 0:
+            raise RuntimeError(
+                "MT5 order returned a success/partial code without a valid confirmed volume; broker state is ambiguous"
+            )
         return OrderResult(
             True,
             retcode,
             ticket=int(getattr(result, "order", 0) or getattr(result, "deal", 0) or 0),
             price=float(getattr(result, "price", price)),
-            volume=float(getattr(result, "volume", volume)),
+            volume=confirmed_volume,
             comment=str(getattr(result, "comment", "")),
         )
 
@@ -341,3 +353,79 @@ class MT5LiveExecutor:
                 )
             )
         return result
+
+    def close_position(self, ticket: int, deviation_points: int = 20) -> OrderResult:
+        """Close one strategy-owned position after validating broker state."""
+        if not self._connected:
+            return OrderResult(False, -1, error_message="MT5 executor is not connected")
+        try:
+            self._assert_bound_account_identity()
+        except RuntimeError as exc:
+            return OrderResult(False, -1, error_message=str(exc))
+
+        positions = self.mt5.positions_get(ticket=ticket)
+        if positions is None:
+            return OrderResult(False, -1, error_message=f"MT5 position lookup failed: {self.mt5.last_error()}")
+        if not positions:
+            return OrderResult(False, -1, error_message=f"Position ticket {ticket} not found")
+
+        position = positions[0]
+        if self.magic_number and int(getattr(position, "magic", 0)) != self.magic_number:
+            return OrderResult(False, -1, error_message=f"Position #{ticket} is not owned by this strategy")
+
+        symbol = str(position.symbol)
+        info = self.mt5.symbol_info(symbol)
+        tick = self.mt5.symbol_info_tick(symbol)
+        if info is None or tick is None:
+            return OrderResult(False, -1, error_message=f"Could not retrieve tick/info for {symbol}")
+
+        position_type = int(getattr(position, "type", getattr(self.mt5, "POSITION_TYPE_BUY", 0)))
+        buy_type = int(getattr(self.mt5, "ORDER_TYPE_BUY", 0))
+        sell_type = int(getattr(self.mt5, "ORDER_TYPE_SELL", 1))
+        close_type = sell_type if position_type == buy_type else buy_type
+        bid = float(tick.bid)
+        ask = float(tick.ask)
+        if not all(isfinite(value) and value > 0 for value in (bid, ask)) or ask < bid:
+            return OrderResult(False, -1, error_message=f"Broker returned invalid tick for {symbol}")
+        close_price = bid if close_type == sell_type else ask
+
+        volume = float(position.volume)
+        if not isfinite(volume) or volume <= 0:
+            return OrderResult(False, -1, error_message=f"Position #{ticket} has invalid volume")
+        stops_contract = self.get_symbol_contract(symbol)
+        if not self._valid_step_volume(volume, stops_contract.volume_min, stops_contract.volume_max, stops_contract.volume_step):
+            return OrderResult(False, -1, error_message=f"Position #{ticket} volume does not match broker min/max/step")
+
+        request = {
+            "action": int(getattr(self.mt5, "TRADE_ACTION_DEAL", 1)),
+            "position": int(ticket),
+            "symbol": symbol,
+            "volume": volume,
+            "type": close_type,
+            "price": round(close_price, int(info.digits)),
+            "deviation": int(deviation_points),
+            "magic": self.magic_number,
+            "comment": f"Close #{ticket}",
+            "type_time": int(getattr(self.mt5, "ORDER_TIME_GTC", 0)),
+            "type_filling": _resolve_filling_mode(self.mt5, info),
+        }
+        check = self.mt5.order_check(request)
+        if check is None:
+            return OrderResult(False, -1, error_message=f"close order_check returned None: {self.mt5.last_error()}")
+        check_retcode = int(getattr(check, "retcode", -1))
+        if check_retcode != 0:
+            return OrderResult(False, check_retcode, error_message=f"Close order_check rejected request: {getattr(check, 'comment', '')}")
+
+        result = self.mt5.order_send(request)
+        if result is None:
+            raise RuntimeError(f"close order_send returned None: {self.mt5.last_error()}")
+        retcode = int(getattr(result, "retcode", -1))
+        done = int(getattr(self.mt5, "TRADE_RETCODE_DONE", 10009))
+        done_partial = int(getattr(self.mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010))
+        if retcode not in {done, done_partial}:
+            return OrderResult(False, retcode, error_message=f"Failed to close #{ticket}: {getattr(result, 'comment', '')}")
+
+        confirmed_volume = float(getattr(result, "volume", volume))
+        if not isfinite(confirmed_volume) or confirmed_volume <= 0:
+            raise RuntimeError(f"Close position #{ticket} returned an invalid confirmed volume")
+        return OrderResult(True, retcode, ticket=ticket, price=float(getattr(result, "price", close_price)), volume=confirmed_volume, comment=str(getattr(result, "comment", "")))
