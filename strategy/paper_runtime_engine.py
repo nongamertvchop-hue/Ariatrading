@@ -102,11 +102,11 @@ def _time_key(value: str) -> float:
 class PaperRuntimeEngine:
     """Stateful continuous paper runtime with durable restart recovery."""
 
-    def __init__(self, *, checkpoint_path: str | Path, initial_balance: float = 10_000.0, risk_fraction: float = 0.01, fee_per_unit: float = 0.0) -> None:
+    def __init__(self, *, checkpoint_path: str | Path, initial_balance: float = 10_000.0, risk_fraction: float = 0.01, fee_per_unit: float = 0.0, history_path: str | Path | None = None) -> None:
         if not 0 < risk_fraction <= 1:
             raise ValueError("risk_fraction must be in (0, 1]")
         self.checkpoint_path = Path(checkpoint_path)
-        self.history_path = self.checkpoint_path.with_suffix(".history.jsonl")
+        self.history_path = Path(history_path) if history_path is not None else self.checkpoint_path.with_suffix(".history.jsonl")
         self.history = PaperHistoryStore(self.history_path)
         self.risk_fraction = float(risk_fraction)
         self.account = PaperAccounting(initial_balance=initial_balance, fee_per_unit=fee_per_unit)
