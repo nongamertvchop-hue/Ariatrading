@@ -20,6 +20,7 @@ from live.live_runtime import DailyCircuitBreaker, LiveRuntime, RuntimeLimits
 from live.mt5_executor import MT5LiveExecutor
 from live.production_stage1 import ProductionStage1Policy
 from live.runner import ForexLiveOrchestrator
+from live.runtime_status import RuntimeStatusStore
 
 logger = logging.getLogger("ariatrading.live_runtime_cli")
 
@@ -51,6 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--server", default=os.getenv("MT5_SERVER", ""), help="Optional explicit MT5 trade server")
     parser.add_argument("--magic-number", type=int, default=int(os.getenv("MT5_MAGIC_NUMBER", "8808")), help="Strategy magic number used for position ownership")
     parser.add_argument("--control-path", default=os.getenv("BOT_CONTROL_PATH", "data/bot_control.json"), help="Persistent RUN/PAUSE/STOP control state")
+    parser.add_argument("--status-path", default=os.getenv("BOT_STATUS_PATH", "data/bot_status.json"), help="Atomic runtime heartbeat/status snapshot")
     return parser
 
 
@@ -111,6 +113,7 @@ def main(argv: list[str] | None = None) -> None:
         max_drawdown_fraction=args.max_daily_drawdown,
     )
     control = BotControlPlane(args.control_path)
+    status = RuntimeStatusStore(args.status_path)
 
     try:
         # One MT5 connection is the source of truth for both market data and
@@ -139,8 +142,15 @@ def main(argv: list[str] | None = None) -> None:
             ),
             circuit_breaker=circuit_breaker,
             control=control,
+            status=status,
         )
-        logger.info("Starting hardened Ariatrading runtime: mode=%s symbols=%s control=%s", args.mode, symbols, control.read().state)
+        logger.info(
+            "Starting hardened Ariatrading runtime: mode=%s symbols=%s control=%s status=%s",
+            args.mode,
+            symbols,
+            control.read().state,
+            args.status_path,
+        )
         runtime.run_forever(args.interval)
     finally:
         if feed is not None:
