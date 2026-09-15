@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import logging
 import math
+import os
 
 from adapters.mt5_feed import MT5BarFeed
 from live.control_plane import BotControlPlane
@@ -44,13 +45,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-tick-age", type=_positive_float, default=5.0, help="Maximum accepted broker tick age")
     parser.add_argument("--max-spread-points", type=_positive_float, default=20.0, help="Maximum accepted spread in points")
     parser.add_argument("--max-daily-drawdown", type=_positive_float, default=0.01, help="Daily equity drawdown circuit-breaker fraction")
-    parser.add_argument("--terminal-path", default="", help="Optional MT5 terminal executable path")
-    parser.add_argument("--login", type=int, default=None, help="Optional explicit MT5 account login")
-    parser.add_argument("--password", default="", help="Optional MT5 account password; prefer environment variables for unattended use")
-    parser.add_argument("--server", default="", help="Optional explicit MT5 trade server")
-    parser.add_argument("--magic-number", type=int, default=8808, help="Strategy magic number used for position ownership")
-    parser.add_argument("--control-path", default="data/bot_control.json", help="Persistent RUN/PAUSE/STOP control state")
+    parser.add_argument("--terminal-path", default=os.getenv("MT5_TERMINAL_PATH", ""), help="Optional MT5 terminal executable path")
+    parser.add_argument("--login", type=int, default=None, help="Optional explicit MT5 account login (or MT5_LOGIN env)")
+    parser.add_argument("--password", default=os.getenv("MT5_PASSWORD", ""), help="Optional MT5 account password; prefer MT5_PASSWORD environment variable")
+    parser.add_argument("--server", default=os.getenv("MT5_SERVER", ""), help="Optional explicit MT5 trade server")
+    parser.add_argument("--magic-number", type=int, default=int(os.getenv("MT5_MAGIC_NUMBER", "8808")), help="Strategy magic number used for position ownership")
+    parser.add_argument("--control-path", default=os.getenv("BOT_CONTROL_PATH", "data/bot_control.json"), help="Persistent RUN/PAUSE/STOP control state")
     return parser
+
+
+def _effective_login(args: argparse.Namespace) -> int | None:
+    if args.login is not None:
+        return args.login
+    raw = os.getenv("MT5_LOGIN", "").strip()
+    return int(raw) if raw else None
 
 
 def _validate_live_startup(args: argparse.Namespace, symbols: list[str]) -> None:
@@ -65,7 +73,8 @@ def _validate_live_startup(args: argparse.Namespace, symbols: list[str]) -> None
         max_spread_points=args.max_spread_points,
         max_tick_age_seconds=args.max_tick_age,
     )
-    if args.login is not None and args.login != policy.account_login:
+    login = _effective_login(args)
+    if login is not None and login != policy.account_login:
         raise RuntimeError("MT5 login does not match LIVE Stage-1 account policy")
     if args.server and args.server != policy.server:
         raise RuntimeError("MT5 server does not match LIVE Stage-1 server policy")
@@ -79,8 +88,9 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit("--symbols must contain at least one symbol")
     if args.magic_number <= 0:
         raise SystemExit("--magic-number must be positive")
-    if args.login is not None and args.login <= 0:
-        raise SystemExit("--login must be positive")
+    login = _effective_login(args)
+    if login is not None and login <= 0:
+        raise SystemExit("MT5_LOGIN/--login must be positive")
 
     try:
         _validate_live_startup(args, symbols)
@@ -90,7 +100,7 @@ def main(argv: list[str] | None = None) -> None:
     executor = MT5LiveExecutor(
         terminal_path=args.terminal_path or None,
         magic_number=args.magic_number,
-        login=args.login,
+        login=login,
         password=args.password,
         server=args.server,
     )
