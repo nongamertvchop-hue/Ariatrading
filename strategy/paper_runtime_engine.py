@@ -61,6 +61,7 @@ class RuntimeSignal:
     stop: float | None = None
     reason: str = ""
     score: float | None = None
+    symbol: str | None = None
 
 
 @dataclass(frozen=True)
@@ -229,13 +230,15 @@ class PaperRuntimeEngine:
             return self._emit(False, "FLAT", "invalid paper entry/stop references")
         if signal.action not in {"LONG", "SHORT"}:
             return self._emit(False, "FLAT", "unsupported paper direction")
+        if not signal.symbol:
+            return self._halt("paper signal is missing symbol identity")
         risk_distance = abs(signal.entry - signal.stop)
         quantity = (self.account.balance * self.risk_fraction) / risk_distance
         if not isfinite(quantity) or quantity <= 0:
             return self._halt("risk sizing produced an invalid paper quantity")
         quantity = round(quantity, 6)
-        order_id = f"paper-{signal.action.lower()}-{bar.time}"
-        self._pending_order = {"order_id": order_id, "bar_time": bar.time, "side": signal.action, "quantity": quantity, "entry": signal.entry}
+        order_id = f"paper-{signal.symbol}-{signal.action.lower()}-{bar.time}"
+        self._pending_order = {"order_id": order_id, "bar_time": bar.time, "side": signal.action, "symbol": signal.symbol, "quantity": quantity, "entry": signal.entry}
         self.lifecycle = RuntimeLifecycle.UNKNOWN if self.failure_mode in {FailureMode.TIMEOUT_AFTER_ACCEPT, FailureMode.DISCONNECT_BEFORE_SUBMIT} else RuntimeLifecycle.FLAT
         self._safe_persist()
         if self.failure_mode is FailureMode.DISCONNECT_BEFORE_SUBMIT:
@@ -252,7 +255,7 @@ class PaperRuntimeEngine:
             return self._halt("partial paper fill requires explicit reconciliation")
 
         self._pending_order = None
-        self.account.open_position(symbol="EURUSD", side=signal.action, quantity=quantity, entry_price=signal.entry, bar_time=bar.time)
+        self.account.open_position(symbol=signal.symbol, side=signal.action, quantity=quantity, entry_price=signal.entry, bar_time=bar.time)
         self._exit_levels = {"side": signal.action, "stop": float(signal.stop), "target": float(signal.entry + 2 * risk_distance) if signal.action == "LONG" else float(signal.entry - 2 * risk_distance)}
         self.lifecycle = RuntimeLifecycle.OPEN
         self.last_processed_bar_time = bar.time
@@ -266,7 +269,7 @@ class PaperRuntimeEngine:
         if isinstance(signal, RuntimeSignal):
             return signal
         if isinstance(signal, dict):
-            return RuntimeSignal(action=str(signal.get("action", signal.get("signal", "WAIT"))), entry=signal.get("entry", signal.get("entry_reference")), stop=signal.get("stop", signal.get("stop_reference")), reason=str(signal.get("reason", "")), score=signal.get("score"))
+            return RuntimeSignal(action=str(signal.get("action", signal.get("signal", "WAIT"))), entry=signal.get("entry", signal.get("entry_reference")), stop=signal.get("stop", signal.get("stop_reference")), reason=str(signal.get("reason", "")), score=signal.get("score"), symbol=signal.get("symbol"))
         raise TypeError("signal must be RuntimeSignal, dict or None")
 
     def _check_exit(self, bar: RuntimeBar) -> tuple[float, str] | None:
