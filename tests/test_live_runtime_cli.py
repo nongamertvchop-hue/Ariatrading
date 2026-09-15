@@ -1,8 +1,15 @@
 import argparse
+from types import SimpleNamespace
 
 import pytest
 
-from live.live_runtime_cli import _validate_live_startup, build_parser
+from live.live_runtime_cli import (
+    _resolve_stage1_connection_config,
+    _validate_connected_live_account,
+    _validate_live_startup,
+    build_parser,
+)
+from live.production_stage1 import ProductionStage1Policy
 
 
 def test_hardened_runtime_cli_is_demo_by_default():
@@ -44,9 +51,9 @@ def test_hardened_runtime_cli_accepts_operational_limits():
 
 
 def test_hardened_runtime_cli_rejects_non_positive_interval():
-    args = build_parser()
+    parser = build_parser()
     try:
-        args.parse_args(["--interval", "0"])
+        parser.parse_args(["--interval", "0"])
     except SystemExit as exc:
         assert exc.code != 0
     else:
@@ -60,6 +67,9 @@ def _runtime_args(mode="LIVE", risk=0.0025, dd=0.01, spread=20.0, tick_age=5.0):
         max_daily_drawdown=dd,
         max_spread_points=spread,
         max_tick_age=tick_age,
+        login=None,
+        server="",
+        password="",
     )
 
 
@@ -90,3 +100,49 @@ def test_demo_cli_does_not_require_live_arm(monkeypatch):
     monkeypatch.delenv("ARIATRADING_LIVE_STAGE", raising=False)
     monkeypatch.delenv("ARIATRADING_ENABLE_LIVE", raising=False)
     _validate_live_startup(_runtime_args(mode="DEMO"), ["EURUSD"])
+
+
+def test_live_connection_defaults_to_stage1_account(monkeypatch):
+    _arm_live(monkeypatch)
+    args = _runtime_args()
+    policy = ProductionStage1Policy.from_env()
+    assert _resolve_stage1_connection_config(args, policy) == (12345, "", "Broker-Real")
+
+
+def test_live_explicit_connection_account_must_match_stage1(monkeypatch):
+    _arm_live(monkeypatch)
+    args = _runtime_args()
+    args.login = 99999
+    with pytest.raises(RuntimeError, match="login does not match LIVE Stage-1"):
+        _validate_live_startup(args, ["EURUSD"])
+
+
+def test_live_connected_account_must_match_stage1_identity(monkeypatch):
+    _arm_live(monkeypatch)
+    policy = ProductionStage1Policy.from_env()
+
+    class FakeExecutor:
+        mt5 = SimpleNamespace(
+            account_info=lambda: SimpleNamespace(
+                login=99999,
+                server="Broker-Real",
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="account identity mismatch"):
+        _validate_connected_live_account(FakeExecutor(), policy)
+
+
+def test_live_connected_account_accepts_exact_stage1_identity(monkeypatch):
+    _arm_live(monkeypatch)
+    policy = ProductionStage1Policy.from_env()
+
+    class FakeExecutor:
+        mt5 = SimpleNamespace(
+            account_info=lambda: SimpleNamespace(
+                login=12345,
+                server="Broker-Real",
+            )
+        )
+
+    _validate_connected_live_account(FakeExecutor(), policy)
