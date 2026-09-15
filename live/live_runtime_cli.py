@@ -1,8 +1,8 @@
 """CLI entry point for the hardened continuous MT5 runtime.
 
-This module intentionally keeps ALERT_ONLY out of the live runtime. Use the
-existing runner for signal-only operation; this entry point is for DEMO/LIVE
-execution after the runtime preflight has passed.
+This module intentionally keeps ALERT_ONLY out of the execution runtime. Use
+DEMO for broker-demo execution and LIVE only after the Stage-1 deployment gate
+has been explicitly armed.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def _positive_float(value: str) -> float:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Ariatrading hardened MT5 live runtime")
+    parser = argparse.ArgumentParser(description="Ariatrading hardened MT5 trading runtime")
     parser.add_argument("--symbols", default="EURUSD", help="Comma-separated broker symbols")
     parser.add_argument("--mode", choices=["DEMO", "LIVE"], default="DEMO")
     parser.add_argument("--timeframe", default="15m", help="Candle timeframe (1m, 5m, 15m, 30m, 1h, 4h, 1D)")
@@ -41,6 +41,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-tick-age", type=_positive_float, default=5.0, help="Maximum accepted broker tick age")
     parser.add_argument("--max-spread-points", type=_positive_float, default=20.0, help="Maximum accepted spread in points")
     parser.add_argument("--max-daily-drawdown", type=_positive_float, default=0.01, help="Daily equity drawdown circuit-breaker fraction")
+    parser.add_argument("--terminal-path", default="", help="Optional MT5 terminal executable path")
+    parser.add_argument("--magic-number", type=int, default=8808, help="Strategy magic number used for position ownership")
     return parser
 
 
@@ -50,9 +52,14 @@ def main(argv: list[str] | None = None) -> None:
     symbols = [value.strip().upper() for value in args.symbols.split(",") if value.strip()]
     if not symbols:
         raise SystemExit("--symbols must contain at least one symbol")
+    if args.magic_number <= 0:
+        raise SystemExit("--magic-number must be positive")
 
-    executor = MT5LiveExecutor()
-    feed = MT5BarFeed()
+    executor = MT5LiveExecutor(
+        terminal_path=args.terminal_path or None,
+        magic_number=args.magic_number,
+    )
+    feed = MT5BarFeed(terminal_path=args.terminal_path or None)
     journal = ExecutionJournal("data/execution_journal.json")
     circuit_breaker = DailyCircuitBreaker(
         "data/daily_circuit_breaker.json",
@@ -85,8 +92,6 @@ def main(argv: list[str] | None = None) -> None:
         logger.info("Starting hardened Ariatrading runtime: mode=%s symbols=%s", args.mode, symbols)
         runtime.run_forever(args.interval)
     finally:
-        # run_forever also closes these resources. The explicit finally keeps
-        # startup failures fail-closed if preflight rejects the environment.
         try:
             executor.disconnect()
         finally:
