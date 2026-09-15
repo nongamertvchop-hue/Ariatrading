@@ -88,10 +88,9 @@ def _evaluate(
         max_test_age=max_test_age,
     )
     structure = analyze_market_structure(candles[:-1]) if len(candles) > 1 else analyze_market_structure([])
-    # Indicators are computed from closed candles only. The final candle is
-    # the evaluation candle and is intentionally excluded from context values,
-    # preventing intrabar/future leakage in realtime and backtest paths.
-    indicators = calculate_indicators(candles[:-1]) if len(candles) > 1 else None
+    # The latest candle is already closed when this engine is called. It is
+    # valid indicator input; no future candle is consulted.
+    indicators = calculate_indicators(candles) if candles else None
     setup_score = None
     stop_reference = None
     if result.action == direction:
