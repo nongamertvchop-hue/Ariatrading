@@ -70,10 +70,6 @@ class BotConfig:
     def validate(self) -> None:
         if self.mode not in {"paper", "demo", "live"}:
             raise ValueError("BOT_MODE must be paper, demo, or live")
-        # Ariatrading remains paper/demo-only in this repository. Real-money
-        # broker execution is intentionally outside the supported runtime.
-        if self.mode == "live":
-            raise RuntimeError("LIVE execution is disabled; use paper or demo mode")
         if not self.symbols:
             raise ValueError("DEFAULT_SYMBOLS must not be empty")
         if self.max_request_rate <= 0 or self.max_burst < 1:
@@ -82,3 +78,26 @@ class BotConfig:
             raise ValueError("DEFAULT_RISK_PER_TRADE must be in (0,1]")
         if self.mode == "demo" and self.mt5_login is not None and not self.mt5_server:
             raise ValueError("MT5_SERVER is required when an authenticated MT5 account is configured")
+
+        if self.mode != "live":
+            return
+
+        # LIVE is executable only through the hardened Stage-1 deployment
+        # policy. Strategy logic remains independent from this gate.
+        if not self.allow_live:
+            raise RuntimeError("LIVE mode is fail-closed: set ALLOW_LIVE=1 and arm the Stage-1 policy")
+
+        from live.production_stage1 import ProductionStage1Policy
+
+        policy = ProductionStage1Policy.from_env()
+        policy.validate_symbols(self.symbols)
+        policy.validate_runtime_limits(
+            risk_per_trade=self.default_risk_per_trade,
+            max_daily_drawdown=policy.max_daily_drawdown,
+            max_spread_points=policy.max_spread_points,
+            max_tick_age_seconds=policy.max_tick_age_seconds,
+        )
+        if self.mt5_login is not None and self.mt5_login != policy.account_login:
+            raise RuntimeError("MT5_LOGIN does not match ARIATRADING_LIVE_ACCOUNT; refusing LIVE startup")
+        if self.mt5_server and self.mt5_server != policy.server:
+            raise RuntimeError("MT5_SERVER does not match ARIATRADING_LIVE_SERVER; refusing LIVE startup")
