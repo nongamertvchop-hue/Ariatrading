@@ -11,6 +11,8 @@ class FakeMT5Module:
 
     ORDER_TYPE_BUY = 0
     ORDER_TYPE_SELL = 1
+    POSITION_TYPE_BUY = 0
+    POSITION_TYPE_SELL = 1
     TRADE_ACTION_DEAL = 1
     ORDER_TIME_GTC = 0
     ORDER_FILLING_FOK = 0
@@ -19,6 +21,7 @@ class FakeMT5Module:
     SYMBOL_FILLING_FOK = 1
     SYMBOL_FILLING_IOC = 2
     TRADE_RETCODE_DONE = 10009
+    TRADE_RETCODE_DONE_PARTIAL = 10010
     TRADE_RETCODE_PLACED = 10008
     DEAL_ENTRY_OUT = 1
     DEAL_ENTRY_OUT_BY = 3
@@ -26,10 +29,14 @@ class FakeMT5Module:
     def __init__(self) -> None:
         self.last_req = None
         self.check_req = None
+        self.init_kwargs = None
         self.should_fail = False
         self.should_check_fail = False
+        self.return_partial = False
+        self.return_none = False
 
     def initialize(self, **kwargs):
+        self.init_kwargs = kwargs
         return True
 
     def shutdown(self):
@@ -62,6 +69,7 @@ class FakeMT5Module:
             volume_min = 0.01
             volume_max = 100.0
             volume_step = 0.01
+            trade_stops_level = 0
             visible = True
             filling_mode = 1
 
@@ -88,12 +96,24 @@ class FakeMT5Module:
 
     def order_send(self, req):
         self.last_req = req
+        if self.return_none:
+            return None
         if self.should_fail:
             class FailedRes:
                 retcode = 10013
                 comment = "Invalid volume"
 
             return FailedRes()
+
+        if self.return_partial:
+            return SimpleNamespace(
+                retcode=self.TRADE_RETCODE_DONE_PARTIAL,
+                order=123456,
+                deal=789012,
+                price=req["price"],
+                volume=0.25,
+                comment="Partial fill",
+            )
 
         class DoneRes:
             retcode = 10009
@@ -138,6 +158,24 @@ def test_mt5_executor_connect_and_contract():
     assert contract.volume_min == 0.01
 
 
+def test_mt5_executor_passes_explicit_credentials_to_initialize():
+    mock_mt5 = FakeMT5Module()
+    executor = MT5LiveExecutor(
+        mt5_module=mock_mt5,
+        terminal_path="C:/Program Files/MT5/terminal64.exe",
+        login=123456,
+        password="secret",
+        server="DemoServer",
+    )
+    assert executor.connect()
+    assert mock_mt5.init_kwargs == {
+        "login": 123456,
+        "password": "secret",
+        "server": "DemoServer",
+        "path": "C:/Program Files/MT5/terminal64.exe",
+    }
+
+
 def test_mt5_executor_reads_account_snapshot():
     executor = MT5LiveExecutor(mt5_module=FakeMT5Module())
     executor.connect()
@@ -172,6 +210,29 @@ def test_mt5_executor_buy_order_runs_order_check_before_send():
     assert mock_mt5.last_req["sl"] == 1.09800
     assert mock_mt5.last_req["tp"] == 1.10400
     assert mock_mt5.last_req["magic"] == 8808
+
+
+def test_mt5_executor_partial_fill_is_reported_as_success_with_confirmed_volume():
+    mock_mt5 = FakeMT5Module()
+    mock_mt5.return_partial = True
+    executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
+    executor.connect()
+    _bind_demo(executor)
+    result = executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0.5, sl=1.09800)
+    assert result.success
+    assert result.retcode == mock_mt5.TRADE_RETCODE_DONE_PARTIAL
+    assert result.volume == 0.25
+    assert result.ticket == 123456
+
+
+def test_mt5_executor_missing_order_result_is_ambiguous():
+    mock_mt5 = FakeMT5Module()
+    mock_mt5.return_none = True
+    executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
+    executor.connect()
+    _bind_demo(executor)
+    with pytest.raises(RuntimeError, match="order_send returned no result"):
+        executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0.5, sl=1.09800)
 
 
 def test_mt5_executor_blocks_account_drift_before_send():
@@ -228,7 +289,7 @@ def test_mt5_executor_sell_order_validation():
     _bind_demo(executor)
     res = executor.send_market_order(symbol="EURUSD", direction=ORDER_SELL, volume=0.5, sl=1.09000)
     assert not res.success
-    assert "SELL Stop Loss must be above entry price" in res.error_message
+    assert "SELL Stop Loss must be above current bid" in res.error_message
 
 
 def test_mt5_executor_positions_and_close():
