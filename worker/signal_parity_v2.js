@@ -96,7 +96,7 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
     };
   }
 
-  const selectedScore = strategySignal.action === LONG || strategySignal.action === SHORT ? strategySignal.score ?? null : null;
+  const selectedScore = finalSignal.action === LONG || finalSignal.action === SHORT ? finalSignal.score ?? null : null;
   const latestRawCandle = rawCandles[rawCandles.length - 1];
   return {
     signal: finalSignal.action,
