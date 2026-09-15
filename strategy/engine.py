@@ -6,12 +6,16 @@ APPROACH -> TEST -> RECLAIM/REJECT -> CONFIRM -> LONG/SHORT.
 Market structure and setup scoring are context layers. They do not create a
 third setup and do not turn a score into a win probability.
 
+Indicators are additional deterministic evidence/context. They never create
+LONG/SHORT decisions by themselves.
+
 Educational/demo only. No orders are placed here.
 The runtime research contract is enforced on every evaluation.
 """
 
 from dataclasses import dataclass
 
+from .indicators import IndicatorSnapshot, calculate_indicators
 from .levels_v2 import PriceZone, SUPPORT, RESISTANCE
 from .market_structure import MarketStructure, analyze_market_structure
 from .mtf import MultiTimeframeContext
@@ -40,6 +44,7 @@ class EngineSignal:
     structure_bias: str = "UNKNOWN"
     score: SetupScore | None = None
     state: str = "APPROACH"
+    indicators: IndicatorSnapshot | None = None
 
 
 def _protective_stop(
@@ -83,6 +88,10 @@ def _evaluate(
         max_test_age=max_test_age,
     )
     structure = analyze_market_structure(candles[:-1]) if len(candles) > 1 else analyze_market_structure([])
+    # Indicators are computed from closed candles only. The final candle is
+    # the evaluation candle and is intentionally excluded from context values,
+    # preventing intrabar/future leakage in realtime and backtest paths.
+    indicators = calculate_indicators(candles[:-1]) if len(candles) > 1 else None
     setup_score = None
     stop_reference = None
     if result.action == direction:
@@ -110,6 +119,7 @@ def _evaluate(
         structure_bias=structure.bias,
         score=setup_score,
         state=result.state,
+        indicators=indicators,
     )
 
 
