@@ -49,7 +49,7 @@ jobs:
         with:
           node-version: "22"
       - name: Check Worker, Pages signal, chart, Bodyguard, and MT5 contract test syntax
-        run: node --check worker/index.js && node --check worker/entry.js && node --check worker/signal_parity.js && node --check worker/signal_parity_v2.js && node --check Webaria/functions/api/signal.js && node --check Webaria/functions/api/market.js && node --check Webaria/functions/api/bodyguard/status.js && node --check Webaria/chart-data-compat.js && node --check Webaria/paper-runtime.js && node --check Webaria/trading.js && node --check Webaria/live-market.js && node --check tests/test_worker_mt5_single_source.mjs && node --check tests/e2e_mt5_contract.test.mjs
+        run: node --check worker/index.js && node --check worker/entry.js && node --check worker/signal_parity.js && node --check worker/signal_parity_v2.js && node --check worker/indicators.js && node --check Webaria/functions/api/signal.js && node --check Webaria/functions/api/market.js && node --check Webaria/functions/api/bodyguard/status.js && node --check Webaria/chart-data-compat.js && node --check Webaria/paper-runtime.js && node --check Webaria/trading.js && node --check Webaria/live-market.js && node --check tests/test_worker_mt5_single_source.mjs && node --check tests/e2e_mt5_contract.test.mjs
 
   polyglot-build:
     runs-on: ubuntu-latest
