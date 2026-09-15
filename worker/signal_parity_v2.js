@@ -17,7 +17,13 @@ import { buildSignalEventId } from "./signal_event.js";
 
 function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } }); }
 function decorateCandidate(candidate, structureBias) { return { ...candidate.result, zone: candidate.zone ?? null, score: candidate.score ?? null, protection: candidate.result.protection ?? "SAFE", structureBias: candidate.result.structureBias ?? structureBias }; }
-function bestSignal(candidates, direction, timeframe, emptyReason, structureBias) { if (!candidates.length) return { action: WAIT, reason: emptyReason, timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT, structureBias }; const directional = candidates.filter((candidate) => candidate.result.action === direction); if (!directional.length) return decorateCandidate(candidates[0], structureBias); return [...directional].sort((a, b) => (b.score?.total ?? -1) - (a.score?.total ?? -1))[0] |> ((candidate) => decorateCandidate(candidate, structureBias)); }
+function bestSignal(candidates, direction, timeframe, emptyReason, structureBias) {
+  if (!candidates.length) return { action: WAIT, reason: emptyReason, timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT, structureBias };
+  const directional = candidates.filter((candidate) => candidate.result.action === direction);
+  if (!directional.length) return decorateCandidate(candidates[0], structureBias);
+  const best = [...directional].sort((a, b) => (b.score?.total ?? -1) - (a.score?.total ?? -1))[0];
+  return decorateCandidate(best, structureBias);
+}
 function selectSignal(longSignal, shortSignal, timeframe, structureBias) { if (longSignal.action !== WAIT && shortSignal.action === WAIT) return longSignal; if (shortSignal.action !== WAIT && longSignal.action === WAIT) return shortSignal; if (longSignal.action === WAIT && shortSignal.action === WAIT) return { action: WAIT, reason: "no directional setup", timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT, structureBias }; const longScore = longSignal.score?.total ?? -1; const shortScore = shortSignal.score?.total ?? -1; return longScore > shortScore ? longSignal : shortSignal; }
 function nearestSupport(price, zones) { return zones.filter((zone) => zone.center <= price).sort((a, b) => (price - a.center) - (price - b.center))[0] ?? null; }
 function nearestResistance(price, zones) { return zones.filter((zone) => zone.center >= price).sort((a, b) => (a.center - price) - (b.center - price))[0] ?? null; }
