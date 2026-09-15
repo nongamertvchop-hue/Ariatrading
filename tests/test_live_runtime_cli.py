@@ -1,8 +1,15 @@
 import argparse
+from types import SimpleNamespace
 
 import pytest
 
-from live.live_runtime_cli import _validate_live_startup, build_parser
+from live.live_runtime_cli import (
+    _resolve_mt5_connection_config,
+    _validate_connected_live_account,
+    _validate_live_startup,
+    build_parser,
+)
+from live.production_stage1 import ProductionStage1Policy
 
 
 def test_hardened_runtime_cli_is_demo_by_default():
@@ -44,9 +51,9 @@ def test_hardened_runtime_cli_accepts_operational_limits():
 
 
 def test_hardened_runtime_cli_rejects_non_positive_interval():
-    args = build_parser()
+    parser = build_parser()
     try:
-        args.parse_args(["--interval", "0"])
+        parser.parse_args(["--interval", "0"])
     except SystemExit as exc:
         assert exc.code != 0
     else:
@@ -90,3 +97,42 @@ def test_demo_cli_does_not_require_live_arm(monkeypatch):
     monkeypatch.delenv("ARIATRADING_LIVE_STAGE", raising=False)
     monkeypatch.delenv("ARIATRADING_ENABLE_LIVE", raising=False)
     _validate_live_startup(_runtime_args(mode="DEMO"), ["EURUSD"])
+
+
+def test_live_connection_defaults_to_stage1_account(monkeypatch):
+    _arm_live(monkeypatch)
+    monkeypatch.delenv("MT5_LOGIN", raising=False)
+    monkeypatch.delenv("MT5_SERVER", raising=False)
+    policy = ProductionStage1Policy.from_env()
+    assert _resolve_mt5_connection_config("LIVE", policy) == (12345, "", "Broker-Real")
+
+
+def test_live_connected_account_must_match_stage1_identity(monkeypatch):
+    _arm_live(monkeypatch)
+    policy = ProductionStage1Policy.from_env()
+
+    class FakeExecutor:
+        mt5 = SimpleNamespace(
+            account_info=lambda: SimpleNamespace(
+                login=99999,
+                server="Broker-Real",
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="account identity mismatch"):
+        _validate_connected_live_account(FakeExecutor(), policy)
+
+
+def test_live_connected_account_accepts_exact_stage1_identity(monkeypatch):
+    _arm_live(monkeypatch)
+    policy = ProductionStage1Policy.from_env()
+
+    class FakeExecutor:
+        mt5 = SimpleNamespace(
+            account_info=lambda: SimpleNamespace(
+                login=12345,
+                server="Broker-Real",
+            )
+        )
+
+    _validate_connected_live_account(FakeExecutor(), policy)
