@@ -6,8 +6,9 @@ APPROACH -> TEST -> RECLAIM/REJECT -> CONFIRM -> LONG/SHORT.
 Market structure and setup scoring are context layers. They do not create a
 third setup and do not turn a score into a win probability.
 
-Indicators are additional deterministic evidence/context. They never create
-LONG/SHORT decisions by themselves.
+Indicators are additional deterministic evidence/context. They can veto a
+confirmed setup only when all three directional checks strongly contradict it;
+they never create LONG/SHORT decisions by themselves.
 
 Educational/demo only. No orders are placed here.
 The runtime research contract is enforced on every evaluation.
@@ -16,6 +17,7 @@ The runtime research contract is enforced on every evaluation.
 from dataclasses import dataclass
 
 from .indicators import IndicatorSnapshot, calculate_indicators
+from .indicator_filter import IndicatorFilterResult, evaluate_indicator_filter
 from .levels_v2 import PriceZone, SUPPORT, RESISTANCE
 from .market_structure import MarketStructure, analyze_market_structure
 from .mtf import MultiTimeframeContext
@@ -45,6 +47,7 @@ class EngineSignal:
     score: SetupScore | None = None
     state: str = "APPROACH"
     indicators: IndicatorSnapshot | None = None
+    indicator_filter: IndicatorFilterResult | None = None
 
 
 def _protective_stop(
@@ -74,9 +77,6 @@ def _evaluate(
     mtf: MultiTimeframeContext | None,
     max_test_age: int,
 ) -> EngineSignal:
-    # The research contract is deliberately checked at the strategy boundary:
-    # new research can evolve, but execution mode and causal-data safeguards
-    # cannot silently drift while experiments are being developed.
     enforce_research_contract()
 
     get_timeframe_config(timeframe)
@@ -91,6 +91,27 @@ def _evaluate(
     # The latest candle is already closed when this engine is called. It is
     # valid indicator input; no future candle is consulted.
     indicators = calculate_indicators(candles) if candles else None
+    indicator_filter = evaluate_indicator_filter(indicators, direction)
+
+    if result.action == direction and not indicator_filter.allowed:
+        return EngineSignal(
+            WAIT,
+            "indicator filter veto: " + "; ".join(indicator_filter.reasons),
+            timeframe,
+            zone,
+            protection="BLOCKED",
+            breakout_state=result.breakout_state,
+            entry_reference=None,
+            stop_reference=None,
+            test_index=result.test_index,
+            confirmation_index=result.confirmation_index,
+            structure_bias=structure.bias,
+            score=None,
+            state="CONFIRM",
+            indicators=indicators,
+            indicator_filter=indicator_filter,
+        )
+
     setup_score = None
     stop_reference = None
     if result.action == direction:
@@ -119,6 +140,7 @@ def _evaluate(
         score=setup_score,
         state=result.state,
         indicators=indicators,
+        indicator_filter=indicator_filter,
     )
 
 
