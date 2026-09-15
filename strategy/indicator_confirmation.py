@@ -10,9 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .engine_types import IndicatorDirection
 from .indicators import IndicatorSnapshot
-
 
 LONG = "LONG"
 SHORT = "SHORT"
@@ -45,12 +43,10 @@ def _votes(snapshot: IndicatorSnapshot, direction: str) -> tuple[list[bool], lis
         votes.append(ok)
         reasons.append("MACD histogram aligned" if ok else "MACD histogram conflict")
 
-    if snapshot.ema200 is not None:
-        # EMA200 is a trend-context confirmation, not a mandatory warm-up gate.
-        if snapshot.ema50 is not None:
-            ok = snapshot.ema50 > snapshot.ema200 if direction == LONG else snapshot.ema50 < snapshot.ema200
-            votes.append(ok)
-            reasons.append("EMA50/200 trend aligned" if ok else "EMA50/200 trend conflict")
+    if snapshot.ema200 is not None and snapshot.ema50 is not None:
+        ok = snapshot.ema50 > snapshot.ema200 if direction == LONG else snapshot.ema50 < snapshot.ema200
+        votes.append(ok)
+        reasons.append("EMA50/200 trend aligned" if ok else "EMA50/200 trend conflict")
 
     return votes, reasons
 
