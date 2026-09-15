@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import logging
 import math
+import os
 
 from adapters.mt5_feed import MT5BarFeed
 from live.control_plane import BotControlPlane
@@ -32,6 +33,20 @@ def _positive_float(value: str) -> float:
     if not math.isfinite(parsed) or parsed <= 0:
         raise argparse.ArgumentTypeError("must be a finite value greater than 0")
     return parsed
+
+
+def _configured_mt5_login() -> int | None:
+    """Read an optional explicit MT5 login without exposing credentials in argv."""
+    raw = os.getenv("MT5_LOGIN", "").strip()
+    if not raw:
+        return None
+    try:
+        login = int(raw)
+    except ValueError as exc:
+        raise SystemExit("MT5_LOGIN must be a positive integer") from exc
+    if login <= 0:
+        raise SystemExit("MT5_LOGIN must be a positive integer")
+    return login
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -64,6 +79,33 @@ def _validate_live_startup(args: argparse.Namespace, symbols: list[str]) -> None
     )
 
 
+def _resolve_mt5_connection_config(mode: str, policy: ProductionStage1Policy | None) -> tuple[int | None, str, str]:
+    """Resolve account credentials from environment without putting passwords in CLI argv.
+
+    LIVE mode defaults login/server to the Stage-1 allowlist so the terminal is
+    explicitly pointed at the intended account instead of silently reusing the
+    terminal's last-used session. An optional MT5_PASSWORD is passed only to
+    the MT5 API and never logged.
+    """
+    login = _configured_mt5_login()
+    server = os.getenv("MT5_SERVER", "").strip()
+    password = os.getenv("MT5_PASSWORD", "")
+
+    if mode == "LIVE" and policy is not None:
+        login = policy.account_login if login is None else login
+        server = policy.server if not server else server
+
+    return login, password, server
+
+
+def _validate_connected_live_account(executor: MT5LiveExecutor, policy: ProductionStage1Policy) -> None:
+    """Enforce the exact Stage-1 login/server allowlist after MT5 connects."""
+    if executor.mt5 is None:
+        raise RuntimeError("MT5 module unavailable")
+    account_info = executor.mt5.account_info()
+    policy.validate_account_identity(account_info)
+
+
 def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     args = build_parser().parse_args(argv)
@@ -78,9 +120,14 @@ def main(argv: list[str] | None = None) -> None:
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
 
+    policy = ProductionStage1Policy.from_env() if args.mode == "LIVE" else None
+    login, password, server = _resolve_mt5_connection_config(args.mode, policy)
     executor = MT5LiveExecutor(
         terminal_path=args.terminal_path or None,
         magic_number=args.magic_number,
+        login=login,
+        password=password,
+        server=server,
     )
     feed = None
     journal = ExecutionJournal("data/execution_journal.json")
@@ -95,6 +142,8 @@ def main(argv: list[str] | None = None) -> None:
         # execution. A second initialize()/shutdown() pair can race the same
         # terminal session and makes account state harder to reason about.
         executor.connect()
+        if policy is not None:
+            _validate_connected_live_account(executor, policy)
         feed = MT5BarFeed(mt5_module=executor.mt5, manage_connection=False)
         orchestrator = ForexLiveOrchestrator(
             symbols=symbols,
