@@ -302,16 +302,29 @@ class MT5LiveExecutor:
 
         result = self.mt5.order_send(request)
         if result is None:
-            return OrderResult(False, -1, error_message=f"MT5 order_send returned no result: {self.mt5.last_error()}")
+            # The terminal/API did not provide a broker result. Treating this as
+            # a normal rejection is unsafe because the server may have accepted
+            # the request before the response was lost.
+            raise RuntimeError(f"MT5 order_send returned no result: {self.mt5.last_error()}")
+
         retcode = int(getattr(result, "retcode", -1))
-        if retcode != int(getattr(self.mt5, "TRADE_RETCODE_DONE", 10009)):
+        done = int(getattr(self.mt5, "TRADE_RETCODE_DONE", 10009))
+        done_partial = int(getattr(self.mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010))
+        if retcode not in {done, done_partial}:
             return OrderResult(False, retcode, error_message=str(getattr(result, "comment", "MT5 order rejected")))
+
+        confirmed_volume = float(getattr(result, "volume", volume))
+        if not isfinite(confirmed_volume) or confirmed_volume <= 0:
+            raise RuntimeError(
+                "MT5 order returned a success/partial code without a valid confirmed volume; "
+                "broker state is ambiguous"
+            )
         return OrderResult(
             True,
             retcode,
             ticket=int(getattr(result, "order", 0) or getattr(result, "deal", 0) or 0),
             price=float(getattr(result, "price", price)),
-            volume=float(getattr(result, "volume", volume)),
+            volume=confirmed_volume,
             comment=str(getattr(result, "comment", "")),
         )
 
