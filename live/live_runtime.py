@@ -133,7 +133,6 @@ class LiveRuntime:
         self._bound_account_identity: AccountIdentity | None = None
 
     def _assert_account_identity(self) -> AccountIdentity:
-        """Verify the terminal is still attached to the exact preflight account."""
         current = self.executor.get_account_identity()
         bound = self._bound_account_identity
         if bound is None:
@@ -256,36 +255,31 @@ class LiveRuntime:
             bars = self.feed.closed_bars(symbol, self.orchestrator.timeframe, self.orchestrator.candle_history)
             bid, ask, tick_time = self.executor.get_current_tick(symbol)
             if bid <= 0 or ask <= 0 or ask < bid:
-                logger.warning("%s: invalid tick bid=%s ask=%s", symbol, bid, ask)
-                continue
+                raise RuntimeError(f"{symbol}: invalid broker tick bid={bid} ask={ask}")
             tick_time = _require_utc(tick_time, f"{symbol} tick timestamp")
             tick_age = (now - tick_time).total_seconds()
             if tick_age < 0:
-                logger.warning("%s: future tick timestamp %.3fs; skipping", symbol, -tick_age)
-                continue
+                raise RuntimeError(f"{symbol}: broker tick timestamp is in the future by {-tick_age:.3f}s")
             if tick_age > self.limits.max_tick_age_seconds:
-                logger.warning("%s: stale tick %.3fs", symbol, tick_age)
-                continue
+                raise RuntimeError(f"{symbol}: stale broker tick {tick_age:.3f}s > {self.limits.max_tick_age_seconds:.3f}s")
 
             contract: ForexSymbolContract = self.executor.get_symbol_contract(symbol)
             if contract.point <= 0:
                 raise RuntimeError(f"{symbol}: broker point must be positive")
             spread_points = (ask - bid) / contract.point
             if spread_points > self.limits.max_spread_points:
-                logger.info("%s: spread %.1f points exceeds %.1f", symbol, spread_points, self.limits.max_spread_points)
+                logger.info("%s: spread %.1f points exceeds %.1f; no order", symbol, spread_points, self.limits.max_spread_points)
                 continue
 
             if not bars:
-                continue
+                raise RuntimeError(f"{symbol}: broker returned no completed candles")
             latest = _require_utc(bars[-1].time, f"{symbol} candle timestamp")
             max_candle_age = _TIMEFRAME_SECONDS[self.orchestrator.timeframe] + 10.0
             candle_age = (now - latest).total_seconds()
             if candle_age < 0:
-                logger.warning("%s: future completed candle timestamp %.3fs; skipping", symbol, -candle_age)
-                continue
+                raise RuntimeError(f"{symbol}: completed candle timestamp is in the future by {-candle_age:.3f}s")
             if candle_age > max_candle_age:
-                logger.warning("%s: stale completed candle %.3fs", symbol, candle_age)
-                continue
+                raise RuntimeError(f"{symbol}: stale completed candle {candle_age:.3f}s > {max_candle_age:.3f}s")
 
             self.orchestrator.process_symbol(
                 symbol=symbol,
@@ -314,7 +308,12 @@ class LiveRuntime:
                     logger.info("Live runtime stopped by operator")
                     raise
                 except Exception:
-                    logger.exception("Live runtime cycle failed closed; no blind retry")
+                    # For a real-money executor, silently retrying an unknown
+                    # state is more dangerous than stopping. A transient data
+                    # issue can be restarted; an account/order-state anomaly
+                    # must be investigated before another order is attempted.
+                    logger.exception("Live runtime cycle failed closed; stopping execution")
+                    raise
                 elapsed = time.monotonic() - started
                 time.sleep(max(0.0, interval_seconds - elapsed))
         finally:
