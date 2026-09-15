@@ -51,12 +51,24 @@ def _runtime_signal(symbol: str, evaluation) -> RuntimeSignal:
     )
 
 
-def main() -> None:
-    load_dotenv()
-    config = BotConfig.from_env()
-    if config.mode != "paper":
-        raise RuntimeError("run_bot.py is intentionally paper-only; set BOT_MODE=paper")
+def _run_mt5_execution(config: BotConfig) -> None:
+    """Delegate DEMO/LIVE execution to the hardened MT5 runtime boundary."""
+    from live.live_runtime_cli import main as live_runtime_main
 
+    argv = [
+        "--symbols", ",".join(config.symbols),
+        "--mode", config.mode.upper(),
+        "--timeframe", config.timeframe,
+        "--risk", str(config.default_risk_per_trade),
+        "--interval", os.getenv("BOT_POLL_SECONDS", "5"),
+    ]
+    if config.mt5_terminal_path:
+        argv.extend(["--terminal-path", config.mt5_terminal_path])
+    argv.extend(["--magic-number", str(config.magic_number)])
+    live_runtime_main(argv)
+
+
+def _run_paper(config: BotConfig) -> None:
     poll_seconds = max(1.0, float(os.getenv("BOT_POLL_SECONDS", "2")))
     lookback = max(250, int(os.getenv("BOT_LOOKBACK", "500")))
     service = BotService(config)
@@ -85,8 +97,6 @@ def main() -> None:
                     if evaluation is None:
                         continue
 
-                    # Consume the signal generated on the previous completed bar.
-                    # This preserves the project's next-bar paper-entry chronology.
                     closed_bar = feed.closed_bars(symbol, config.timeframe, 1)
                     if not closed_bar:
                         raise RuntimeError(f"MT5 returned no completed bar for {symbol}")
@@ -107,7 +117,6 @@ def main() -> None:
                         },
                     )
 
-                    # Store the current closed-candle decision for the next completed bar.
                     pending[symbol] = _runtime_signal(symbol, evaluation)
                     signal = evaluation.signal
                     service.emit(
@@ -149,6 +158,19 @@ def main() -> None:
     finally:
         feed.close()
         service.close()
+
+
+def main() -> None:
+    load_dotenv()
+    config = BotConfig.from_env()
+
+    if config.mode == "paper":
+        _run_paper(config)
+        return
+
+    # DEMO and LIVE both use the same broker execution boundary. LIVE can only
+    # pass BotConfig validation after the explicit Stage-1 deployment policy is armed.
+    _run_mt5_execution(config)
 
 
 if __name__ == "__main__":
