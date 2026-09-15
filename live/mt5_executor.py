@@ -102,13 +102,7 @@ class MT5LiveExecutor:
         self._bound_account_identity: AccountIdentity | None = None
 
     def connect(self) -> bool:
-        """Connect to the explicitly configured MT5 account when supplied.
-
-        MetaQuotes documents initialize(path, login, password, server) as the
-        supported way to select a specific account. Supplying an account is
-        important for unattended execution because connecting to the terminal's
-        last-used account is otherwise ambiguous.
-        """
+        """Connect to the explicitly configured MT5 account when supplied."""
         if self.mt5 is None:
             raise RuntimeError("MetaTrader5 package is not installed.")
 
@@ -138,13 +132,11 @@ class MT5LiveExecutor:
         self._bound_account_identity = None
 
     def get_account_identity(self) -> AccountIdentity:
-        """Read the broker/account identity and fail closed on missing fields."""
         if not self._connected:
             raise RuntimeError("MT5 executor is not connected.")
         info = self.mt5.account_info()
         if info is None:
             raise RuntimeError(f"MT5 account_info unavailable: {self.mt5.last_error()}")
-
         login = int(getattr(info, "login", 0))
         server = str(getattr(info, "server", "")).strip()
         company = str(getattr(info, "company", "")).strip()
@@ -154,7 +146,6 @@ class MT5LiveExecutor:
         return AccountIdentity(login=login, server=server, company=company, trade_mode=trade_mode)
 
     def bind_account_identity(self, identity: AccountIdentity) -> None:
-        """Bind this executor to one verified account identity for its session."""
         current = self.get_account_identity()
         if current != identity:
             raise RuntimeError("cannot bind executor: current MT5 account identity does not match expected identity")
@@ -163,7 +154,6 @@ class MT5LiveExecutor:
         self._bound_account_identity = identity
 
     def _assert_bound_account_identity(self) -> None:
-        """Re-check the bound account immediately before any broker execution."""
         if self._bound_account_identity is None:
             raise RuntimeError("MT5 executor account identity is not bound; execution is disabled")
         current = self.get_account_identity()
@@ -226,7 +216,6 @@ class MT5LiveExecutor:
         tp: float | None = None, deviation_points: int = 20,
         comment: str = "Ariatrading Forex",
     ) -> OrderResult:
-        """Validate, order_check, then submit one market order."""
         if not self._connected:
             return OrderResult(False, -1, error_message="MT5 executor is not connected")
         try:
@@ -302,9 +291,6 @@ class MT5LiveExecutor:
 
         result = self.mt5.order_send(request)
         if result is None:
-            # The terminal/API did not provide a broker result. Treating this as
-            # a normal rejection is unsafe because the server may have accepted
-            # the request before the response was lost.
             raise RuntimeError(f"MT5 order_send returned no result: {self.mt5.last_error()}")
 
         retcode = int(getattr(result, "retcode", -1))
@@ -316,8 +302,7 @@ class MT5LiveExecutor:
         confirmed_volume = float(getattr(result, "volume", volume))
         if not isfinite(confirmed_volume) or confirmed_volume <= 0:
             raise RuntimeError(
-                "MT5 order returned a success/partial code without a valid confirmed volume; "
-                "broker state is ambiguous"
+                "MT5 order returned a success/partial code without a valid confirmed volume; broker state is ambiguous"
             )
         return OrderResult(
             True,
@@ -354,3 +339,45 @@ class MT5LiveExecutor:
                 )
             )
         return result
+
+    def close_position(self, ticket: int, deviation_points: int = 20) -> OrderResult:
+        if not self._connected:
+            return OrderResult(False, -1, error_message="MT5 executor is not connected")
+        try:
+            self._assert_bound_account_identity()
+        except RuntimeError as exc:
+            return OrderResult(False, -1, error_message=str(exc))
+        positions = self.mt5.positions_get(ticket=ticket)
+        if positions is None:
+            return OrderResult(False, -1, error_message=f"MT5 position lookup failed: {self.mt5.last_error()}")
+        if not positions:
+            return OrderResult(False, -1, error_message=f"Position ticket {ticket} not found")
+        pos = positions[0]
+        if self.magic_number and int(getattr(pos, "magic", 0)) != self.magic_number:
+            return OrderResult(False, -1, error_message=f"Position #{ticket} is not owned by this strategy")
+        sym = str(pos.symbol)
+        info = self.mt5.symbol_info(sym)
+        tick = self.mt5.symbol_info_tick(sym)
+        if info is None or tick is None:
+            return OrderResult(False, -1, error_message=f"Could not retrieve tick/info for {sym}")
+        ptype = getattr(pos, "type", 0)
+        close_type = int(getattr(self.mt5, "ORDER_TYPE_SELL", 1)) if ptype == getattr(self.mt5, "ORDER_TYPE_BUY", 0) else int(getattr(self.mt5, "ORDER_TYPE_BUY", 0))
+        close_price = float(tick.bid) if close_type == getattr(self.mt5, "ORDER_TYPE_SELL", 1) else float(tick.ask)
+        req = {
+            "action": int(getattr(self.mt5, "TRADE_ACTION_DEAL", 1)), "position": ticket, "symbol": sym,
+            "volume": float(pos.volume), "type": close_type, "price": round(close_price, int(info.digits)),
+            "deviation": int(deviation_points), "magic": self.magic_number, "comment": f"Close #{ticket}",
+            "type_time": int(getattr(self.mt5, "ORDER_TIME_GTC", 0)), "type_filling": _resolve_filling_mode(self.mt5, info),
+        }
+        check = self.mt5.order_check(req)
+        if check is None:
+            return OrderResult(False, -1, error_message=f"close order_check returned None: {self.mt5.last_error()}")
+        check_retcode = int(getattr(check, "retcode", -1))
+        if check_retcode not in {0, int(getattr(self.mt5, "TRADE_RETCODE_DONE", 10009))}:
+            return OrderResult(False, check_retcode, error_message=f"Close order_check rejected request: {getattr(check, 'comment', '')}")
+        res = self.mt5.order_send(req)
+        if res is None:
+            raise RuntimeError(f"close order_send returned None: {self.mt5.last_error()}")
+        if int(res.retcode) != int(getattr(self.mt5, "TRADE_RETCODE_DONE", 10009)):
+            return OrderResult(False, int(res.retcode), error_message=f"Failed to close #{ticket}: {getattr(res, 'comment', '')}")
+        return OrderResult(True, int(res.retcode), ticket=ticket, price=close_price, volume=float(pos.volume))
