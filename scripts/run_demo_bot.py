@@ -24,6 +24,7 @@ import logging
 from pathlib import Path
 
 from adapters.mt5_feed import MT5BarFeed
+from live.control_plane import BotControlPlane
 from live.execution_guard import ExecutionJournal
 from live.live_runtime import DailyCircuitBreaker, LiveRuntime, RuntimeLimits
 from live.mt5_account import validate_account_mode
@@ -36,7 +37,10 @@ LOG = logging.getLogger("ariatrading.demo")
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Ariatrading MT5 DEMO trading bot")
-    parser.add_argument("--symbols", default="EURUSD")
+    parser.add_argument(
+        "--symbols",
+        default="EURUSD",
+    )
     parser.add_argument(
         "--timeframe",
         choices=["1m", "5m", "15m", "30m", "1h", "4h", "1D"],
@@ -92,12 +96,13 @@ def main() -> None:
             executor=executor,
             execution_journal=journal,
         )
-
+        control = BotControlPlane(PROJECT_ROOT / "data" / "bot_control.json")
         runtime = LiveRuntime(
             orchestrator=orchestrator,
             feed=feed,
             executor=executor,
             journal=journal,
+            control=control,
             limits=RuntimeLimits(
                 max_tick_age_seconds=5,
                 max_spread_points=30,
@@ -109,12 +114,13 @@ def main() -> None:
             ),
         )
         LOG.info(
-            "Ariatrading MT5 DEMO bot starting: symbols=%s timeframe=%s risk=%.4f interval=%.1fs",
+            "Ariatrading MT5 DEMO bot ready: symbols=%s timeframe=%s risk=%.4f interval=%.1fs",
             ",".join(symbols),
             args.timeframe,
             args.risk,
             args.interval,
         )
+        LOG.info("Default control state is STOP; use scripts/bot_control.py start to run")
         runtime.run_forever(args.interval)
     finally:
         if feed is not None:
