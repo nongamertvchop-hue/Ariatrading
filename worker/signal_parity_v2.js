@@ -17,13 +17,7 @@ import { buildSignalEventId } from "./signal_event.js";
 
 function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } }); }
 function decorateCandidate(candidate, structureBias) { return { ...candidate.result, zone: candidate.zone ?? null, score: candidate.score ?? null, protection: candidate.result.protection ?? "SAFE", structureBias: candidate.result.structureBias ?? structureBias }; }
-function bestSignal(candidates, direction, timeframe, emptyReason, structureBias) {
-  if (!candidates.length) return { action: WAIT, reason: emptyReason, timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT, structureBias };
-  const directional = candidates.filter((candidate) => candidate.result.action === direction);
-  if (!directional.length) return decorateCandidate(candidates[0], structureBias);
-  const best = [...directional].sort((a, b) => (b.score?.total ?? -1) - (a.score?.total ?? -1))[0];
-  return decorateCandidate(best, structureBias);
-}
+function bestSignal(candidates, direction, timeframe, emptyReason, structureBias) { if (!candidates.length) return { action: WAIT, reason: emptyReason, timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT, structureBias }; const directional = candidates.filter((candidate) => candidate.result.action === direction); if (!directional.length) return decorateCandidate(candidates[0], structureBias); const best = [...directional].sort((a, b) => (b.score?.total ?? -1) - (a.score?.total ?? -1))[0]; return decorateCandidate(best, structureBias); }
 function selectSignal(longSignal, shortSignal, timeframe, structureBias) { if (longSignal.action !== WAIT && shortSignal.action === WAIT) return longSignal; if (shortSignal.action !== WAIT && longSignal.action === WAIT) return shortSignal; if (longSignal.action === WAIT && shortSignal.action === WAIT) return { action: WAIT, reason: "no directional setup", timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT, structureBias }; const longScore = longSignal.score?.total ?? -1; const shortScore = shortSignal.score?.total ?? -1; return longScore > shortScore ? longSignal : shortSignal; }
 function nearestSupport(price, zones) { return zones.filter((zone) => zone.center <= price).sort((a, b) => (price - a.center) - (price - b.center))[0] ?? null; }
 function nearestResistance(price, zones) { return zones.filter((zone) => zone.center >= price).sort((a, b) => (a.center - price) - (b.center - price))[0] ?? null; }
@@ -49,14 +43,16 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
   const indicators = calculateIndicators(candles);
   const indicatorDirection = strategySignal.action === LONG || strategySignal.action === SHORT ? strategySignal.action : null;
   const indicatorContextResult = indicatorContext(candles, indicatorDirection);
+  const indicatorReady = indicatorDirection !== null && ![indicatorContextResult.trend, indicatorContextResult.momentum, indicatorContextResult.macd_momentum].includes("UNAVAILABLE");
+  const indicatorAllowed = !indicatorReady || indicatorContextResult.confirmation_state !== "OPPOSED";
   const forecastResult = forecast(candles, [1, 3, 5], support, resistance);
   const supervisor = supervise(strategySignal, forecastResult, null, minForecastConfidence);
   let finalSignal = strategySignal;
   if (supervisor.action !== "ALLOW") finalSignal = { ...strategySignal, action: WAIT, reason: `realtime supervisor: ${supervisor.reasons.join("; ")}`, protection: "BLOCKED" };
-  else if (indicatorDirection && !indicatorContextResult.allowed) finalSignal = { ...strategySignal, action: WAIT, reason: `indicator filter veto: ${indicatorContextResult.trend}; ${indicatorContextResult.momentum}; ${indicatorContextResult.macd_momentum}`, protection: "BLOCKED" };
+  else if (indicatorDirection && !indicatorAllowed) finalSignal = { ...strategySignal, action: WAIT, reason: `indicator filter veto: ${indicatorContextResult.trend}; ${indicatorContextResult.momentum}; ${indicatorContextResult.macd_momentum}`, protection: "BLOCKED" };
   const selectedScore = finalSignal.action === LONG || finalSignal.action === SHORT ? finalSignal.score ?? null : null;
   const latestRawCandle = rawCandles[rawCandles.length - 1];
-  return { signal: finalSignal.action, state: finalSignal.state ?? "APPROACH", reason: finalSignal.reason, price: currentPrice, bar_time: latestRawCandle?.datetime ?? latestRawCandle?.time ?? null, structure_bias: finalSignal.structureBias ?? structure.bias, zone: finalSignal.zone ?? null, entry_reference: finalSignal.action === WAIT ? null : finalSignal.entryReference ?? null, stop_reference: finalSignal.zone && finalSignal.action !== WAIT ? stopReference(finalSignal.zone, finalSignal.action, history, timeframe) : null, breakout_state: finalSignal.breakoutState ?? NO_BREAKOUT, protection: finalSignal.protection ?? "SAFE", score: selectedScore, indicators, indicator_context: indicatorContextResult, support, resistance, forecast: forecastResult, supervisor, candles, candles_used: candles.length };
+  return { signal: finalSignal.action, state: finalSignal.state ?? "APPROACH", reason: finalSignal.reason, price: currentPrice, bar_time: latestRawCandle?.datetime ?? latestRawCandle?.time ?? null, structure_bias: finalSignal.structureBias ?? structure.bias, zone: finalSignal.zone ?? null, entry_reference: finalSignal.action === WAIT ? null : finalSignal.entryReference ?? null, stop_reference: finalSignal.zone && finalSignal.action !== WAIT ? stopReference(finalSignal.zone, finalSignal.action, history, timeframe) : null, breakout_state: finalSignal.breakoutState ?? NO_BREAKOUT, protection: finalSignal.protection ?? "SAFE", score: selectedScore, indicators, indicator_context: { ...indicatorContextResult, allowed: indicatorAllowed }, support, resistance, forecast: forecastResult, supervisor, candles, candles_used: candles.length };
 }
 
 async function fetchMt5Market(env, symbol, timeframe) {
