@@ -130,9 +130,6 @@ class RealtimeMonitor:
         if not integrity.ok:
             raise RuntimeError(f"realtime feed integrity rejected: {integrity.reason}")
 
-        # Accept atomically updates the duplicate cursor only after all guard
-        # checks pass. Calling validate() here would allow repeated evaluation
-        # of the same closed candle on every polling cycle.
         quality = self.guard.accept(bars, now=evaluation_time)
         if not quality.ok:
             if quality.reason == "duplicate or old closed bar":
@@ -177,71 +174,60 @@ class RealtimeMonitor:
                 structure_bias=signal.structure_bias,
                 score=signal.score,
                 state=signal.state,
+                indicators=signal.indicators,
             )
 
-        snapshot = MarketSnapshot(
+        snapshot = MarketSnapshot.from_bars(
             symbol=self.symbol,
             timeframe=self.timeframe,
+            bars=candles,
+            source="realtime",
+        )
+        evaluation = LiveEvaluation(
+            symbol=self.symbol,
+            timeframe=self.timeframe,
+            evaluated_at=evaluation_time,
             bar_time=latest.time,
-            candle=Candle(
-                open=latest.open,
-                high=latest.high,
-                low=latest.low,
-                close=latest.close,
-            ),
-            current_close=latest.close,
+            signal=final_signal,
             support=support,
             resistance=resistance,
             forecast=forecast_result,
-            data_quality=quality,
-        )
-        evaluation = LiveEvaluation(
-            self.symbol,
-            self.timeframe,
-            evaluation_time,
-            latest.time,
-            final_signal,
-            support,
-            resistance,
-            forecast_result,
-            quality.reason,
-            supervisor,
-            snapshot,
+            data_quality=quality.reason,
+            supervisor=supervisor,
+            snapshot=snapshot,
         )
         self._last_bar_time = latest.time
         return evaluation
 
     @staticmethod
     def _best_signal(signals: Sequence[EngineSignal]) -> EngineSignal:
-        directional = [s for s in signals if s.action != WAIT]
+        directional = [signal for signal in signals if signal.action != WAIT]
         if not directional:
             return signals[0] if signals else EngineSignal(WAIT, "no setup", "")
-        return max(
-            directional,
-            key=lambda signal: signal.score.total if signal.score is not None else -1,
-        )
+        return max(directional, key=lambda signal: signal.score.total if signal.score is not None else -1)
 
     @staticmethod
     def _select_signal(long_signal: EngineSignal, short_signal: EngineSignal) -> EngineSignal:
-        if long_signal.action != WAIT and short_signal.action == WAIT:
+        long_ok = long_signal.action == "LONG"
+        short_ok = short_signal.action == "SHORT"
+        if long_ok and not short_ok:
             return long_signal
-        if short_signal.action != WAIT and long_signal.action == WAIT:
+        if short_ok and not long_ok:
             return short_signal
-        if long_signal.action == WAIT and short_signal.action == WAIT:
-            return EngineSignal(WAIT, "no directional setup", long_signal.timeframe)
-        long_score = long_signal.score.total if long_signal.score is not None else -1
-        short_score = short_signal.score.total if short_signal.score is not None else -1
-        return long_signal if long_score > short_score else short_signal
+        if long_ok and short_ok:
+            long_score = long_signal.score.total if long_signal.score is not None else -1
+            short_score = short_signal.score.total if short_signal.score is not None else -1
+            return long_signal if long_score > short_score else short_signal
+        return EngineSignal(WAIT, "no unambiguous realtime setup", long_signal.timeframe)
 
     @staticmethod
     def _nearest_support(price: float, zones: Sequence[PriceZone]) -> PriceZone | None:
-        candidates = [z for z in zones if z.center <= price]
-        return min(candidates, key=lambda z: price - z.center, default=None)
+        candidates = [zone for zone in zones if zone.center <= price or zone.low <= price <= zone.high]
+        candidates.sort(key=lambda zone: (0 if zone.low <= price <= zone.high else price - zone.high, -zone.touches))
+        return candidates[0] if candidates else None
 
     @staticmethod
     def _nearest_resistance(price: float, zones: Sequence[PriceZone]) -> PriceZone | None:
-        candidates = [z for z in zones if z.center >= price]
-        return min(candidates, key=lambda z: z.center - price, default=None)
-
-
-__all__ = ["BarFeed", "LiveBar", "LiveEvaluation", "RealtimeMonitor"]
+        candidates = [zone for zone in zones if zone.center >= price or zone.low <= price <= zone.high]
+        candidates.sort(key=lambda zone: (0 if zone.low <= price <= zone.high else zone.low - price, -zone.touches))
+        return candidates[0] if candidates else None
