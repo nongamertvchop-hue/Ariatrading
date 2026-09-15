@@ -13,17 +13,17 @@ function makeCandles(start, delta, count = 60) {
   return candles;
 }
 
-test("LONG indicator context remains allowed when evidence is supportive", () => {
+test("LONG indicator context remains supportive when directional evidence agrees", () => {
   const context = indicatorContext(makeCandles(1, 0.001), "LONG");
   assert.ok(context.confirmations >= 2);
-  assert.equal(context.allowed, true);
-  assert.notEqual(context.confirmation_state, "OPPOSED");
+  assert.equal(context.confirmation_state, "SUPPORTIVE");
 });
 
-test("LONG indicator context vetoes a full three-signal contradiction", () => {
+test("LONG indicator context identifies a full three-signal contradiction", () => {
   const context = indicatorContext(makeCandles(2, -0.001), "LONG");
-  assert.equal(context.opposing, 3);
   assert.equal(context.confirmations, 0);
-  assert.equal(context.allowed, false);
   assert.equal(context.confirmation_state, "OPPOSED");
+  assert.notEqual(context.trend, "UNAVAILABLE");
+  assert.notEqual(context.momentum, "UNAVAILABLE");
+  assert.notEqual(context.macd_momentum, "UNAVAILABLE");
 });
