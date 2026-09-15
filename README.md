@@ -2,7 +2,7 @@
 
 Educational price-action research project for EURUSD-style OHLC data.
 
-**Current version: 0.17.4**
+**Current version: 0.17.5**
 
 ## Core idea
 
@@ -70,6 +70,7 @@ The project is layered so every stage can be used together without duplicating s
 51. **Canonical MT5 strategy boundary** — MT5-sourced `/api/strategy` requests pass through the realtime feed-integrity guard before strategy evaluation, including epoch timestamp normalization and duplicate-cursor protection.
 52. **Webaria MT5 single-source runtime** — `/api/market` and `/api/signal` consume the same MT5 market store; the browser evaluates strategy on completed MT5 candles and fails closed on broker-data mismatch or unavailability.
 53. **MT5 end-to-end contract certification** — a Python bridge-shaped payload is exercised through the JavaScript `Mt5MarketStore` and canonical `/api/signal` adapter in CI, including completed/forming separation and fail-closed contract checks.
+54. **ABCD parity guardrails** — parity certification rejects duplicate/out-of-order decision streams and reports decisions missing from either side before fingerprint comparison; regression coverage protects these fail-closed invariants.
 
 ## Key modules
 
@@ -77,7 +78,7 @@ The project is layered so every stage can be used together without duplicating s
 - `strategy/historical_data.py` — strict external historical OHLCV CSV loader.
 - `strategy/realtime.py` — closed-candle realtime monitor with feed-integrity gating and deterministic event identity.
 - `strategy/realtime_replay.py` — deterministic historical replay of the realtime monitor plus causal outcome attachment.
-- `strategy/parity_certification.py` — normalized Backtest/Realtime/Paper decision-stream certificate.
+- `strategy/parity_certification.py` — normalized Backtest/Realtime/Paper decision-stream certificate with strict stream guardrails.
 - `strategy/paper_accounting.py` — realized/unrealized P/L, equity, peak-equity and drawdown accounting.
 - `strategy/paper_history.py` — durable append-only hash-chained paper accounting history.
 - `strategy/paper_runtime_checkpoint.py` — atomic versioned continuous-runtime checkpoint persistence.
@@ -91,7 +92,12 @@ The project is layered so every stage can be used together without duplicating s
 - `worker/signal_parity_v2.js` — canonical MT5-backed realtime signal adapter used by Webaria `/api/signal`.
 - `Webaria/live-market.js` — browser live market loop that keeps chart and strategy on the same MT5 source.
 - `tests/e2e_mt5_contract.py` + `tests/e2e_mt5_contract.test.mjs` — cross-language MT5 contract certification used by CI.
+- `tests/test_parity_guardrails.py` — regression tests for strict decision-stream parity invariants.
 
 ## Safety boundary
 
 Ariatrading's supported runtime is **PAPER/DEMO only**. The release gate has no real-broker execution path, and the supported bot configuration rejects `BOT_MODE=live`. A passing paper gate is engineering/research evidence only; it is not a profitability claim and does not authorize real-money trading.
+
+## ABCD engineering contract
+
+See [`docs/ABCD_UPGRADE.md`](docs/ABCD_UPGRADE.md) for the integrated A→B→C→D contract covering architecture audit, paper execution hardening, dashboard observability, and chronology-safe research.

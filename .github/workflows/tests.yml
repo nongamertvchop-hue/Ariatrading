@@ -38,7 +38,7 @@ jobs:
       - name: Generate cross-language MT5 contract fixture
         run: python tests/e2e_mt5_contract.py
       - name: Run Worker, Webaria, and MT5 contract tests
-        run: node --test tests/worker_signal_parity.test.mjs tests/realtime_full_parity.test.mjs tests/web_signal_journal.test.mjs tests/web_paper_engine.test.mjs tests/web_chart_data_compat.test.mjs tests/web_price_action_pages.test.mjs tests/test_worker_mt5_single_source.mjs tests/e2e_mt5_contract.test.mjs
+        run: node --test tests/worker_signal_parity.test.mjs tests/realtime_full_parity.test.mjs tests/web_signal_journal.test.mjs tests/web_paper_engine.test.mjs tests/web_chart_data_compat.test.mjs tests/web_price_action_pages.test.mjs tests/test_worker_mt5_single_source.mjs tests/test_mt5_snapshot_fingerprint.mjs tests/e2e_mt5_contract.test.mjs
 
   worker-syntax:
     runs-on: ubuntu-latest
@@ -49,7 +49,7 @@ jobs:
         with:
           node-version: "22"
       - name: Check Worker, Pages signal, chart, Bodyguard, and MT5 contract test syntax
-        run: node --check worker/index.js && node --check worker/entry.js && node --check worker/signal_parity.js && node --check worker/signal_parity_v2.js && node --check Webaria/functions/api/signal.js && node --check Webaria/functions/api/market.js && node --check Webaria/functions/api/bodyguard/status.js && node --check Webaria/chart-data-compat.js && node --check Webaria/paper-runtime.js && node --check Webaria/trading.js && node --check Webaria/live-market.js && node --check tests/test_worker_mt5_single_source.mjs && node --check tests/e2e_mt5_contract.test.mjs
+        run: node --check worker/index.js && node --check worker/entry.js && node --check worker/signal_parity.js && node --check worker/signal_parity_v2.js && node --check Webaria/functions/api/signal.js && node --check Webaria/functions/api/market.js && node --check Webaria/functions/api/bodyguard/status.js && node --check Webaria/chart-data-compat.js && node --check Webaria/paper-runtime.js && node --check Webaria/trading.js && node --check Webaria/live-market.js && node --check tests/test_worker_mt5_single_source.mjs && node --check tests/test_mt5_snapshot_fingerprint.mjs && node --check tests/e2e_mt5_contract.test.mjs
 
   polyglot-build:
     runs-on: ubuntu-latest

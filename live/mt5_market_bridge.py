@@ -12,6 +12,7 @@ HTTPS ingest endpoint instead of exposing the MT5 machine directly.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -61,9 +62,13 @@ def _require_mt5() -> Any:
 
 def _timeframe_value(value: str) -> Any:
     raw = TIMEFRAME_MAP[value]
-    if isinstance(raw, str):
-        return getattr(_require_mt5(), raw)
-    return raw
+    if not isinstance(raw, str):
+        return raw
+    terminal = _require_mt5()
+    direct = getattr(terminal, raw, None)
+    if direct is not None:
+        return direct
+    return getattr(terminal, f"TIMEFRAME_{raw}", raw)
 
 
 def _initialize() -> None:
@@ -79,6 +84,13 @@ def _symbol_name(raw: str) -> str:
     if not symbol.isalnum() or not (6 <= len(symbol) <= 16):
         raise ValueError("symbol must be an MT5 symbol such as EURUSD")
     return symbol
+
+
+def _market_symbol(raw: str) -> str:
+    symbol = _symbol_name(raw)
+    if len(symbol) == 6:
+        return f"{symbol[:3]}/{symbol[3:]}"
+    raise ValueError("MT5 market bridge requires a six-letter FX symbol such as EURUSD")
 
 
 def _timeframe(raw: str) -> str:
@@ -102,20 +114,48 @@ def _candle(row: Any) -> dict[str, Any]:
     return {"time": timestamp, **values}
 
 
-def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
-    terminal = _require_mt5()
-    if not terminal.symbol_select(symbol, True):
-        raise RuntimeError(f"MT5 symbol_select failed for {symbol}: {terminal.last_error()}")
+def _canonical_price(value: float) -> str:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("non-finite price in fingerprint")
+    return f"{number:.12f}"
 
-    rates = terminal.copy_rates_from_pos(symbol, _timeframe_value(timeframe), 1, count)
-    live_rates = terminal.copy_rates_from_pos(symbol, _timeframe_value(timeframe), 0, 1)
+
+def canonical_completed_payload(symbol: str, timeframe: str, candles: list[dict[str, Any]]) -> str:
+    lines = [f"{symbol}\n{timeframe}"]
+    lines.extend(
+        f"{int(candle['time'])}|{_canonical_price(candle['open'])}|{_canonical_price(candle['high'])}|{_canonical_price(candle['low'])}|{_canonical_price(candle['close'])}"
+        for candle in candles
+    )
+    return "\n".join(lines)
+
+
+def completed_fingerprint(symbol: str, timeframe: str, candles: list[dict[str, Any]]) -> str:
+    payload = canonical_completed_payload(symbol, timeframe, candles).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
+    terminal_symbol = _symbol_name(symbol)
+    market_symbol = _market_symbol(terminal_symbol)
+    terminal = _require_mt5()
+    if not terminal.symbol_select(terminal_symbol, True):
+        raise RuntimeError(f"MT5 symbol_select failed for {terminal_symbol}: {terminal.last_error()}")
+
+    rates = terminal.copy_rates_from_pos(terminal_symbol, _timeframe_value(timeframe), 1, count)
+    live_rates = terminal.copy_rates_from_pos(terminal_symbol, _timeframe_value(timeframe), 0, 1)
     if rates is None or live_rates is None:
         raise RuntimeError(f"MT5 copy_rates_from_pos failed: {terminal.last_error()}")
 
     completed = [_candle(row) for row in rates]
     completed.sort(key=lambda row: row["time"])
+    for previous, current in zip(completed, completed[1:]):
+        if current["time"] <= previous["time"]:
+            raise RuntimeError("MT5 returned non-chronological completed candles")
     live = _candle(live_rates[-1]) if len(live_rates) else None
-    tick = terminal.symbol_info_tick(symbol)
+    if live is not None and completed and live["time"] <= completed[-1]["time"]:
+        raise RuntimeError("MT5 forming candle is not newer than completed history")
+    tick = terminal.symbol_info_tick(terminal_symbol)
     if tick is None:
         raise RuntimeError(f"MT5 symbol_info_tick failed: {terminal.last_error()}")
 
@@ -124,14 +164,16 @@ def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
     if not (math.isfinite(bid) and math.isfinite(ask) and bid > 0 and ask > 0 and ask >= bid):
         raise RuntimeError("MT5 tick is invalid")
     midpoint = (bid + ask) / 2.0
+    completed = completed[-count:]
 
     return {
-        "symbol": symbol,
+        "symbol": market_symbol,
         "timeframe": timeframe,
-        "candles": completed[-count:],
+        "candles": completed,
         "live_candle": live,
         "price": midpoint,
         "tick": {"time": int(tick.time), "bid": bid, "ask": ask},
+        "market_fingerprint": completed_fingerprint(market_symbol, timeframe, completed),
         "source": "mt5",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "received_at": int(datetime.now(timezone.utc).timestamp()),
@@ -145,16 +187,7 @@ def push_to_ingest(payload: dict[str, Any]) -> None:
         raise RuntimeError("MT5_INGEST_URL is not configured")
     token = _env_token()
     body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    request = Request(
-        target,
-        data=body,
-        method="POST",
-        headers={
-            "authorization": f"Bearer {token}",
-            "content-type": "application/json",
-            "content-length": str(len(body)),
-        },
-    )
+    request = Request(target, data=body, method="POST", headers={"authorization": f"Bearer {token}", "content-type": "application/json", "content-length": str(len(body))})
     try:
         with urlopen(request, timeout=8) as response:
             if response.status < 200 or response.status >= 300:
@@ -187,7 +220,6 @@ def publish_loop(stop_event: threading.Event) -> None:
         raise RuntimeError("MT5_PUSH_INTERVAL_SECONDS must be finite and >= 1 second")
     symbols = _configured_symbols()
     timeframes = _configured_timeframes()
-
     while not stop_event.is_set():
         cycle_started = time.monotonic()
         for symbol in symbols:
@@ -202,8 +234,7 @@ def publish_loop(stop_event: threading.Event) -> None:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "AriatradingMT5Bridge/1.1"
-
+    server_version = "AriatradingMT5Bridge/1.2"
     def _json(self, status: int, body: dict[str, Any]) -> None:
         payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
@@ -212,15 +243,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("content-length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
-
     def _authorized(self) -> bool:
         presented = self.headers.get("authorization", "")
         expected = _env_token()
         if not presented.lower().startswith("bearer "):
             return False
         return secrets.compare_digest(presented[7:].strip(), expected)
-
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         try:
             if not self._authorized():
                 self._json(401, {"error": "unauthorized"})
@@ -239,7 +268,6 @@ class Handler(BaseHTTPRequestHandler):
             self._json(503, {"error": "mt5_market_unavailable", "message": str(exc), "source": "mt5", "execution": "NONE"})
         except Exception:
             self._json(500, {"error": "internal_error", "message": "MT5 bridge failed closed", "source": "mt5", "execution": "NONE"})
-
     def log_message(self, _format: str, *_args: Any) -> None:
         return
 
@@ -268,7 +296,6 @@ def main() -> None:
             publisher.join(timeout=5)
         server.shutdown()
         terminal.shutdown()
-
 
 if __name__ == "__main__":
     main()
