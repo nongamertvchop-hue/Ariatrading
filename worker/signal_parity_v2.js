@@ -7,46 +7,29 @@
  */
 
 import {
-  LONG,
-  SHORT,
-  WAIT,
-  NO_BREAKOUT,
-  TIMEFRAME_CONFIG,
-  BadRequest,
-  adaptiveZoneTolerance,
-  evaluateSequence,
-  analyzeMarketStructure,
-  findSupportZones,
-  findResistanceZones,
-  scoreSetup,
-  validateCandle,
+  LONG, SHORT, WAIT, NO_BREAKOUT, TIMEFRAME_CONFIG, BadRequest,
+  adaptiveZoneTolerance, evaluateSequence, analyzeMarketStructure,
+  findSupportZones, findResistanceZones, scoreSetup, validateCandle,
 } from "./signal_parity.js";
+import { calculateIndicators, indicatorContext } from "./indicators.js";
 import { forecast, supervise } from "./forecast_parity.js";
 import { validateRealtimeFeed, acceptRealtimeFeed } from "./realtime_feed_guard.js";
 import { buildSignalEventId } from "./signal_event.js";
 
 function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
-  });
+  return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 }
 
 function decorateCandidate(candidate, structureBias) {
-  return {
-    ...candidate.result,
-    zone: candidate.zone ?? null,
-    score: candidate.score ?? null,
-    protection: candidate.result.protection ?? "SAFE",
-    structureBias: candidate.result.structureBias ?? structureBias,
-  };
+  return { ...candidate.result, zone: candidate.zone ?? null, score: candidate.score ?? null, protection: candidate.result.protection ?? "SAFE", structureBias: candidate.result.structureBias ?? structureBias };
 }
 
 function bestSignal(candidates, direction, timeframe, emptyReason, structureBias) {
   if (!candidates.length) return { action: WAIT, reason: emptyReason, timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT, structureBias };
   const directional = candidates.filter((candidate) => candidate.result.action === direction);
   if (!directional.length) return decorateCandidate(candidates[0], structureBias);
-  return [...directional].sort((a, b) => (b.score?.total ?? -1) - (a.score?.total ?? -1))[0] && decorateCandidate([...directional].sort((a, b) => (b.score?.total ?? -1) - (a.score?.total ?? -1))[0], structureBias);
+  const best = [...directional].sort((a, b) => (b.score?.total ?? -1) - (a.score?.total ?? -1))[0];
+  return decorateCandidate(best, structureBias);
 }
 
 function selectSignal(longSignal, shortSignal, timeframe, structureBias) {
@@ -58,13 +41,8 @@ function selectSignal(longSignal, shortSignal, timeframe, structureBias) {
   return longScore > shortScore ? longSignal : shortSignal;
 }
 
-function nearestSupport(price, zones) {
-  return zones.filter((zone) => zone.center <= price).sort((a, b) => (price - a.center) - (price - b.center))[0] ?? null;
-}
-
-function nearestResistance(price, zones) {
-  return zones.filter((zone) => zone.center >= price).sort((a, b) => (a.center - price) - (b.center - price))[0] ?? null;
-}
+function nearestSupport(price, zones) { return zones.filter((zone) => zone.center <= price).sort((a, b) => (price - a.center) - (price - b.center))[0] ?? null; }
+function nearestResistance(price, zones) { return zones.filter((zone) => zone.center >= price).sort((a, b) => (a.center - price) - (b.center - price))[0] ?? null; }
 
 function stopReference(zone, direction, history, timeframe) {
   const config = TIMEFRAME_CONFIG[timeframe];
@@ -97,12 +75,13 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
   const currentPrice = candles[candles.length - 1].close;
   const support = nearestSupport(currentPrice, supports);
   const resistance = nearestResistance(currentPrice, resistances);
+  const indicators = calculateIndicators(candles);
   const forecastResult = forecast(candles, [1, 3, 5], support, resistance);
   const supervisor = supervise(strategySignal, forecastResult, null, minForecastConfidence);
   let finalSignal = strategySignal;
-  if (supervisor.action !== "ALLOW") {
-    finalSignal = { ...strategySignal, action: WAIT, reason: `realtime supervisor: ${supervisor.reasons.join("; ")}`, protection: "BLOCKED" };
-  }
+  if (supervisor.action !== "ALLOW") finalSignal = { ...strategySignal, action: WAIT, reason: `realtime supervisor: ${supervisor.reasons.join("; ")}`, protection: "BLOCKED" };
+  const indicatorDirection = finalSignal.action === LONG || finalSignal.action === SHORT ? finalSignal.action : null;
+  const indicatorContextResult = indicatorContext(candles, indicatorDirection);
   const selectedScore = strategySignal.action === LONG || strategySignal.action === SHORT ? strategySignal.score ?? null : null;
   const latestRawCandle = rawCandles[rawCandles.length - 1];
   return {
@@ -118,6 +97,8 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
     breakout_state: finalSignal.breakoutState ?? NO_BREAKOUT,
     protection: finalSignal.protection ?? "SAFE",
     score: selectedScore,
+    indicators,
+    indicator_context: indicatorContextResult,
     support,
     resistance,
     forecast: forecastResult,
@@ -142,29 +123,18 @@ export async function handleSignalParityV2(request, env) {
   const timeframe = url.searchParams.get("timeframe") || "15m";
   if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)) throw new BadRequest("symbol must look like EUR/USD");
   if (!TIMEFRAME_CONFIG[timeframe]) throw new BadRequest(`unsupported timeframe: ${timeframe}`);
-
   const market = await fetchMt5Market(env, symbol, timeframe);
   if (!market.response.ok) return market.response;
   const payload = await market.response.json();
   if (payload.source !== "mt5" || !Array.isArray(payload.candles) || !/^[0-9a-f]{64}$/.test(payload.market_fingerprint || "")) {
     return json({ error: "mt5_market_contract_rejected", message: "MT5 market contract or snapshot fingerprint rejected", source: "unavailable", execution: "NONE" }, 503);
   }
-
-  const candles = payload.candles.map((candle) => ({
-    open: candle.open,
-    high: candle.high,
-    low: candle.low,
-    close: candle.close,
-    datetime: new Date(Number(candle.time) * 1000).toISOString(),
-  }));
+  const candles = payload.candles.map((candle) => ({ open: candle.open, high: candle.high, low: candle.low, close: candle.close, datetime: new Date(Number(candle.time) * 1000).toISOString() }));
   const quality = validateRealtimeFeed(candles, timeframe, symbol);
   if (!quality.ok) {
-    if (quality.reason === "duplicate or old closed bar") {
-      return json({ symbol, timeframe, signal: WAIT, state: "NO_UPDATE", reason: quality.reason, data_quality: quality, no_update: true, source: "mt5", market_fingerprint: payload.market_fingerprint, execution: "NONE" });
-    }
+    if (quality.reason === "duplicate or old closed bar") return json({ symbol, timeframe, signal: WAIT, state: "NO_UPDATE", reason: quality.reason, data_quality: quality, no_update: true, source: "mt5", market_fingerprint: payload.market_fingerprint, execution: "NONE" });
     return json({ error: "realtime_data_rejected", message: quality.reason, data_quality: quality, market_fingerprint: payload.market_fingerprint, source: "mt5", execution: "NONE" }, 503);
   }
-
   const result = evaluateRealtimeSignalParity(candles, timeframe);
   const response = { symbol, timeframe, ...result, price: Number(payload.price), live_candle: payload.live_candle ?? null, source: "mt5", market_fingerprint: payload.market_fingerprint, data_quality: { ...quality, broker_age_seconds: payload.data_quality?.age_seconds ?? null }, generated_at: new Date().toISOString(), execution: "NONE" };
   response.event_id = await buildSignalEventId(response);
