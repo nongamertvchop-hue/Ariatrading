@@ -33,6 +33,21 @@ function compactZone(zone) {
   };
 }
 
+function compactIndicators(values) {
+  if (!values) return null;
+  return {
+    ema20: values.ema20,
+    ema50: values.ema50,
+    ema200: values.ema200,
+    rsi14: values.rsi14,
+    atr14: values.atr14,
+    adx14: values.adx14,
+    macd: values.macd,
+    macd_signal: values.macd_signal,
+    macd_histogram: values.macd_histogram,
+  };
+}
+
 function compact(result) {
   return {
     signal: result.signal,
@@ -47,6 +62,17 @@ function compact(result) {
     breakout_state: result.breakout_state,
     protection: result.protection,
     score: result.score == null ? null : { total: result.score.total },
+    indicators: compactIndicators(result.indicators),
+    indicator_context: result.indicator_context ? {
+      values: compactIndicators(result.indicator_context.values),
+      trend: result.indicator_context.trend,
+      momentum: result.indicator_context.momentum,
+      macd_momentum: result.indicator_context.macd_momentum,
+      trend_strength: result.indicator_context.trend_strength,
+      direction: result.indicator_context.direction,
+      confirmations: result.indicator_context.confirmations,
+      confirmation_state: result.indicator_context.confirmation_state,
+    } : null,
     support: compactZone(result.support),
     resistance: compactZone(result.resistance),
     forecast: {
