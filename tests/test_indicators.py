@@ -51,7 +51,8 @@ def test_atr_is_unavailable_before_warmup() -> None:
 
 def test_adx_is_unavailable_until_directional_warmup() -> None:
     candles = candles_from_closes([float(index) for index in range(1, 30)])
-    assert adx(candles[:27], 14) is None
+    assert adx(candles[:26], 14) is None
+    assert adx(candles[:27], 14) is not None
     assert adx(candles, 14) is not None
 
 
