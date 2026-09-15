@@ -10,7 +10,8 @@ diagnostics, deep-learning challenger models, deep-learning walk-forward
 research, aggregated research evidence, research-gate completeness checks,
 execution recovery, paper execution conformance, broker symbol-contract
 validation, research provenance, feed integrity, causal paper-signal outcomes,
-replay outcome attachment, and the final system readiness gate.
+replay outcome attachment, the final system readiness gate, and deterministic
+technical-indicator research context.
 """
 
 from .backtest import ENTRY_TIMING_NEXT_BAR_OPEN, ENTRY_TIMING_SIGNAL_REFERENCE, BacktestResult, run_all_timeframes, run_backtest
@@ -24,6 +25,7 @@ from .execution_recovery import ExecutionRecoveryDecision, ExecutionRecoveryRepo
 from .experiment_registry import ExperimentRecord, build_experiment_record
 from .feed_integrity import FeedIntegrityReport, validate_feed_batch
 from .forecast import ForecastResult, HorizonForecast, ScenarioForecast, forecast
+from .indicators import IndicatorSnapshot, adx, atr, calculate_indicators, ema, macd, rsi, true_range_series
 from .journal import JournalEvent, PaperTradeJournal
 from .market_snapshot import MarketSnapshot
 from .ml_behavior import MLBehaviorFold, MLBehaviorReport, analyze_ml_behavior
@@ -67,6 +69,7 @@ from .walk_forward import WalkForwardFold, WalkForwardResult, walk_forward_backt
 __all__ = [
     "EngineSignal", "LONG", "SHORT", "WAIT", "evaluate_long", "evaluate_short",
     "TwoSetupResult", "evaluate_two_setups",
+    "IndicatorSnapshot", "ema", "rsi", "atr", "adx", "macd", "true_range_series", "calculate_indicators",
     "RiskLimits", "RiskDecision", "position_size", "evaluate_risk",
     "PortfolioRiskLimits", "PortfolioRiskState", "PortfolioRiskDecision", "PortfolioRiskController", "PORTFOLIO_ALLOW", "HALT",
     "PositionSnapshot", "LocalPositionState", "ReconciliationDecision", "reconcile_position", "new_entry_allowed", "FLAT",
