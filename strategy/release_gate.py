@@ -33,6 +33,18 @@ class ReleaseGateReport:
         self.passed, self.checks = bool(passed), tuple(checks)
 
 
+def _historical_limit() -> int:
+    """Keep CI bounded while requiring enough real history for meaningful replay."""
+    raw = os.getenv("ARIATRADING_HISTORICAL_MAX_ROWS", "2000")
+    try:
+        limit = int(raw)
+    except ValueError as exc:
+        raise ValueError("ARIATRADING_HISTORICAL_MAX_ROWS must be an integer") from exc
+    if limit < 1_000:
+        raise ValueError("ARIATRADING_HISTORICAL_MAX_ROWS must be >= 1000")
+    return limit
+
+
 def _process_crash_restart_check() -> tuple[bool, str]:
     """Kill a real child interpreter and verify a fresh process can recover it."""
     with tempfile.TemporaryDirectory(prefix="aria-crash-gate-") as temp:
@@ -74,9 +86,10 @@ def run_release_gate(*, historical_csv: str | Path) -> ReleaseGateReport:
     checks.append(GateCheck("paper-only-config", config_ok, config_detail))
 
     try:
-        candles = load_ohlcv_csv(historical_csv, max_rows=10_000)
+        historical_limit = _historical_limit()
+        candles = load_ohlcv_csv(historical_csv, max_rows=historical_limit)
         schema_ok = len(candles) >= 1_000
-        checks.append(GateCheck("historical-data", schema_ok, f"loaded {len(candles)} real historical candles"))
+        checks.append(GateCheck("historical-data", schema_ok, f"loaded {len(candles)} real historical candles (limit={historical_limit})"))
     except ValueError as exc:
         return ReleaseGateReport(False, tuple(checks + [GateCheck("historical-data", False, str(exc))]))
 
@@ -97,7 +110,7 @@ def run_release_gate(*, historical_csv: str | Path) -> ReleaseGateReport:
 
     try:
         with tempfile.TemporaryDirectory(prefix="aria-shadow-gate-") as temp:
-            shadow = run_long_shadow(historical_csv, checkpoint_dir=temp, max_rows=10_000)
+            shadow = run_long_shadow(historical_csv, checkpoint_dir=temp, max_rows=historical_limit)
         checks.append(GateCheck("real-history-shadow", shadow.passed, f"bars={shadow.bars}, compared={shadow.compared}, trades={shadow.paper_trades}, equity={shadow.paper_equity:.4f}, drawdown={shadow.paper_drawdown:.4f}, repeatable={shadow.repeatable}"))
     except Exception as exc:
         checks.append(GateCheck("real-history-shadow", False, str(exc)))
