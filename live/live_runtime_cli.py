@@ -1,10 +1,4 @@
-"""CLI entry point for the hardened continuous MT5 runtime.
-
-This module intentionally keeps ALERT_ONLY out of the execution runtime. Use
-DEMO for broker-demo execution and LIVE only after the Stage-1 deployment gate
-has been explicitly armed. The persistent control plane defaults to STOP, so
-starting the process never implies permission to place an order.
-"""
+"""CLI entry point for the hardened continuous MT5 runtime."""
 
 from __future__ import annotations
 
@@ -20,6 +14,7 @@ from live.live_runtime import DailyCircuitBreaker, LiveRuntime, RuntimeLimits
 from live.mt5_executor import MT5LiveExecutor
 from live.production_stage1 import ProductionStage1Policy
 from live.runner import ForexLiveOrchestrator
+from live.runtime_status import RuntimeStatusStore
 
 logger = logging.getLogger("ariatrading.live_runtime_cli")
 
@@ -51,6 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--server", default=os.getenv("MT5_SERVER", ""), help="Optional explicit MT5 trade server")
     parser.add_argument("--magic-number", type=int, default=int(os.getenv("MT5_MAGIC_NUMBER", "8808")), help="Strategy magic number used for position ownership")
     parser.add_argument("--control-path", default=os.getenv("BOT_CONTROL_PATH", "data/bot_control.json"), help="Persistent RUN/PAUSE/STOP control state")
+    parser.add_argument("--status-path", default=os.getenv("BOT_STATUS_PATH", "data/bot_status.json"), help="Atomic runtime heartbeat/status snapshot")
     return parser
 
 
@@ -67,12 +63,7 @@ def _validate_live_startup(args: argparse.Namespace, symbols: list[str]) -> None
         return
     policy = ProductionStage1Policy.from_env()
     policy.validate_symbols(symbols)
-    policy.validate_runtime_limits(
-        risk_per_trade=args.risk,
-        max_daily_drawdown=args.max_daily_drawdown,
-        max_spread_points=args.max_spread_points,
-        max_tick_age_seconds=args.max_tick_age,
-    )
+    policy.validate_runtime_limits(risk_per_trade=args.risk, max_daily_drawdown=args.max_daily_drawdown, max_spread_points=args.max_spread_points, max_tick_age_seconds=args.max_tick_age)
     login = _effective_login(args)
     if login is not None and login != policy.account_login:
         raise RuntimeError("MT5 login does not match LIVE Stage-1 account policy")
@@ -91,56 +82,33 @@ def main(argv: list[str] | None = None) -> None:
     login = _effective_login(args)
     if login is not None and login <= 0:
         raise SystemExit("MT5_LOGIN/--login must be positive")
-
     try:
         _validate_live_startup(args, symbols)
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
 
-    executor = MT5LiveExecutor(
-        terminal_path=args.terminal_path or None,
-        magic_number=args.magic_number,
-        login=login,
-        password=args.password,
-        server=args.server,
-    )
+    executor = MT5LiveExecutor(terminal_path=args.terminal_path or None, magic_number=args.magic_number, login=login, password=args.password, server=args.server)
     feed = None
     journal = ExecutionJournal("data/execution_journal.json")
-    circuit_breaker = DailyCircuitBreaker(
-        "data/daily_circuit_breaker.json",
-        max_drawdown_fraction=args.max_daily_drawdown,
-    )
+    circuit_breaker = DailyCircuitBreaker("data/daily_circuit_breaker.json", max_drawdown_fraction=args.max_daily_drawdown)
     control = BotControlPlane(args.control_path)
+    status = RuntimeStatusStore(args.status_path)
 
     try:
-        # One MT5 connection is the source of truth for both market data and
-        # execution. A second initialize()/shutdown() pair can race the same
-        # terminal session and makes account state harder to reason about.
         executor.connect()
         feed = MT5BarFeed(mt5_module=executor.mt5, manage_connection=False)
-        orchestrator = ForexLiveOrchestrator(
-            symbols=symbols,
-            mode=args.mode,
-            timeframe=args.timeframe,
-            risk_per_trade=args.risk,
-            feed=feed,
-            executor=executor,
-            execution_journal=journal,
-        )
+        orchestrator = ForexLiveOrchestrator(symbols=symbols, mode=args.mode, timeframe=args.timeframe, risk_per_trade=args.risk, feed=feed, executor=executor, execution_journal=journal)
         runtime = LiveRuntime(
             orchestrator=orchestrator,
             feed=feed,
             executor=executor,
             journal=journal,
-            limits=RuntimeLimits(
-                max_tick_age_seconds=args.max_tick_age,
-                max_spread_points=args.max_spread_points,
-                max_daily_drawdown_fraction=args.max_daily_drawdown,
-            ),
+            limits=RuntimeLimits(max_tick_age_seconds=args.max_tick_age, max_spread_points=args.max_spread_points, max_daily_drawdown_fraction=args.max_daily_drawdown),
             circuit_breaker=circuit_breaker,
             control=control,
+            status=status,
         )
-        logger.info("Starting hardened Ariatrading runtime: mode=%s symbols=%s control=%s", args.mode, symbols, control.read().state)
+        logger.info("Starting hardened Ariatrading runtime: mode=%s symbols=%s control=%s status=%s", args.mode, symbols, control.read().state, args.status_path)
         runtime.run_forever(args.interval)
     finally:
         if feed is not None:
