@@ -4,6 +4,9 @@
  * The low-level primitives live in signal_parity.js. Market candles are read
  * from the MT5 Durable Object so /api/market and /api/signal cannot silently
  * analyze different price feeds.
+ *
+ * Indicators are a confirmation/veto layer around the two existing setups.
+ * They never create a LONG/SHORT signal by themselves.
  */
 
 import {
@@ -76,12 +79,23 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
   const support = nearestSupport(currentPrice, supports);
   const resistance = nearestResistance(currentPrice, resistances);
   const indicators = calculateIndicators(candles);
+  const indicatorDirection = strategySignal.action === LONG || strategySignal.action === SHORT ? strategySignal.action : null;
+  const indicatorContextResult = indicatorContext(candles, indicatorDirection);
   const forecastResult = forecast(candles, [1, 3, 5], support, resistance);
   const supervisor = supervise(strategySignal, forecastResult, null, minForecastConfidence);
+
   let finalSignal = strategySignal;
-  if (supervisor.action !== "ALLOW") finalSignal = { ...strategySignal, action: WAIT, reason: `realtime supervisor: ${supervisor.reasons.join("; ")}`, protection: "BLOCKED" };
-  const indicatorDirection = finalSignal.action === LONG || finalSignal.action === SHORT ? finalSignal.action : null;
-  const indicatorContextResult = indicatorContext(candles, indicatorDirection);
+  if (supervisor.action !== "ALLOW") {
+    finalSignal = { ...strategySignal, action: WAIT, reason: `realtime supervisor: ${supervisor.reasons.join("; ")}`, protection: "BLOCKED" };
+  } else if (indicatorDirection && !indicatorContextResult.allowed) {
+    finalSignal = {
+      ...strategySignal,
+      action: WAIT,
+      reason: `indicator filter veto: ${indicatorContextResult.trend}; ${indicatorContextResult.momentum}; ${indicatorContextResult.macd_momentum}`,
+      protection: "BLOCKED",
+    };
+  }
+
   const selectedScore = strategySignal.action === LONG || strategySignal.action === SHORT ? strategySignal.score ?? null : null;
   const latestRawCandle = rawCandles[rawCandles.length - 1];
   return {
@@ -92,7 +106,7 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
     bar_time: latestRawCandle?.datetime ?? latestRawCandle?.time ?? null,
     structure_bias: finalSignal.structureBias ?? structure.bias,
     zone: finalSignal.zone ?? null,
-    entry_reference: finalSignal.entryReference ?? null,
+    entry_reference: finalSignal.action === WAIT ? null : finalSignal.entryReference ?? null,
     stop_reference: finalSignal.zone && finalSignal.action !== WAIT ? stopReference(finalSignal.zone, finalSignal.action, history, timeframe) : null,
     breakout_state: finalSignal.breakoutState ?? NO_BREAKOUT,
     protection: finalSignal.protection ?? "SAFE",
