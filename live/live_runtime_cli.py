@@ -16,7 +16,6 @@ from live.execution_guard import ExecutionJournal
 from live.live_runtime import DailyCircuitBreaker, LiveRuntime, RuntimeLimits
 from live.mt5_executor import MT5LiveExecutor
 from live.production_stage1 import ProductionStage1Policy
-from strategy.forex_risk import ForexRiskLimits
 from live.runner import ForexLiveOrchestrator
 
 logger = logging.getLogger("ariatrading.live_runtime_cli")
@@ -49,12 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _validate_live_startup(args: argparse.Namespace, symbols: list[str]) -> None:
-    """Apply the production policy even when this CLI is invoked directly.
-
-    Previously only scripts/run_bot.py enforced BotConfig's LIVE gate, which
-    meant a direct invocation of this CLI could bypass the deployment-policy
-    checks before reaching the broker runtime.
-    """
+    """Apply the production policy even when this CLI is invoked directly."""
     if args.mode != "LIVE":
         return
     policy = ProductionStage1Policy.from_env()
@@ -97,10 +91,7 @@ def main(argv: list[str] | None = None) -> None:
         # execution. A second initialize()/shutdown() pair can race the same
         # terminal session and makes account state harder to reason about.
         executor.connect()
-        feed = MT5BarFeed(
-            mt5_module=executor.mt5,
-            manage_connection=False,
-        )
+        feed = MT5BarFeed(mt5_module=executor.mt5, manage_connection=False)
         orchestrator = ForexLiveOrchestrator(
             symbols=symbols,
             mode=args.mode,
