@@ -124,24 +124,46 @@ class FakeMT5Module:
         return [Pos()]
 
 
-def _connected_executor(fake: FakeMT5Module) -> MT5LiveExecutor:
-    executor = MT5LiveExecutor(fake, magic_number=8808)
+def _bind_demo(executor: MT5LiveExecutor) -> None:
+    executor.bind_account_identity(
+        AccountIdentity(login=123456, server="DemoServer", company="DemoBroker", trade_mode=0)
+    )
+
+
+def test_mt5_executor_connect_and_contract():
+    mock_mt5 = FakeMT5Module()
+    executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
+    assert executor.connect()
+    contract = executor.get_symbol_contract("EURUSD")
+    assert contract.symbol == "EURUSD"
+    assert contract.digits == 5
+    assert contract.point == 0.00001
+    assert contract.volume_min == 0.01
+
+
+def test_mt5_executor_reads_account_snapshot():
+    executor = MT5LiveExecutor(mt5_module=FakeMT5Module())
     executor.connect()
-    executor.bind_account_identity(executor.get_account_identity())
-    return executor
+    account = executor.get_account_snapshot()
+    assert account.login == 123456
+    assert account.balance == 10000.0
+    assert account.equity == 9950.0
+    assert account.margin_free == 9000.0
+    assert account.trade_allowed is True
+    assert account.trade_expert is True
 
 
-def test_connect_can_select_explicit_account_without_putting_credentials_in_logs():
-    fake = FakeMT5Module()
+def test_mt5_executor_explicit_account_selection():
+    mock_mt5 = FakeMT5Module()
     executor = MT5LiveExecutor(
-        fake,
+        mt5_module=mock_mt5,
         terminal_path="C:/MT5/terminal64.exe",
         login=123456,
         password="secret",
         server="DemoServer",
     )
-    executor.connect()
-    assert fake.initialize_kwargs == {
+    assert executor.connect()
+    assert mock_mt5.initialize_kwargs == {
         "path": "C:/MT5/terminal64.exe",
         "login": 123456,
         "password": "secret",
@@ -149,73 +171,111 @@ def test_connect_can_select_explicit_account_without_putting_credentials_in_logs
     }
 
 
-def test_connect_without_explicit_account_preserves_terminal_selection_behavior():
-    fake = FakeMT5Module()
-    executor = MT5LiveExecutor(fake)
+def test_mt5_executor_rejects_execution_without_account_binding():
+    mock_mt5 = FakeMT5Module()
+    executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
     executor.connect()
-    assert fake.initialize_kwargs == {}
+    res = executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0.5, sl=1.09800, tp=1.10400)
+    assert not res.success
+    assert "identity is not bound" in res.error_message
+    assert mock_mt5.last_req is None
 
 
-def test_account_identity_binding():
-    fake = FakeMT5Module()
-    executor = _connected_executor(fake)
-    identity = executor.get_account_identity()
-    assert identity == AccountIdentity(123456, "DemoServer", "DemoBroker", 0)
-    executor.bind_account_identity(identity)
+def test_mt5_executor_buy_order_runs_order_check_before_send():
+    mock_mt5 = FakeMT5Module()
+    executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
+    executor.connect()
+    _bind_demo(executor)
+    res = executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0.5, sl=1.09800, tp=1.10400, deviation_points=10)
+    assert res.success
+    assert mock_mt5.check_req == mock_mt5.last_req
+    assert mock_mt5.last_req["type"] == mock_mt5.ORDER_TYPE_BUY
+    assert mock_mt5.last_req["sl"] == 1.09800
+    assert mock_mt5.last_req["tp"] == 1.10400
+    assert mock_mt5.last_req["magic"] == 8808
 
 
-def test_send_market_order_checks_then_sends():
-    fake = FakeMT5Module()
-    executor = _connected_executor(fake)
-    result = executor.send_market_order(
-        symbol="EURUSD",
-        direction=ORDER_BUY,
-        volume=0.01,
-        sl=1.098,
-        tp=1.103,
+def test_mt5_executor_blocks_account_drift_before_send():
+    mock_mt5 = FakeMT5Module()
+    executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
+    executor.connect()
+    _bind_demo(executor)
+    mock_mt5.account_info = lambda: SimpleNamespace(
+        login=999999, server="OtherServer", company="OtherBroker", trade_mode=0,
+        balance=10000.0, equity=10000.0, margin_free=9000.0,
+        trade_allowed=True, trade_expert=True,
     )
-    assert result.success
-    assert fake.check_req is not None
-    assert fake.last_req is not None
-    assert fake.last_req["magic"] == 8808
+    res = executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0.5, sl=1.09800)
+    assert not res.success
+    assert "identity changed" in res.error_message
+    assert mock_mt5.last_req is None
 
 
-def test_order_check_failure_blocks_order_send():
-    fake = FakeMT5Module()
-    fake.should_check_fail = True
-    executor = _connected_executor(fake)
-    result = executor.send_market_order(
-        symbol="EURUSD", direction=ORDER_BUY, volume=0.01, sl=1.098, tp=1.103
-    )
-    assert not result.success
-    assert fake.check_req is not None
-    assert fake.last_req is None
+def test_mt5_executor_order_check_failure_never_sends():
+    mock_mt5 = FakeMT5Module()
+    mock_mt5.should_check_fail = True
+    executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
+    executor.connect()
+    _bind_demo(executor)
+    res = executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0.5, sl=1.09800, tp=1.10400)
+    assert not res.success
+    assert "order_check rejected" in res.error_message
+    assert mock_mt5.last_req is None
 
 
-def test_account_identity_change_blocks_order():
-    fake = FakeMT5Module()
-    executor = _connected_executor(fake)
-    fake.account_info = lambda: SimpleNamespace(
-        login=999999,
-        server="OtherServer",
-        company="OtherBroker",
-        trade_mode=0,
-        balance=10000.0,
-        equity=10000.0,
-        margin_free=9000.0,
-        trade_allowed=True,
-        trade_expert=True,
-    )
-    result = executor.send_market_order(
-        symbol="EURUSD", direction=ORDER_BUY, volume=0.01, sl=1.098, tp=1.103
-    )
-    assert not result.success
-    assert fake.last_req is None
+def test_mt5_executor_rejects_invalid_volume_and_tp():
+    executor = MT5LiveExecutor(mt5_module=FakeMT5Module())
+    executor.connect()
+    _bind_demo(executor)
+    assert not executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0, sl=1.09800).success
+    assert not executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0.1, sl=1.09800, tp=0).success
 
 
-def test_get_open_positions_filters_by_magic():
-    fake = FakeMT5Module()
-    executor = _connected_executor(fake)
+def test_mt5_executor_rejects_invalid_volume_step():
+    mock_mt5 = FakeMT5Module()
+    executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
+    executor.connect()
+    _bind_demo(executor)
+    res = executor.send_market_order(symbol="EURUSD", direction=ORDER_BUY, volume=0.015, sl=1.09800)
+    assert not res.success
+    assert "min/max/step" in res.error_message
+    assert mock_mt5.last_req is None
+
+
+def test_mt5_executor_sell_order_validation():
+    mock_mt5 = FakeMT5Module()
+    executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
+    executor.connect()
+    _bind_demo(executor)
+    res = executor.send_market_order(symbol="EURUSD", direction=ORDER_SELL, volume=0.5, sl=1.09000)
+    assert not res.success
+    assert "SELL Stop Loss must be above entry price" in res.error_message
+
+
+def test_mt5_executor_positions_and_close():
+    mock_mt5 = FakeMT5Module()
+    executor = MT5LiveExecutor(mt5_module=mock_mt5, magic_number=8808)
+    executor.connect()
+    _bind_demo(executor)
     positions = executor.get_open_positions()
     assert len(positions) == 1
-    assert positions[0].magic == 8808
+    assert positions[0].ticket == 123456
+    assert positions[0].symbol == "EURUSD"
+    close_res = executor.close_position(123456)
+    assert close_res.success
+    assert close_res.ticket == 123456
+
+
+def test_mt5_executor_cannot_close_foreign_strategy_position():
+    class ForeignPositionModule(FakeMT5Module):
+        def positions_get(self, **kwargs):
+            rows = super().positions_get(**kwargs)
+            rows[0].magic = 9999
+            return rows
+
+    executor = MT5LiveExecutor(mt5_module=ForeignPositionModule(), magic_number=8808)
+    executor.connect()
+    _bind_demo(executor)
+    result = executor.close_position(123456)
+    assert not result.success
+    assert "not owned by this strategy" in result.error_message
