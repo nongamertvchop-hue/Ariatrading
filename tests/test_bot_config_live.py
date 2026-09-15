@@ -4,6 +4,7 @@ from bot.config import BotConfig
 
 
 def _arm(monkeypatch):
+    monkeypatch.setenv("ALLOW_LIVE", "1")
     monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
     monkeypatch.setenv("ARIATRADING_LIVE_STAGE", "1")
     monkeypatch.setenv("ARIATRADING_LIVE_ACCOUNT", "12345")
@@ -13,6 +14,7 @@ def _arm(monkeypatch):
 
 def test_bot_live_mode_is_fail_closed_without_stage1(monkeypatch):
     monkeypatch.setenv("BOT_MODE", "live")
+    monkeypatch.setenv("ALLOW_LIVE", "1")
     monkeypatch.setenv("DEFAULT_SYMBOLS", "EURUSD")
     monkeypatch.setenv("DEFAULT_RISK_PER_TRADE", "0.0025")
     monkeypatch.delenv("ARIATRADING_LIVE_STAGE", raising=False)
