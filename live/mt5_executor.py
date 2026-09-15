@@ -83,17 +83,47 @@ def _resolve_filling_mode(mt5_mod: Any, symbol_info: Any) -> int:
 class MT5LiveExecutor:
     """Manage broker order submissions and positions on a connected MT5 terminal."""
 
-    def __init__(self, mt5_module: Any | None = None, terminal_path: str | None = None, magic_number: int = 8808) -> None:
+    def __init__(
+        self,
+        mt5_module: Any | None = None,
+        terminal_path: str | None = None,
+        magic_number: int = 8808,
+        login: int | None = None,
+        password: str = "",
+        server: str = "",
+    ) -> None:
         self.mt5 = mt5_module if mt5_module is not None else mt5
         self.terminal_path = terminal_path
         self.magic_number = magic_number
+        self.login = login
+        self.password = password
+        self.server = server
         self._connected = False
         self._bound_account_identity: AccountIdentity | None = None
 
     def connect(self) -> bool:
+        """Connect to the explicitly configured MT5 account when supplied.
+
+        MetaQuotes documents initialize(path, login, password, server) as the
+        supported way to select a specific account. Supplying an account is
+        important for unattended execution because connecting to the terminal's
+        last-used account is otherwise ambiguous.
+        """
         if self.mt5 is None:
             raise RuntimeError("MetaTrader5 package is not installed.")
-        ok = self.mt5.initialize(path=self.terminal_path) if self.terminal_path else self.mt5.initialize()
+
+        kwargs: dict[str, Any] = {}
+        if self.login is not None:
+            kwargs["login"] = self.login
+        if self.password:
+            kwargs["password"] = self.password
+        if self.server:
+            kwargs["server"] = self.server
+
+        if self.terminal_path:
+            ok = self.mt5.initialize(path=self.terminal_path, **kwargs)
+        else:
+            ok = self.mt5.initialize(**kwargs)
         if not ok:
             err = self.mt5.last_error() if hasattr(self.mt5, "last_error") else "unknown error"
             raise RuntimeError(f"Failed to initialize MT5: {err}")
@@ -219,121 +249,95 @@ class MT5LiveExecutor:
             return OrderResult(False, -1, error_message=f"Symbol {symbol} not found")
         if not getattr(info, "visible", True) and not self.mt5.symbol_select(symbol, True):
             return OrderResult(False, -1, error_message=f"Could not select symbol {symbol}")
-        if not self._valid_step_volume(volume, float(info.volume_min), float(info.volume_max), float(info.volume_step)):
-            return OrderResult(False, -1, error_message="Order volume violates broker min/max/step constraints")
+        contract = self.get_symbol_contract(symbol)
+        if not self._valid_step_volume(volume, contract.volume_min, contract.volume_max, contract.volume_step):
+            return OrderResult(False, -1, error_message="Order volume does not match broker min/max/step")
 
         tick = self.mt5.symbol_info_tick(symbol)
         if tick is None:
-            return OrderResult(False, -1, error_message=f"No tick data for {symbol}")
-        filling = _resolve_filling_mode(self.mt5, info)
-        digits = int(info.digits)
+            return OrderResult(False, -1, error_message=f"Could not retrieve current tick for {symbol}")
+        bid = float(tick.bid)
+        ask = float(tick.ask)
+        if not all(isfinite(value) and value > 0 for value in (bid, ask)) or ask < bid:
+            return OrderResult(False, -1, error_message="Broker returned an invalid bid/ask")
+        price = ask if direction == ORDER_BUY else bid
 
-        if direction == ORDER_BUY:
-            order_type = int(getattr(self.mt5, "ORDER_TYPE_BUY", 0))
-            price = float(tick.ask)
-            if sl >= price:
-                return OrderResult(False, -1, error_message="BUY Stop Loss must be below entry price")
-            if tp is not None and tp <= price:
-                return OrderResult(False, -1, error_message="BUY Take Profit must be above entry price")
-        else:
-            order_type = int(getattr(self.mt5, "ORDER_TYPE_SELL", 1))
-            price = float(tick.bid)
-            if sl <= price:
-                return OrderResult(False, -1, error_message="SELL Stop Loss must be above entry price")
-            if tp is not None and tp >= price:
-                return OrderResult(False, -1, error_message="SELL Take Profit must be below entry price")
-
-        req = {
-            "action": int(getattr(self.mt5, "TRADE_ACTION_DEAL", 1)),
-            "symbol": symbol, "volume": float(volume), "type": order_type,
-            "price": round(price, digits), "sl": round(sl, digits),
-            "deviation": int(deviation_points), "magic": self.magic_number,
-            "comment": comment, "type_time": int(getattr(self.mt5, "ORDER_TIME_GTC", 0)),
-            "type_filling": filling,
-        }
+        if direction == ORDER_BUY and sl >= price:
+            return OrderResult(False, -1, error_message="BUY Stop Loss must be below current ask")
+        if direction == ORDER_SELL and sl <= price:
+            return OrderResult(False, -1, error_message="SELL Stop Loss must be above current bid")
         if tp is not None:
-            req["tp"] = round(tp, digits)
+            if direction == ORDER_BUY and tp <= price:
+                return OrderResult(False, -1, error_message="BUY Take Profit must be above current ask")
+            if direction == ORDER_SELL and tp >= price:
+                return OrderResult(False, -1, error_message="SELL Take Profit must be below current bid")
 
-        check = self.mt5.order_check(req)
+        stops_level = int(getattr(info, "trade_stops_level", 0))
+        min_stop_distance = stops_level * contract.point
+        if min_stop_distance > 0 and abs(price - sl) < min_stop_distance:
+            return OrderResult(False, -1, error_message="Stop Loss is inside broker minimum stop distance")
+        if tp is not None and min_stop_distance > 0 and abs(tp - price) < min_stop_distance:
+            return OrderResult(False, -1, error_message="Take Profit is inside broker minimum stop distance")
+
+        request = {
+            "action": self.mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": volume,
+            "type": self.mt5.ORDER_TYPE_BUY if direction == ORDER_BUY else self.mt5.ORDER_TYPE_SELL,
+            "price": price,
+            "sl": sl,
+            "tp": tp or 0.0,
+            "deviation": deviation_points,
+            "magic": self.magic_number,
+            "comment": comment,
+            "type_time": self.mt5.ORDER_TIME_GTC,
+            "type_filling": _resolve_filling_mode(self.mt5, info),
+        }
+        check = self.mt5.order_check(request)
         if check is None:
-            err = self.mt5.last_error() if hasattr(self.mt5, "last_error") else "unknown"
-            return OrderResult(False, -1, error_message=f"order_check returned None: {err}")
+            return OrderResult(False, -1, error_message=f"MT5 order_check returned no result: {self.mt5.last_error()}")
         check_retcode = int(getattr(check, "retcode", -1))
-        check_done = int(getattr(self.mt5, "TRADE_RETCODE_DONE", 10009))
-        if check_retcode not in {0, check_done}:
-            return OrderResult(False, check_retcode, comment=str(getattr(check, "comment", "")), error_message=f"MT5 order_check rejected request (retcode={check_retcode}): {getattr(check, 'comment', '')}")
+        if check_retcode != 0:
+            return OrderResult(False, check_retcode, error_message=f"MT5 order_check rejected order: {getattr(check, 'comment', '')}")
 
-        res = self.mt5.order_send(req)
-        if res is None:
-            err = self.mt5.last_error() if hasattr(self.mt5, "last_error") else "unknown"
-            raise RuntimeError(f"order_send returned None: {err}")
-
-        retcode = int(getattr(res, "retcode", -1))
-        done = int(getattr(self.mt5, "TRADE_RETCODE_DONE", 10009))
-        placed = int(getattr(self.mt5, "TRADE_RETCODE_PLACED", 10008))
-        if retcode in {done, placed}:
-            return OrderResult(True, retcode, ticket=int(getattr(res, "order", 0) or getattr(res, "deal", 0)), price=float(getattr(res, "price", price)), volume=float(getattr(res, "volume", volume)), comment=str(getattr(res, "comment", "")))
-        return OrderResult(False, retcode, comment=str(getattr(res, "comment", "")), error_message=f"Order rejected by broker (retcode={retcode}): {getattr(res, 'comment', '')}")
+        result = self.mt5.order_send(request)
+        if result is None:
+            return OrderResult(False, -1, error_message=f"MT5 order_send returned no result: {self.mt5.last_error()}")
+        retcode = int(getattr(result, "retcode", -1))
+        if retcode != int(getattr(self.mt5, "TRADE_RETCODE_DONE", 10009)):
+            return OrderResult(False, retcode, error_message=str(getattr(result, "comment", "MT5 order rejected")))
+        return OrderResult(
+            True,
+            retcode,
+            ticket=int(getattr(result, "order", 0) or getattr(result, "deal", 0) or 0),
+            price=float(getattr(result, "price", price)),
+            volume=float(getattr(result, "volume", volume)),
+            comment=str(getattr(result, "comment", "")),
+        )
 
     def get_open_positions(self, symbol: str | None = None) -> list[PositionSnapshot]:
         if not self._connected:
-            raise RuntimeError("MT5 executor is not connected")
-        raw = self.mt5.positions_get(symbol=symbol) if symbol else self.mt5.positions_get()
-        if raw is None:
-            raise RuntimeError(f"MT5 positions_get failed: {self.mt5.last_error()}")
-        result = []
-        for pos in raw:
-            magic = int(getattr(pos, "magic", 0))
-            if self.magic_number and magic != self.magic_number:
-                continue
-            ptype = getattr(pos, "type", 0)
-            otype = ORDER_BUY if ptype == getattr(self.mt5, "ORDER_TYPE_BUY", 0) else ORDER_SELL
-            result.append(PositionSnapshot(
-                ticket=int(pos.ticket), symbol=str(pos.symbol), order_type=otype,
-                volume=float(pos.volume), open_price=float(pos.price_open), sl=float(pos.sl), tp=float(pos.tp),
-                profit=float(pos.profit), magic=magic,
-                open_time=datetime.fromtimestamp(int(pos.time), tz=timezone.utc),
-            ))
-        return result
-
-    def close_position(self, ticket: int, deviation_points: int = 20) -> OrderResult:
-        if not self._connected:
-            return OrderResult(False, -1, error_message="MT5 executor is not connected")
-        try:
-            self._assert_bound_account_identity()
-        except RuntimeError as exc:
-            return OrderResult(False, -1, error_message=str(exc))
-        positions = self.mt5.positions_get(ticket=ticket)
+            raise RuntimeError("MT5 executor is not connected.")
+        self._assert_bound_account_identity()
+        positions = self.mt5.positions_get(symbol=symbol) if symbol else self.mt5.positions_get()
         if positions is None:
-            return OrderResult(False, -1, error_message=f"MT5 position lookup failed: {self.mt5.last_error()}")
-        if not positions:
-            return OrderResult(False, -1, error_message=f"Position ticket {ticket} not found")
-        pos = positions[0]
-        if self.magic_number and int(getattr(pos, "magic", 0)) != self.magic_number:
-            return OrderResult(False, -1, error_message=f"Position #{ticket} is not owned by this strategy")
-        sym = str(pos.symbol)
-        info = self.mt5.symbol_info(sym)
-        tick = self.mt5.symbol_info_tick(sym)
-        if info is None or tick is None:
-            return OrderResult(False, -1, error_message=f"Could not retrieve tick/info for {sym}")
-        ptype = getattr(pos, "type", 0)
-        close_type = int(getattr(self.mt5, "ORDER_TYPE_SELL", 1)) if ptype == getattr(self.mt5, "ORDER_TYPE_BUY", 0) else int(getattr(self.mt5, "ORDER_TYPE_BUY", 0))
-        close_price = float(tick.bid) if close_type == getattr(self.mt5, "ORDER_TYPE_SELL", 1) else float(tick.ask)
-        req = {
-            "action": int(getattr(self.mt5, "TRADE_ACTION_DEAL", 1)), "position": ticket, "symbol": sym,
-            "volume": float(pos.volume), "type": close_type, "price": round(close_price, int(info.digits)),
-            "deviation": int(deviation_points), "magic": self.magic_number, "comment": f"Close #{ticket}",
-            "type_time": int(getattr(self.mt5, "ORDER_TIME_GTC", 0)), "type_filling": _resolve_filling_mode(self.mt5, info),
-        }
-        check = self.mt5.order_check(req)
-        if check is None:
-            return OrderResult(False, -1, error_message=f"close order_check returned None: {self.mt5.last_error()}")
-        check_retcode = int(getattr(check, "retcode", -1))
-        if check_retcode not in {0, int(getattr(self.mt5, "TRADE_RETCODE_DONE", 10009))}:
-            return OrderResult(False, check_retcode, error_message=f"Close order_check rejected request: {getattr(check, 'comment', '')}")
-        res = self.mt5.order_send(req)
-        if res is None:
-            raise RuntimeError(f"close order_send returned None: {self.mt5.last_error()}")
-        if int(res.retcode) != int(getattr(self.mt5, "TRADE_RETCODE_DONE", 10009)):
-            return OrderResult(False, int(res.retcode), error_message=f"Failed to close #{ticket}: {getattr(res, 'comment', '')}")
-        return OrderResult(True, int(res.retcode), ticket=ticket, price=close_price, volume=float(pos.volume))
+            raise RuntimeError(f"MT5 positions_get failed: {self.mt5.last_error()}")
+        result: list[PositionSnapshot] = []
+        for position in positions:
+            if int(getattr(position, "magic", 0)) != self.magic_number:
+                continue
+            result.append(
+                PositionSnapshot(
+                    ticket=int(position.ticket),
+                    symbol=str(position.symbol),
+                    order_type=ORDER_BUY if int(position.type) == int(getattr(self.mt5, "POSITION_TYPE_BUY", 0)) else ORDER_SELL,
+                    volume=float(position.volume),
+                    open_price=float(position.price_open),
+                    sl=float(position.sl),
+                    tp=float(position.tp),
+                    profit=float(position.profit),
+                    magic=int(position.magic),
+                    open_time=datetime.fromtimestamp(int(position.time), tz=timezone.utc),
+                )
+            )
+        return result
