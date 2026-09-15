@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Callable
 
 from live.broker_reconciliation import find_execution_evidence, is_unambiguous_execution
+from live.control_plane import BotControlPlane, RUN
 from live.execution_guard import ExecutionJournal
 from live.mt5_account import validate_account_mode
 from live.mt5_executor import AccountIdentity, MT5LiveExecutor
@@ -121,6 +122,7 @@ class LiveRuntime:
         journal: ExecutionJournal,
         limits: RuntimeLimits | None = None,
         circuit_breaker: DailyCircuitBreaker | None = None,
+        control: BotControlPlane | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.orchestrator = orchestrator
@@ -129,6 +131,7 @@ class LiveRuntime:
         self.journal = journal
         self.limits = limits or RuntimeLimits()
         self.circuit_breaker = circuit_breaker
+        self.control = control
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self._bound_account_identity: AccountIdentity | None = None
 
@@ -308,6 +311,12 @@ class LiveRuntime:
         try:
             while True:
                 started = time.monotonic()
+                if self.control is not None:
+                    state = self.control.read()
+                    if state.state != RUN:
+                        logger.info("bot control=%s reason=%s; waiting", state.state, state.reason)
+                        time.sleep(min(interval_seconds, 2.0))
+                        continue
                 try:
                     self.process_once()
                 except KeyboardInterrupt:
