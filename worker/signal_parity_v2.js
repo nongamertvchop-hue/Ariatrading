@@ -99,17 +99,15 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
   const currentPrice = candles[candles.length - 1].close;
   const support = nearestSupport(currentPrice, supports);
   const resistance = nearestResistance(currentPrice, resistances);
-  // Indicator context is deliberately calculated from history only. It is
-  // evidence for research/paper analytics, not an independent signal source.
   const indicators = calculateIndicators(history);
-  const indicatorDirection = strategySignal.action === LONG || strategySignal.action === SHORT ? strategySignal.action : null;
-  const indicatorContextResult = indicatorContext(history, indicatorDirection);
   const forecastResult = forecast(candles, [1, 3, 5], support, resistance);
   const supervisor = supervise(strategySignal, forecastResult, null, minForecastConfidence);
   let finalSignal = strategySignal;
   if (supervisor.action !== "ALLOW") {
     finalSignal = { ...strategySignal, action: WAIT, reason: `realtime supervisor: ${supervisor.reasons.join("; ")}`, protection: "BLOCKED" };
   }
+  const indicatorDirection = finalSignal.action === LONG || finalSignal.action === SHORT ? finalSignal.action : null;
+  const indicatorContextResult = indicatorContext(history, indicatorDirection);
   const selectedScore = strategySignal.action === LONG || strategySignal.action === SHORT ? strategySignal.score ?? null : null;
   const latestRawCandle = rawCandles[rawCandles.length - 1];
   return {
