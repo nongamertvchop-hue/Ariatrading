@@ -1,10 +1,4 @@
-"""Continuous MT5 live runtime around the existing strategy/execution boundary.
-
-The runtime is deliberately thin: it does not invent signals. It only obtains
-completed candles/ticks, validates freshness and account state, reconciles the
-execution journal against read-only broker evidence, and delegates each symbol
-to ForexLiveOrchestrator.
-"""
+"""Continuous MT5 live runtime around the existing strategy/execution boundary."""
 
 from __future__ import annotations
 
@@ -24,6 +18,7 @@ from live.execution_guard import ExecutionJournal
 from live.mt5_account import validate_account_mode
 from live.mt5_executor import AccountIdentity, MT5LiveExecutor
 from live.runner import ForexLiveOrchestrator
+from live.runtime_status import RuntimeStatusStore
 from strategy.forex_risk import ForexSymbolContract
 
 logger = logging.getLogger("ariatrading.live_runtime")
@@ -123,6 +118,7 @@ class LiveRuntime:
         limits: RuntimeLimits | None = None,
         circuit_breaker: DailyCircuitBreaker | None = None,
         control: BotControlPlane | None = None,
+        status: RuntimeStatusStore | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.orchestrator = orchestrator
@@ -132,8 +128,26 @@ class LiveRuntime:
         self.limits = limits or RuntimeLimits()
         self.circuit_breaker = circuit_breaker
         self.control = control
+        self.status = status
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self._bound_account_identity: AccountIdentity | None = None
+
+    def _publish_status(self, *, state: str, reason: str = "", processed: int | None = None) -> None:
+        if self.status is None:
+            return
+        control_state = self.control.read() if self.control is not None else None
+        self.status.write(
+            runtime_state=state,
+            reason=reason,
+            mode=self.orchestrator.mode,
+            symbols=list(self.orchestrator.symbols),
+            timeframe=self.orchestrator.timeframe,
+            processed=processed,
+            control_state=None if control_state is None else control_state.state,
+            control_generation=None if control_state is None else control_state.generation,
+            account_login=None if self._bound_account_identity is None else self._bound_account_identity.login,
+            account_server=None if self._bound_account_identity is None else self._bound_account_identity.server,
+        )
 
     def _assert_account_identity(self) -> AccountIdentity:
         current = self.executor.get_account_identity()
@@ -230,6 +244,7 @@ class LiveRuntime:
             ok, reason = self.circuit_breaker.check(account.equity, now)
             if not ok:
                 raise RuntimeError(reason)
+        self._publish_status(state="READY")
         logger.info(
             "Live runtime preflight passed: mode=%s account=%s server=%s",
             self.orchestrator.mode,
@@ -295,6 +310,7 @@ class LiveRuntime:
                 daily_realized_loss=daily_realized_loss,
             )
             processed += 1
+        self._publish_status(state="RUNNING", processed=processed)
         return processed
 
     def run_forever(self, interval_seconds: float = 5.0) -> None:
@@ -308,19 +324,18 @@ class LiveRuntime:
                 if self.control is not None:
                     state = self.control.read()
                     if state.state != RUN:
+                        self._publish_status(state=state.state, reason=state.reason)
                         logger.info("bot control=%s reason=%s; waiting", state.state, state.reason)
                         time.sleep(min(interval_seconds, 2.0))
                         continue
                 try:
                     self.process_once()
                 except KeyboardInterrupt:
+                    self._publish_status(state="STOPPED", reason="operator interrupt")
                     logger.info("Live runtime stopped by operator")
                     raise
-                except Exception:
-                    # For a real-money executor, silently retrying an unknown
-                    # state is more dangerous than stopping. A transient data
-                    # issue can be restarted; an account/order-state anomaly
-                    # must be investigated before another order is attempted.
+                except Exception as exc:
+                    self._publish_status(state="ERROR", reason=str(exc))
                     logger.exception("Live runtime cycle failed closed; stopping execution")
                     raise
                 elapsed = time.monotonic() - started
