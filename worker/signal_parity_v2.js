@@ -21,6 +21,7 @@ import {
   scoreSetup,
   validateCandle,
 } from "./signal_parity.js";
+import { calculateIndicators, indicatorContext } from "./indicators.js";
 import { forecast, supervise } from "./forecast_parity.js";
 import { validateRealtimeFeed, acceptRealtimeFeed } from "./realtime_feed_guard.js";
 import { buildSignalEventId } from "./signal_event.js";
@@ -46,7 +47,8 @@ function bestSignal(candidates, direction, timeframe, emptyReason, structureBias
   if (!candidates.length) return { action: WAIT, reason: emptyReason, timeframe, protection: "SAFE", breakoutState: NO_BREAKOUT, structureBias };
   const directional = candidates.filter((candidate) => candidate.result.action === direction);
   if (!directional.length) return decorateCandidate(candidates[0], structureBias);
-  return [...directional].sort((a, b) => (b.score?.total ?? -1) - (a.score?.total ?? -1))[0] && decorateCandidate([...directional].sort((a, b) => (b.score?.total ?? -1) - (a.score?.total ?? -1))[0], structureBias);
+  return [...directional].sort((a, b) => (b.score?.total ?? -1) - (a.score?.total ?? -1))[0]
+    && decorateCandidate([...directional].sort((a, b) => (b.score?.total ?? -1) - (a.score?.total ?? -1))[0], structureBias);
 }
 
 function selectSignal(longSignal, shortSignal, timeframe, structureBias) {
@@ -97,6 +99,11 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
   const currentPrice = candles[candles.length - 1].close;
   const support = nearestSupport(currentPrice, supports);
   const resistance = nearestResistance(currentPrice, resistances);
+  // Indicator context is deliberately calculated from history only. It is
+  // evidence for research/paper analytics, not an independent signal source.
+  const indicators = calculateIndicators(history);
+  const indicatorDirection = strategySignal.action === LONG || strategySignal.action === SHORT ? strategySignal.action : null;
+  const indicatorContextResult = indicatorContext(history, indicatorDirection);
   const forecastResult = forecast(candles, [1, 3, 5], support, resistance);
   const supervisor = supervise(strategySignal, forecastResult, null, minForecastConfidence);
   let finalSignal = strategySignal;
@@ -118,6 +125,8 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
     breakout_state: finalSignal.breakoutState ?? NO_BREAKOUT,
     protection: finalSignal.protection ?? "SAFE",
     score: selectedScore,
+    indicators,
+    indicator_context: indicatorContextResult,
     support,
     resistance,
     forecast: forecastResult,
