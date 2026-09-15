@@ -61,6 +61,10 @@ def _run_mt5_execution(config: BotConfig) -> None:
         "--timeframe", config.timeframe,
         "--risk", str(config.default_risk_per_trade),
         "--interval", os.getenv("BOT_POLL_SECONDS", "5"),
+        "--control-path", os.getenv("BOT_CONTROL_PATH", "data/bot_control.json"),
+        "--max-tick-age", os.getenv("MT5_MAX_TICK_AGE_SECONDS", "5"),
+        "--max-spread-points", os.getenv("MT5_MAX_SPREAD_POINTS", "20"),
+        "--max-daily-drawdown", os.getenv("MT5_MAX_DAILY_DRAWDOWN", "0.01"),
     ]
     if config.mt5_terminal_path:
         argv.extend(["--terminal-path", config.mt5_terminal_path])
