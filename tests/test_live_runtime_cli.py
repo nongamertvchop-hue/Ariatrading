@@ -1,4 +1,8 @@
-from live.live_runtime_cli import build_parser
+import argparse
+
+import pytest
+
+from live.live_runtime_cli import _validate_live_startup, build_parser
 
 
 def test_hardened_runtime_cli_is_demo_by_default():
@@ -47,3 +51,42 @@ def test_hardened_runtime_cli_rejects_non_positive_interval():
         assert exc.code != 0
     else:
         raise AssertionError("CLI must reject a non-positive runtime interval")
+
+
+def _runtime_args(mode="LIVE", risk=0.0025, dd=0.01, spread=20.0, tick_age=5.0):
+    return argparse.Namespace(
+        mode=mode,
+        risk=risk,
+        max_daily_drawdown=dd,
+        max_spread_points=spread,
+        max_tick_age=tick_age,
+    )
+
+
+def _arm_live(monkeypatch):
+    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
+    monkeypatch.setenv("ARIATRADING_LIVE_STAGE", "1")
+    monkeypatch.setenv("ARIATRADING_LIVE_ACCOUNT", "12345")
+    monkeypatch.setenv("ARIATRADING_LIVE_SERVER", "Broker-Real")
+    monkeypatch.setenv("ARIATRADING_LIVE_SYMBOLS", "EURUSD")
+
+
+def test_direct_live_cli_is_fail_closed_without_stage1(monkeypatch):
+    monkeypatch.delenv("ARIATRADING_LIVE_STAGE", raising=False)
+    monkeypatch.delenv("ARIATRADING_ENABLE_LIVE", raising=False)
+    with pytest.raises(RuntimeError, match="LIVE production stage is not armed"):
+        _validate_live_startup(_runtime_args(), ["EURUSD"])
+
+
+def test_direct_live_cli_enforces_symbol_and_limits(monkeypatch):
+    _arm_live(monkeypatch)
+    with pytest.raises(RuntimeError, match="symbol allowlist mismatch"):
+        _validate_live_startup(_runtime_args(), ["GBPUSD"])
+    with pytest.raises(RuntimeError, match="risk exceeds policy"):
+        _validate_live_startup(_runtime_args(risk=0.005), ["EURUSD"])
+
+
+def test_demo_cli_does_not_require_live_arm(monkeypatch):
+    monkeypatch.delenv("ARIATRADING_LIVE_STAGE", raising=False)
+    monkeypatch.delenv("ARIATRADING_ENABLE_LIVE", raising=False)
+    _validate_live_startup(_runtime_args(mode="DEMO"), ["EURUSD"])
