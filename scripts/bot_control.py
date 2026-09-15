@@ -7,9 +7,11 @@ import json
 from pathlib import Path
 
 from live.control_plane import BotControlPlane, EMERGENCY_STOP, PAUSE, RUN, STOP
+from live.runtime_status import RuntimeStatusStore
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_FILE = ROOT / "data" / "bot_control.json"
+STATUS_FILE = ROOT / "data" / "bot_status.json"
 
 
 def main() -> int:
@@ -22,7 +24,13 @@ def main() -> int:
     control = BotControlPlane(STATE_FILE)
 
     if args.command == "status":
-        print(json.dumps(control.read().__dict__, indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                {"control": control.read().__dict__, "runtime": RuntimeStatusStore(STATUS_FILE).read()},
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return 0
 
     state = {
