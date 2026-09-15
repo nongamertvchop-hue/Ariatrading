@@ -6,8 +6,9 @@ APPROACH -> TEST -> RECLAIM/REJECT -> CONFIRM -> LONG/SHORT.
 Market structure and setup scoring are context layers. They do not create a
 third setup and do not turn a score into a win probability.
 
-Indicators are additional deterministic evidence/context. They never create
-LONG/SHORT decisions by themselves.
+Indicators are additional deterministic evidence/context. They can veto a
+confirmed setup only when all three directional checks strongly contradict it;
+they never create LONG/SHORT decisions by themselves.
 
 Educational/demo only. No orders are placed here.
 The runtime research contract is enforced on every evaluation.
@@ -16,6 +17,7 @@ The runtime research contract is enforced on every evaluation.
 from dataclasses import dataclass
 
 from .indicators import IndicatorSnapshot, calculate_indicators
+from .indicator_filter import IndicatorFilterResult, evaluate_indicator_filter
 from .levels_v2 import PriceZone, SUPPORT, RESISTANCE
 from .market_structure import MarketStructure, analyze_market_structure
 from .mtf import MultiTimeframeContext
@@ -45,19 +47,11 @@ class EngineSignal:
     score: SetupScore | None = None
     state: str = "APPROACH"
     indicators: IndicatorSnapshot | None = None
+    indicator_filter: IndicatorFilterResult | None = None
 
 
-def _protective_stop(
-    zone: PriceZone,
-    direction: str,
-    candles: list[dict],
-    timeframe: str,
-) -> float:
-    """Place the strategy's protective stop beyond the reaction zone.
-
-    The distance adapts to recent candle ranges, so the same price-action rule
-    can operate across 1m through 1D without introducing an indicator.
-    """
+def _protective_stop(zone: PriceZone, direction: str, candles: list[dict], timeframe: str) -> float:
+    """Place the strategy's protective stop beyond the reaction zone."""
     buffer = adaptive_confirmation_buffer(candles, timeframe)
     if direction == LONG:
         return zone.low - buffer
@@ -66,31 +60,33 @@ def _protective_stop(
     raise ValueError("direction must be LONG or SHORT")
 
 
-def _evaluate(
-    candles: list[dict],
-    zone: PriceZone,
-    timeframe: str,
-    direction: str,
-    mtf: MultiTimeframeContext | None,
-    max_test_age: int,
-) -> EngineSignal:
-    # The research contract is deliberately checked at the strategy boundary:
-    # new research can evolve, but execution mode and causal-data safeguards
-    # cannot silently drift while experiments are being developed.
+def _evaluate(candles: list[dict], zone: PriceZone, timeframe: str, direction: str, mtf: MultiTimeframeContext | None, max_test_age: int) -> EngineSignal:
     enforce_research_contract()
-
     get_timeframe_config(timeframe)
-    result = evaluate_sequence(
-        candles,
-        zone,
-        timeframe,
-        direction,
-        max_test_age=max_test_age,
-    )
+    result = evaluate_sequence(candles, zone, timeframe, direction, max_test_age=max_test_age)
     structure = analyze_market_structure(candles[:-1]) if len(candles) > 1 else analyze_market_structure([])
-    # The latest candle is already closed when this engine is called. It is
-    # valid indicator input; no future candle is consulted.
     indicators = calculate_indicators(candles) if candles else None
+    indicator_filter = evaluate_indicator_filter(indicators, direction)
+
+    if result.action == direction and not indicator_filter.allowed:
+        return EngineSignal(
+            WAIT,
+            "indicator filter veto: " + "; ".join(indicator_filter.reasons),
+            timeframe,
+            zone,
+            protection="BLOCKED",
+            breakout_state=result.breakout_state,
+            entry_reference=None,
+            stop_reference=None,
+            test_index=result.test_index,
+            confirmation_index=result.confirmation_index,
+            structure_bias=structure.bias,
+            score=None,
+            state="CONFIRM",
+            indicators=indicators,
+            indicator_filter=indicator_filter,
+        )
+
     setup_score = None
     stop_reference = None
     if result.action == direction:
@@ -119,28 +115,17 @@ def _evaluate(
         score=setup_score,
         state=result.state,
         indicators=indicators,
+        indicator_filter=indicator_filter,
     )
 
 
-def evaluate_long(
-    candles: list[dict],
-    support: PriceZone,
-    timeframe: str,
-    mtf: MultiTimeframeContext | None = None,
-    max_test_age: int = 3,
-) -> EngineSignal:
+def evaluate_long(candles: list[dict], support: PriceZone, timeframe: str, mtf: MultiTimeframeContext | None = None, max_test_age: int = 3) -> EngineSignal:
     if support.kind != SUPPORT:
         raise ValueError("zone must be SUPPORT")
     return _evaluate(candles, support, timeframe, LONG, mtf, max_test_age)
 
 
-def evaluate_short(
-    candles: list[dict],
-    resistance: PriceZone,
-    timeframe: str,
-    mtf: MultiTimeframeContext | None = None,
-    max_test_age: int = 3,
-) -> EngineSignal:
+def evaluate_short(candles: list[dict], resistance: PriceZone, timeframe: str, mtf: MultiTimeframeContext | None = None, max_test_age: int = 3) -> EngineSignal:
     if resistance.kind != RESISTANCE:
         raise ValueError("zone must be RESISTANCE")
     return _evaluate(candles, resistance, timeframe, SHORT, mtf, max_test_age)
