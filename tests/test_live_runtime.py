@@ -19,6 +19,7 @@ class _Executor:
         self.trade_mode = trade_mode
         self.magic_number = 8808
         self.bound_identity = None
+        self.disconnected = False
         self.mt5 = SimpleNamespace(
             account_info=lambda: SimpleNamespace(
                 login=self.login,
@@ -67,13 +68,20 @@ class _Executor:
     def get_symbol_contract(self, symbol):
         return SimpleNamespace(point=0.00001)
 
+    def disconnect(self):
+        self.disconnected = True
+
 
 class _Feed:
     def __init__(self, bar_time):
         self.bar_time = bar_time
+        self.closed = False
 
     def closed_bars(self, symbol, timeframe, count):
         return [SimpleNamespace(time=self.bar_time, open=1.1, high=1.101, low=1.099, close=1.1005)] * 40
+
+    def close(self):
+        self.closed = True
 
 
 class _Orchestrator:
@@ -95,9 +103,10 @@ def _runtime(tmp_path, *, now=None, tick_time=None, bar_time=None, deals=None, l
     now = now or datetime.now(timezone.utc)
     orchestrator = _Orchestrator()
     executor = _Executor(tick_time if tick_time is not None else now, deals=deals, login=login)
+    feed = _Feed(bar_time if bar_time is not None else now - timedelta(seconds=1))
     runtime = LiveRuntime(
         orchestrator=orchestrator,
-        feed=_Feed(bar_time if bar_time is not None else now - timedelta(seconds=1)),
+        feed=feed,
         executor=executor,
         journal=ExecutionJournal(tmp_path / "execution.json"),
         limits=limits,
@@ -196,21 +205,24 @@ def test_runtime_skips_stale_tick(tmp_path):
         tmp_path, now=now, tick_time=now - timedelta(seconds=30),
         bar_time=now - timedelta(minutes=1), limits=RuntimeLimits(max_tick_age_seconds=10.0),
     )
-    assert runtime.process_once() == 0
+    with pytest.raises(RuntimeError, match="stale broker tick"):
+        runtime.process_once()
     assert orchestrator.calls == 0
 
 
-def test_runtime_skips_future_tick(tmp_path):
+def test_runtime_rejects_future_tick(tmp_path):
     now = datetime.now(timezone.utc)
     runtime, orchestrator = _runtime(tmp_path, now=now, tick_time=now + timedelta(seconds=1))
-    assert runtime.process_once() == 0
+    with pytest.raises(RuntimeError, match="future"):
+        runtime.process_once()
     assert orchestrator.calls == 0
 
 
-def test_runtime_skips_future_candle(tmp_path):
+def test_runtime_rejects_future_candle(tmp_path):
     now = datetime.now(timezone.utc)
     runtime, orchestrator = _runtime(tmp_path, now=now, bar_time=now + timedelta(seconds=1))
-    assert runtime.process_once() == 0
+    with pytest.raises(RuntimeError, match="future"):
+        runtime.process_once()
     assert orchestrator.calls == 0
 
 
@@ -259,3 +271,13 @@ def test_runtime_blocks_non_login_account_identity_drift(tmp_path, field, value)
     with pytest.raises(RuntimeError, match="account identity changed during runtime"):
         runtime.process_once()
     assert orchestrator.calls == 0
+
+
+def test_runtime_stops_instead_of_blind_retry_on_cycle_failure(tmp_path):
+    runtime, _ = _runtime(tmp_path)
+    runtime.process_once = lambda: (_ for _ in ()).throw(RuntimeError("broker state invalid"))
+
+    with pytest.raises(RuntimeError, match="broker state invalid"):
+        runtime.run_forever(0.001)
+    assert runtime.executor.disconnected
+    assert runtime.feed.closed
