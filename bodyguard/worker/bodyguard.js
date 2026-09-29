@@ -290,8 +290,12 @@ export function validatePublicApiRequest(request, url = new URL(request.url)) {
     return { ok: false, status: 414, reason: "query_too_long" };
   }
 
+  const pathname = url.pathname.toLowerCase();
   for (const forbidden of DEFAULTS.forbiddenExecutionPaths) {
-    if (url.pathname.toLowerCase().startsWith(forbidden)) {
+    const matches = forbidden === "/api/mt5"
+      ? pathname === "/api/mt5" || pathname === "/api/mt5/ingest" || pathname === "/api/mt5/market"
+      : pathname.startsWith(forbidden);
+    if (matches) {
       audit.executionAttempts += 1;
       return { ok: false, status: 403, reason: "execution_surface_forbidden" };
     }
