@@ -24,6 +24,7 @@ const DEFAULTS = Object.freeze({
     "/api/price",
     "/api/live-candle",
     "/api/market",
+    "/api/mt5/status",
     "/api/bodyguard/status",
   ]),
   forbiddenExecutionPaths: new Set([
