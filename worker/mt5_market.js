@@ -8,6 +8,33 @@ function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type":"application/json; charset=utf-8", "cache-control":"no-store", "x-webaria-market-contract": MARKET_CONTRACT_VERSION, ...extraHeaders } });
 }
 function key(symbol, timeframe) { return `${symbol}:${timeframe}`; }
+const RUNTIME_STATES = new Set(["READY","RUNNING","PAUSE","STOP","EMERGENCY_STOP","STOPPED","ERROR"]);
+const MAX_RUNTIME_STATUS_FIELDS = 16;
+function validateRuntimeStatus(raw) {
+  if (raw == null) return null;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("invalid runtime_status");
+  const clean = {};
+  const stringFields = ["runtime_state","reason","mode","timeframe","control_state","updated_at"];
+  for (const field of stringFields) {
+    if (raw[field] != null) {
+      const value = String(raw[field]).slice(0, 300);
+      if (field === "runtime_state" && value && !RUNTIME_STATES.has(value.toUpperCase())) throw new Error("invalid runtime_state");
+      if (field === "mode" && value && value.toUpperCase() !== "DEMO") throw new Error("runtime_status must be DEMO");
+      clean[field] = value;
+    }
+  }
+  if (Array.isArray(raw.symbols)) clean.symbols = raw.symbols.slice(0, 16).map(value => String(value).toUpperCase().slice(0, 32));
+  for (const field of ["processed","control_generation"]) {
+    if (raw[field] != null) {
+      const value = Number(raw[field]);
+      if (!Number.isInteger(value) || value < 0) throw new Error("invalid runtime_status " + field);
+      clean[field] = value;
+    }
+  }
+  if (Object.keys(clean).length > MAX_RUNTIME_STATUS_FIELDS) throw new Error("runtime_status contains too many fields");
+  return Object.keys(clean).length ? clean : null;
+}
+
 function validateCandle(raw) {
   const time=Number(raw?.time), open=Number(raw?.open), high=Number(raw?.high), low=Number(raw?.low), close=Number(raw?.close);
   if (!Number.isInteger(time)||time<=0) throw new Error("invalid candle time");
@@ -56,7 +83,8 @@ function validatePayload(payload) {
   if(now-receivedAt>MAX_AGE_SECONDS) throw new Error("stale bridge payload");
   const price=Number(payload?.price);
   if(!Number.isFinite(price)||price<=0) throw new Error("invalid price");
-  return {symbol,timeframe,candles:normalized,liveCandle,receivedAt,price};
+  const runtimeStatus = validateRuntimeStatus(payload?.runtime_status);
+  return {symbol,timeframe,candles:normalized,liveCandle,receivedAt,price,runtimeStatus};
 }
 
 export class Mt5MarketStore {
@@ -83,13 +111,16 @@ export class Mt5MarketStore {
   }
   async diagnostics(symbol) {
     const now=Math.floor(Date.now()/1000), rows=[];
+    const runtimeStatus=await this.state.storage.get("runtime_status");
+    const runtimeUpdatedAt=runtimeStatus?.updated_at ? Date.parse(runtimeStatus.updated_at) : NaN;
+    const runtimeAge=Number.isFinite(runtimeUpdatedAt) ? Math.max(0, Math.floor(Date.now()/1000 - runtimeUpdatedAt/1000)) : null;
     for(const timeframe of Object.keys(TIMEFRAME_SECONDS)){
       const stored=await this.state.storage.get(key(symbol,timeframe));
       if(!stored){rows.push({timeframe,state:"NO_DATA",age_seconds:null,candles:0,live_candle:false,market_fingerprint:null});continue;}
       const age=Math.max(0,now-Number(stored.received_at));
       rows.push({timeframe,state:age>MAX_AGE_SECONDS?"STALE":"LIVE",age_seconds:age,candles:Array.isArray(stored.candles)?stored.candles.length:0,live_candle:Boolean(stored.live_candle),price:Number(stored.price),market_fingerprint:stored.market_fingerprint||null});
     }
-    return json({source:"mt5",contract:MARKET_CONTRACT_VERSION,symbol,timeframes:rows,summary:{live:rows.filter(r=>r.state==="LIVE").length,no_data:rows.filter(r=>r.state==="NO_DATA").length,stale:rows.filter(r=>r.state==="STALE").length}});
+    return json({source:"mt5",contract:MARKET_CONTRACT_VERSION,symbol,timeframes:rows,runtime_status:runtimeStatus||null,runtime_status_age_seconds:runtimeAge,summary:{live:rows.filter(r=>r.state==="LIVE").length,no_data:rows.filter(r=>r.state==="NO_DATA").length,stale:rows.filter(r=>r.state==="STALE").length,runtime:runtimeStatus?.runtime_state||"NO_STATUS"}});
   }
   async ingest(request) {
     try {
@@ -102,8 +133,9 @@ export class Mt5MarketStore {
       if(existingLatest&&latest.time<existingLatest.time) return json({error:"out_of_order",message:"older candle payload rejected"},409);
       const fingerprint=await completedFingerprint(payload.symbol,payload.timeframe,candles);
       await this.state.storage.put(key(payload.symbol,payload.timeframe),{candles,live_candle:payload.liveCandle,price:payload.price,received_at:payload.receivedAt,market_fingerprint:fingerprint});
-      return json({ok:true,symbol:payload.symbol,timeframe:payload.timeframe,source:"mt5",contract:MARKET_CONTRACT_VERSION,market_fingerprint:fingerprint});
+      if (payload.runtimeStatus) await this.state.storage.put("runtime_status", payload.runtimeStatus);
+      return json({ok:true,symbol:payload.symbol,timeframe:payload.timeframe,source:"mt5",contract:MARKET_CONTRACT_VERSION,market_fingerprint:fingerprint,runtime_status:payload.runtimeStatus});
     } catch(error) { return json({error:"bad_request",message:error?.message||"invalid MT5 payload"},400); }
   }
 }
-export { TIMEFRAME_SECONDS, MARKET_CONTRACT_VERSION, canonicalCompletedPayload, completedFingerprint, validateCandle, assertCompletedChronology, assertCompletedCandleSeparation };
+export { TIMEFRAME_SECONDS, MARKET_CONTRACT_VERSION, canonicalCompletedPayload, completedFingerprint, validateCandle, validateRuntimeStatus, assertCompletedChronology, assertCompletedCandleSeparation };
