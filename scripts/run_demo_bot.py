@@ -30,6 +30,7 @@ from live.live_runtime import DailyCircuitBreaker, LiveRuntime, RuntimeLimits
 from live.mt5_account import validate_account_mode
 from live.mt5_executor import MT5LiveExecutor
 from live.runner import ForexLiveOrchestrator
+from live.runtime_status import RuntimeStatusStore
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LOG = logging.getLogger("ariatrading.demo")
@@ -49,6 +50,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--risk", type=float, default=0.0025)
     parser.add_argument("--interval", type=float, default=5.0)
     parser.add_argument("--terminal-path", default=None)
+    parser.add_argument("--control-path", default=str(PROJECT_ROOT / "data" / "bot_control.json"))
+    parser.add_argument("--status-path", default=str(PROJECT_ROOT / "data" / "bot_status.json"))
     return parser
 
 
@@ -96,13 +99,15 @@ def main() -> None:
             executor=executor,
             execution_journal=journal,
         )
-        control = BotControlPlane(PROJECT_ROOT / "data" / "bot_control.json")
+        control = BotControlPlane(args.control_path)
+        status = RuntimeStatusStore(args.status_path)
         runtime = LiveRuntime(
             orchestrator=orchestrator,
             feed=feed,
             executor=executor,
             journal=journal,
             control=control,
+            status=status,
             limits=RuntimeLimits(
                 max_tick_age_seconds=5,
                 max_spread_points=30,
@@ -120,6 +125,7 @@ def main() -> None:
             args.risk,
             args.interval,
         )
+        LOG.info("Control path: %s | status path: %s", args.control_path, args.status_path)
         LOG.info("Default control state is STOP; use scripts/bot_control.py start to run")
         runtime.run_forever(args.interval)
     finally:
