@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ARIA Demo Runtime</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:#070a0f;color:#eef3f8}
+main{max-width:900px;margin:auto;padding:18px}
+h1{margin:0 0 4px;font-size:26px}
+.muted{color:#8e99a8}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+button,select{background:#151d29;border:1px solid #314054;color:#fff;border-radius:10px;padding:10px 12px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.card{background:#101620;border:1px solid #263142;border-radius:14px;padding:14px}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8e99a8}
+.value{font-size:23px;font-weight:750;margin-top:7px;word-break:break-word}
+.ok{color:#74d6a0}.warn{color:#e5c66f}.bad{color:#f07c7c}
+.full{grid-column:1/-1}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
+th,td{text-align:left;padding:9px 6px;border-bottom:1px solid #222c39}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#6e7784;margin-right:6px}
+.dot.ok{background:#74d6a0}.dot.bad{background:#f07c7c}.dot.warn{background:#e5c66f}
+.note{margin-top:14px;line-height:1.5}
+a{color:#9fc4ff}
+@media(max-width:600px){main{padding:14px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.value{font-size:21px}table{font-size:13px}}
+</style>
+</head>
+<body><main>
+<h1>ARIA Demo Runtime</h1>
+<div class="muted">Read-only MT5 DEMO telemetry · no broker control from the browser</div>
+<div class="toolbar">
+<select id="symbol" aria-label="Symbol"><option>EUR/USD</option><option>GBP/USD</option><option>USD/JPY</option><option>AUD/USD</option><option>USD/CAD</option></select>
+<button id="refresh" type="button">Refresh</button>
+<a href="/" style="display:inline-flex;align-items:center;padding:10px 12px;border:1px solid #314054;border-radius:10px;text-decoration:none">Terminal</a>
+</div>
+<section class="grid">
+<div class="card"><div class="label">Bot runtime</div><div id="runtime" class="value"><span class="dot"></span>NO STATUS</div></div>
+<div class="card"><div class="label">Control</div><div id="control" class="value">—</div></div>
+<div class="card"><div class="label">Telemetry age</div><div id="age" class="value">—</div></div>
+<div class="card"><div class="label">Market feed</div><div id="feed" class="value">—</div></div>
+<div class="card"><div class="label">Price</div><div id="price" class="value">—</div></div>
+<div class="card"><div class="label">Processed</div><div id="processed" class="value">—</div></div>
+<div class="card full">
+<div class="label">MT5 timeframe health</div>
+<table><thead><tr><th>TF</th><th>State</th><th>Age</th><th>Candles</th></tr></thead><tbody id="rows"></tbody></table>
+</div>
+<div class="card full"><div id="note" class="note muted">Loading authoritative MT5 diagnostics…</div></div>
+</section>
+</main>
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+function clsForState(state){
+  const v=String(state||'').toUpperCase();
+  if(v==='RUNNING'||v==='READY'||v==='LIVE'||v==='RUN')return'ok';
+  if(v==='PAUSE'||v==='STOP'||v==='STOPPED'||v==='STALE')return'warn';
+  return'bad';
+}
+function render(data){
+  const runtime=data.runtime_status||{};
+  const runtimeState=runtime.runtime_state||data.summary?.runtime||'NO_STATUS';
+  const control=runtime.control_state||'—';
+  const runtimeAge=Number.isFinite(Number(data.runtime_status_age_seconds))?Number(data.runtime_status_age_seconds):null;
+  const newest=(data.timeframes||[]).map(r=>Number(r.age_seconds)).filter(Number.isFinite);
+  const marketAge=newest.length?Math.min(...newest):null;
+  const runtimeCls=clsForState(runtimeState);
+  $('runtime').innerHTML='<span class="dot '+runtimeCls+'"></span>'+runtimeState;
+  $('control').textContent=control+(runtime.control_generation!=null?' · gen '+runtime.control_generation:'');
+  $('age').textContent=runtimeAge==null?'—':runtimeAge.toFixed(1)+'s';
+  $('feed').innerHTML=marketAge==null?'<span class="dot bad"></span>NO DATA':marketAge<=90?'<span class="dot ok"></span>LIVE · '+marketAge.toFixed(1)+'s':'<span class="dot warn"></span>STALE · '+marketAge.toFixed(1)+'s';
+  const price=Number(data.timeframes?.find(r=>r.price!=null)?.price);
+  $('price').textContent=Number.isFinite(price)?price.toFixed(5):'—';
+  $('processed').textContent=runtime.processed==null?'—':String(runtime.processed);
+  $('rows').innerHTML=(data.timeframes||[]).map(r=>{
+    const c=clsForState(r.state);
+    return '<tr><td>'+String(r.timeframe)+'</td><td><span class="dot '+c+'"></span>'+String(r.state)+'</td><td>'+String(r.age_seconds??'—')+'</td><td>'+String(r.candles??0)+'</td></tr>';
+  }).join('');
+  $('note').textContent=runtime.reason||'Runtime telemetry is sanitized and read-only. Browser state cannot issue broker commands.';
+}
+async function refresh(){
+  try{
+    const symbol=encodeURIComponent($('symbol').value);
+    const response=await fetch('/api/mt5/status?symbol='+symbol,{cache:'no-store',headers:{accept:'application/json'}});
+    if(!response.ok)throw new Error('MT5 diagnostics HTTP '+response.status);
+    const data=await response.json();
+    if(data.source!=='mt5')throw new Error('unexpected diagnostics source');
+    render(data);
+  }catch(error){
+    $('runtime').innerHTML='<span class="dot bad"></span>UNAVAILABLE';
+    $('feed').innerHTML='<span class="dot bad"></span>UNAVAILABLE';
+    $('note').textContent=error.message;
+  }
+}
+$('refresh').onclick=refresh;
+$('symbol').onchange=refresh;
+refresh();
+setInterval(refresh,3000);
+})();
+</script>
+</body>
+</html>
