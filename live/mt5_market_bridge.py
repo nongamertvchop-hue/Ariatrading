@@ -46,6 +46,69 @@ DEFAULT_COUNT = 100
 MAX_COUNT = 500
 DEFAULT_PUSH_INTERVAL_SECONDS = 3.0
 
+_RUNTIME_STATE_FIELDS = (
+    "runtime_state",
+    "reason",
+    "mode",
+    "symbols",
+    "timeframe",
+    "processed",
+    "control_state",
+    "control_generation",
+    "updated_at",
+)
+_ALLOWED_RUNTIME_STATES = {"READY", "RUNNING", "PAUSE", "STOP", "EMERGENCY_STOP", "STOPPED", "ERROR"}
+
+
+def _read_json_object(path: str) -> dict[str, Any] | None:
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            value = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _runtime_status_path() -> str:
+    return os.getenv("BOT_STATUS_PATH", "data/bot_status.json").strip()
+
+
+def _sanitized_runtime_status() -> dict[str, Any] | None:
+    raw = _read_json_object(_runtime_status_path())
+    if raw is None:
+        return None
+
+    runtime_state = str(raw.get("runtime_state", "")).strip().upper()
+    mode = str(raw.get("mode", "")).strip().upper()
+    if runtime_state and runtime_state not in _ALLOWED_RUNTIME_STATES:
+        return None
+    if mode and mode != "DEMO":
+        # This bridge is the demo/market telemetry path; never publish a
+        # real-money runtime state into the hosted telemetry contract.
+        return None
+
+    clean: dict[str, Any] = {}
+    for field in _RUNTIME_STATE_FIELDS:
+        if field not in raw:
+            continue
+        value = raw[field]
+        if field in {"reason", "updated_at", "timeframe", "control_state", "runtime_state", "mode"}:
+            clean[field] = str(value)[:300]
+        elif field == "symbols":
+            if isinstance(value, list):
+                clean[field] = [str(item).upper()[:32] for item in value[:16]]
+        elif field in {"processed", "control_generation"}:
+            try:
+                number = int(value)
+            except (TypeError, ValueError):
+                continue
+            if number >= 0:
+                clean[field] = number
+
+    if "mode" in clean and clean["mode"] != "DEMO":
+        return None
+    return clean or None
+
 
 def _env_token() -> str:
     token = os.getenv("MT5_MARKET_BRIDGE_TOKEN", "").strip()
@@ -178,6 +241,7 @@ def market_payload(symbol: str, timeframe: str, count: int) -> dict[str, Any]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "received_at": int(datetime.now(timezone.utc).timestamp()),
         "execution": "NONE",
+        "runtime_status": _sanitized_runtime_status(),
     }
 
 
