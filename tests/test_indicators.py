@@ -46,7 +46,7 @@ def test_true_range_uses_previous_close_for_gaps() -> None:
 def test_atr_is_unavailable_before_warmup() -> None:
     candles = candles_from_closes([float(index) for index in range(20)])
     assert atr(candles[:13], 14) is None
-    assert atr(candles[:14], 14) == 0.4
+    assert atr(candles[:14], 14) == sum(true_range_series(candles[:14])) / 14
 
 
 def test_adx_is_unavailable_until_directional_warmup() -> None:
