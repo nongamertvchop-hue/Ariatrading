@@ -22,6 +22,7 @@ import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlparse
@@ -45,6 +46,7 @@ DEFAULT_PORT = 8787
 DEFAULT_COUNT = 100
 MAX_COUNT = 500
 DEFAULT_PUSH_INTERVAL_SECONDS = 3.0
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 _RUNTIME_STATE_FIELDS = (
     "runtime_state",
@@ -70,7 +72,10 @@ def _read_json_object(path: str) -> dict[str, Any] | None:
 
 
 def _runtime_status_path() -> str:
-    return os.getenv("BOT_STATUS_PATH", "data/bot_status.json").strip()
+    """Resolve the same default status file as run_demo_bot, independent of CWD."""
+    configured = os.getenv("BOT_STATUS_PATH", "data/bot_status.json").strip()
+    path = Path(configured) if configured else Path("data/bot_status.json")
+    return str(path if path.is_absolute() else PROJECT_ROOT / path)
 
 
 def _sanitized_runtime_status() -> dict[str, Any] | None:
@@ -80,9 +85,9 @@ def _sanitized_runtime_status() -> dict[str, Any] | None:
 
     runtime_state = str(raw.get("runtime_state", "")).strip().upper()
     mode = str(raw.get("mode", "")).strip().upper()
-    if runtime_state and runtime_state not in _ALLOWED_RUNTIME_STATES:
+    if runtime_state not in _ALLOWED_RUNTIME_STATES:
         return None
-    if mode and mode != "DEMO":
+    if mode != "DEMO":
         # This bridge is the demo/market telemetry path; never publish a
         # real-money runtime state into the hosted telemetry contract.
         return None
