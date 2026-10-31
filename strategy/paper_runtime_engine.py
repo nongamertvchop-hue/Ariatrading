@@ -184,7 +184,7 @@ class PaperRuntimeEngine:
         except (PaperCheckpointError, PaperHistoryError, ValueError, TypeError, KeyError) as exc:
             self.running = False
             self.lifecycle = RuntimeLifecycle.HALT
-            self.halt_reason = f"checkpoint/history recovery failed: {exc}"
+            self.halt_reason = f"checkpoint recovery failed (checkpoint/history): {exc}"
             return self._emit_no_persist(False, "HALT", self.halt_reason)
         if self._pending_order is not None:
             self.running = False
