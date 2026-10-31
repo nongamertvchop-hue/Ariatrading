@@ -48,12 +48,12 @@ def test_webaria_enforces_single_open_position_and_stop_safety():
     terminal = PAPER_TERMINAL.read_text(encoding="utf-8")
     engine = PAPER_ENGINE.read_text(encoding="utf-8")
 
-    assert "if(state.position)" in terminal
+    assert "if(state.position)return setNote('Only one paper position is allowed at a time.')" in terminal
     assert "Only one paper position is allowed at a time." in terminal
-    assert "validateStops(side, entry, sl, tp)" in terminal
+    assert "validateStops(side,entry,sl,tp)" in terminal
     assert "stop loss" in engine
     assert "take profit" in engine
-    assert "barExit(position, bar)" in terminal
+    assert "barExit(position,bar)" in terminal
 
 
 def test_webaria_has_signal_and_live_price_api_contracts():
@@ -71,7 +71,7 @@ def test_webaria_has_signal_and_live_price_api_contracts():
 def test_webaria_reset_cannot_discard_an_open_position():
     terminal = PAPER_TERMINAL.read_text(encoding="utf-8")
 
-    assert "function resetPaperAccount()" in terminal
-    assert "if (state.position)" in terminal
+    assert "async function resetPaperAccount()" in terminal
+    assert "if(state.position)return setNote('Reset rejected while a position is open. Close it first.')" in terminal
     assert "Reset rejected while a position is open" in terminal
-    assert "state = { balance: START_BALANCE, position: null, history: [] }" in terminal
+    assert "writeDurable({balance:START_BALANCE,position:null,history:[]}" in terminal
