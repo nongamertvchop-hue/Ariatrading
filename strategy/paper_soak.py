@@ -20,6 +20,7 @@ class SoakRun:
     halted: bool
     failures_detected: int
     duplicate_bars_ignored: int
+    halt_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ def replay(engine: PaperRuntimeEngine, bars: Sequence[RuntimeBar], signals: Sequ
         halted=engine.lifecycle is RuntimeLifecycle.HALT,
         failures_detected=failures,
         duplicate_bars_ignored=duplicate_ignored,
+        halt_reason=engine.halt_reason,
     )
 
 
