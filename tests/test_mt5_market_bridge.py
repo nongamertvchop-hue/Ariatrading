@@ -73,3 +73,34 @@ def test_market_payload_rejects_invalid_tick(fake, monkeypatch):
     monkeypatch.setattr(bridge.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1, bid=0.0, ask=0.0))
     with pytest.raises(RuntimeError, match="tick is invalid"):
         bridge.market_payload("EURUSD", "15m", 100)
+
+
+def test_runtime_status_path_is_project_relative_not_process_cwd(monkeypatch, tmp_path):
+    monkeypatch.delenv("BOT_STATUS_PATH", raising=False)
+    assert bridge._runtime_status_path() == str(bridge.PROJECT_ROOT / "data" / "bot_status.json")
+
+    monkeypatch.setenv("BOT_STATUS_PATH", "custom/status.json")
+    assert bridge._runtime_status_path() == str(bridge.PROJECT_ROOT / "custom" / "status.json")
+
+    absolute = tmp_path / "bot_status.json"
+    monkeypatch.setenv("BOT_STATUS_PATH", str(absolute))
+    assert bridge._runtime_status_path() == str(absolute)
+
+
+def test_runtime_telemetry_requires_explicit_demo_mode_and_valid_state(monkeypatch, tmp_path):
+    status_path = tmp_path / "status.json"
+    monkeypatch.setenv("BOT_STATUS_PATH", str(status_path))
+
+    status_path.write_text('{"runtime_state":"RUNNING"}', encoding="utf-8")
+    assert bridge._sanitized_runtime_status() is None
+
+    status_path.write_text('{"runtime_state":"BUY_NOW","mode":"DEMO"}', encoding="utf-8")
+    assert bridge._sanitized_runtime_status() is None
+
+    status_path.write_text(
+        '{"runtime_state":"RUNNING","mode":"DEMO","account_login":12345}',
+        encoding="utf-8",
+    )
+    result = bridge._sanitized_runtime_status()
+    assert result == {"runtime_state": "RUNNING", "mode": "DEMO"}
+    assert "account_login" not in result
