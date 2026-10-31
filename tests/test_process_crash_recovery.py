@@ -51,7 +51,7 @@ engine.start()
 engine.set_failure_mode(FailureMode.TIMEOUT_AFTER_ACCEPT)
 engine.process_bar(
     RuntimeBar("2026-01-01T00:05:00+00:00", 1.10, 1.11, 1.09, 1.105),
-    RuntimeSignal(action="LONG", entry=1.105, stop=1.100),
+    RuntimeSignal(action="LONG", entry=1.105, stop=1.100, symbol="EURUSD"),
 )
 import os
 os._exit(137)
