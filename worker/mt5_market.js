@@ -133,7 +133,7 @@ export class Mt5MarketStore {
       if(existingLatest&&latest.time<existingLatest.time) return json({error:"out_of_order",message:"older candle payload rejected"},409);
       const fingerprint=await completedFingerprint(payload.symbol,payload.timeframe,candles);
       await this.state.storage.put(key(payload.symbol,payload.timeframe),{candles,live_candle:payload.liveCandle,price:payload.price,received_at:payload.receivedAt,market_fingerprint:fingerprint});
-      if (payload.runtimeStatus) await this.state.storage.put("runtime_status", payload.runtimeStatus);
+      await this.state.storage.put("runtime_status", payload.runtimeStatus);
       return json({ok:true,symbol:payload.symbol,timeframe:payload.timeframe,source:"mt5",contract:MARKET_CONTRACT_VERSION,market_fingerprint:fingerprint,runtime_status:payload.runtimeStatus});
     } catch(error) { return json({error:"bad_request",message:error?.message||"invalid MT5 payload"},400); }
   }
