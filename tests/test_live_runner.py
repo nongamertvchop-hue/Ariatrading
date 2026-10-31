@@ -134,6 +134,12 @@ class _Notifier:
 
 @pytest.mark.parametrize("mode", ["DEMO", "LIVE"])
 def test_execution_is_journaled_and_duplicate_is_suppressed(monkeypatch, tmp_path, eurusd_contract, mode):
+    if mode == "LIVE":
+        monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
+        monkeypatch.setenv("ARIATRADING_LIVE_STAGE", "1")
+        monkeypatch.setenv("ARIATRADING_LIVE_ACCOUNT", "12345")
+        monkeypatch.setenv("ARIATRADING_LIVE_SERVER", "Broker-Real")
+        monkeypatch.setenv("ARIATRADING_LIVE_SYMBOLS", "EURUSD")
     _patch_trade_pipeline(monkeypatch)
     notifier = _Notifier()
 
@@ -148,7 +154,7 @@ def test_execution_is_journaled_and_duplicate_is_suppressed(monkeypatch, tmp_pat
     executor = _Executor()
     journal = ExecutionJournal(tmp_path / "execution.json")
     orchestrator = ForexLiveOrchestrator(
-        symbols=["EURUSD"], mode=mode, executor=executor, notifier=notifier, execution_journal=journal
+        symbols=["EURUSD"], mode=mode, risk_per_trade=0.0025, executor=executor, notifier=notifier, execution_journal=journal
     )
     bars = generate_bars(count=50)
 
@@ -163,6 +169,11 @@ def test_execution_is_journaled_and_duplicate_is_suppressed(monkeypatch, tmp_pat
 
 
 def test_live_transport_exception_becomes_ambiguous(monkeypatch, tmp_path, eurusd_contract):
+    monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
+    monkeypatch.setenv("ARIATRADING_LIVE_STAGE", "1")
+    monkeypatch.setenv("ARIATRADING_LIVE_ACCOUNT", "12345")
+    monkeypatch.setenv("ARIATRADING_LIVE_SERVER", "Broker-Real")
+    monkeypatch.setenv("ARIATRADING_LIVE_SYMBOLS", "EURUSD")
     _patch_trade_pipeline(monkeypatch)
     notifier = _Notifier()
 
@@ -172,7 +183,7 @@ def test_live_transport_exception_becomes_ambiguous(monkeypatch, tmp_path, eurus
 
     journal = ExecutionJournal(tmp_path / "execution.json")
     orchestrator = ForexLiveOrchestrator(
-        symbols=["EURUSD"], mode="LIVE", executor=_Executor(), notifier=notifier, execution_journal=journal
+        symbols=["EURUSD"], mode="LIVE", risk_per_trade=0.0025, executor=_Executor(), notifier=notifier, execution_journal=journal
     )
     bars = generate_bars(count=50)
     orchestrator.process_symbol("EURUSD", bars, 1.1000, 1.1001, eurusd_contract, 10000.0)

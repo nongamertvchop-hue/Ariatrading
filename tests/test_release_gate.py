@@ -37,7 +37,7 @@ def test_hard_process_termination_leaves_pending_checkpoint_for_restart_recovery
         "from strategy.paper_runtime_engine import PaperRuntimeEngine, FailureMode, RuntimeBar, RuntimeSignal; "
         f"e=PaperRuntimeEngine(checkpoint_path=r'{checkpoint}'); "
         "e.set_failure_mode(FailureMode.TIMEOUT_AFTER_ACCEPT); e.start(); "
-        "e.process_bar(RuntimeBar('1',100,100.5,99.5,100), RuntimeSignal('LONG',100,95,'crash')); "
+        "e.process_bar(RuntimeBar('1',100,100.5,99.5,100), RuntimeSignal('LONG',100,95,'crash',symbol='EURUSD')); "
         "import os; os._exit(137)"
     )
     child = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[1])

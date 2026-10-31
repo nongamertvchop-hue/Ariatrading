@@ -172,7 +172,7 @@ def adx_series(candles: Sequence[Candle], period: int = 14) -> list[float | None
     highs = [_value(candle, "high") for candle in candles]
     lows = [_value(candle, "low") for candle in candles]
     closes = _closes(candles)
-    if len(candles) < (period * 2):
+    if len(candles) < (period * 2 - 1):
         return [None] * len(candles)
 
     tr = true_range_series(candles)

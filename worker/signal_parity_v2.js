@@ -42,17 +42,26 @@ export function evaluateRealtimeSignalParity(rawCandles, timeframe, minForecastC
   const resistance = nearestResistance(currentPrice, resistances);
   const indicators = calculateIndicators(candles);
   const indicatorDirection = strategySignal.action === LONG || strategySignal.action === SHORT ? strategySignal.action : null;
-  const indicatorContextResult = indicatorContext(candles, indicatorDirection);
-  const indicatorReady = indicatorDirection !== null && ![indicatorContextResult.trend, indicatorContextResult.momentum, indicatorContextResult.macd_momentum].includes("UNAVAILABLE");
-  const indicatorAllowed = !indicatorReady || indicatorContextResult.confirmation_state !== "OPPOSED";
+  const strategyIndicatorContext = indicatorContext(candles, indicatorDirection);
+  const indicatorReady = indicatorDirection !== null && ![strategyIndicatorContext.trend, strategyIndicatorContext.momentum, strategyIndicatorContext.macd_momentum].includes("UNAVAILABLE");
+  const opposingCount = indicatorDirection === LONG
+    ? [strategyIndicatorContext.trend, strategyIndicatorContext.momentum, strategyIndicatorContext.macd_momentum].filter((value) => value === "BEARISH").length
+    : indicatorDirection === SHORT
+      ? [strategyIndicatorContext.trend, strategyIndicatorContext.momentum, strategyIndicatorContext.macd_momentum].filter((value) => value === "BULLISH").length
+      : 0;
+  const indicatorAllowed = !indicatorReady || opposingCount < 3;
   const forecastResult = forecast(candles, [1, 3, 5], support, resistance);
   const supervisor = supervise(strategySignal, forecastResult, null, minForecastConfidence);
   let finalSignal = strategySignal;
-  if (supervisor.action !== "ALLOW") finalSignal = { ...strategySignal, action: WAIT, reason: `realtime supervisor: ${supervisor.reasons.join("; ")}`, protection: "BLOCKED" };
-  else if (indicatorDirection && !indicatorAllowed) finalSignal = { ...strategySignal, action: WAIT, reason: `indicator filter veto: ${indicatorContextResult.trend}; ${indicatorContextResult.momentum}; ${indicatorContextResult.macd_momentum}`, protection: "BLOCKED" };
-  const selectedScore = finalSignal.action === LONG || finalSignal.action === SHORT ? finalSignal.score ?? null : null;
+  if (supervisor.action !== "ALLOW") {
+    finalSignal = { ...strategySignal, action: WAIT, reason: `realtime supervisor: ${supervisor.reasons.join("; ")}`, protection: "BLOCKED" };
+  } else if (indicatorDirection && !indicatorAllowed) {
+    finalSignal = { ...strategySignal, action: WAIT, reason: `indicator filter veto: ${strategyIndicatorContext.trend}; ${strategyIndicatorContext.momentum}; ${strategyIndicatorContext.macd_momentum}`, protection: "BLOCKED", entryReference: null, score: null };
+  }
+  const indicatorContextResult = indicatorContext(candles, finalSignal.action === LONG || finalSignal.action === SHORT ? finalSignal.action : null);
+  const selectedScore = finalSignal.score ?? null;
   const latestRawCandle = rawCandles[rawCandles.length - 1];
-  return { signal: finalSignal.action, state: finalSignal.state ?? "APPROACH", reason: finalSignal.reason, price: currentPrice, bar_time: latestRawCandle?.datetime ?? latestRawCandle?.time ?? null, structure_bias: finalSignal.structureBias ?? structure.bias, zone: finalSignal.zone ?? null, entry_reference: finalSignal.action === WAIT ? null : finalSignal.entryReference ?? null, stop_reference: finalSignal.zone && finalSignal.action !== WAIT ? stopReference(finalSignal.zone, finalSignal.action, history, timeframe) : null, breakout_state: finalSignal.breakoutState ?? NO_BREAKOUT, protection: finalSignal.protection ?? "SAFE", score: selectedScore, indicators, indicator_context: { ...indicatorContextResult, allowed: indicatorAllowed }, support, resistance, forecast: forecastResult, supervisor, candles, candles_used: candles.length };
+  return { signal: finalSignal.action, state: finalSignal.state ?? "APPROACH", reason: finalSignal.reason, price: currentPrice, bar_time: latestRawCandle?.datetime ?? latestRawCandle?.time ?? null, structure_bias: finalSignal.structureBias ?? structure.bias, zone: finalSignal.zone ?? null, entry_reference: finalSignal.entryReference ?? null, stop_reference: finalSignal.zone && finalSignal.action !== WAIT ? stopReference(finalSignal.zone, finalSignal.action, history, timeframe) : null, breakout_state: finalSignal.breakoutState ?? NO_BREAKOUT, protection: finalSignal.protection ?? "SAFE", score: selectedScore, indicators, indicator_context: { ...indicatorContextResult, allowed: indicatorAllowed }, support, resistance, forecast: forecastResult, supervisor, candles, candles_used: candles.length };
 }
 
 async function fetchMt5Market(env, symbol, timeframe) {

@@ -131,6 +131,10 @@ def test_daily_circuit_breaker_persists_and_blocks(tmp_path):
 
 def test_runtime_preflight_blocks_unreconciled_journal(tmp_path, monkeypatch):
     monkeypatch.setenv("ARIATRADING_ENABLE_LIVE", "I_UNDERSTAND_REAL_ORDERS")
+    monkeypatch.setenv("ARIATRADING_LIVE_STAGE", "1")
+    monkeypatch.setenv("ARIATRADING_LIVE_ACCOUNT", "1")
+    monkeypatch.setenv("ARIATRADING_LIVE_SERVER", "DemoServer")
+    monkeypatch.setenv("ARIATRADING_LIVE_SYMBOLS", "EURUSD")
     journal = ExecutionJournal(tmp_path / "execution.json")
     from live.execution_guard import build_intent
     intent = build_intent(
@@ -141,6 +145,7 @@ def test_runtime_preflight_blocks_unreconciled_journal(tmp_path, monkeypatch):
     runtime = LiveRuntime(
         orchestrator=_Orchestrator(), feed=_Feed(datetime.now(timezone.utc)),
         executor=_Executor(datetime.now(timezone.utc)), journal=journal,
+        limits=RuntimeLimits(max_tick_age_seconds=5.0, max_spread_points=20.0, max_daily_drawdown_fraction=0.01),
         clock=lambda: datetime(2026, 9, 10, 12, tzinfo=timezone.utc),
     )
     with pytest.raises(RuntimeError, match="unreconciled"):

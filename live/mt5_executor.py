@@ -265,7 +265,7 @@ class MT5LiveExecutor:
         if direction == ORDER_BUY and sl >= price:
             return OrderResult(False, -1, error_message="BUY Stop Loss must be below current ask")
         if direction == ORDER_SELL and sl <= price:
-            return OrderResult(False, -1, error_message="SELL Stop Loss must be above current bid")
+            return OrderResult(False, -1, error_message="SELL Stop Loss must be above entry price (current bid)")
         if tp is not None:
             if direction == ORDER_BUY and tp <= price:
                 return OrderResult(False, -1, error_message="BUY Take Profit must be above current ask")

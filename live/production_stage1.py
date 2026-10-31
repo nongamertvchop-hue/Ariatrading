@@ -58,6 +58,11 @@ class ProductionStage1Policy:
                 raise RuntimeError(f"{name} must be a finite number > 0 and <= {hard_max}")
             return value
 
+        if os.getenv(LIVE_OPT_IN_ENV, "") != LIVE_OPT_IN_VALUE:
+            raise RuntimeError(
+                "LIVE execution is disabled by default; explicit operator opt-in is required"
+            )
+
         stage_raw = os.getenv(STAGE_ENV, "0").strip()
         try:
             stage = int(stage_raw)
@@ -66,11 +71,6 @@ class ProductionStage1Policy:
         if stage != STAGE_1:
             raise RuntimeError(
                 f"LIVE production stage is not armed: set {STAGE_ENV}={STAGE_1}"
-            )
-
-        if os.getenv(LIVE_OPT_IN_ENV, "") != LIVE_OPT_IN_VALUE:
-            raise RuntimeError(
-                "LIVE execution is disabled by default; explicit operator opt-in is required"
             )
 
         login_raw = os.getenv(ACCOUNT_ENV, "").strip()

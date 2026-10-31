@@ -20,6 +20,7 @@ class SoakRun:
     halted: bool
     failures_detected: int
     duplicate_bars_ignored: int
+    halt_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ def replay(engine: PaperRuntimeEngine, bars: Sequence[RuntimeBar], signals: Sequ
         halted=engine.lifecycle is RuntimeLifecycle.HALT,
         failures_detected=failures,
         duplicate_bars_ignored=duplicate_ignored,
+        halt_reason=engine.halt_reason,
     )
 
 
@@ -91,7 +93,7 @@ def build_deterministic_dataset(count: int = 10_000, *, start_price: float = 100
         if cycle == 0:
             close = price
             high, low = close + 0.5, close - 0.5
-            signal = RuntimeSignal("LONG", close, close - 2.0, "soak long")
+            signal = RuntimeSignal("LONG", close, close - 2.0, "soak long", symbol="SOAK")
         elif cycle == 1:
             close = price
             high, low = price + 5.0, price - 0.5
@@ -99,7 +101,7 @@ def build_deterministic_dataset(count: int = 10_000, *, start_price: float = 100
         elif cycle == 2:
             close = price
             high, low = close + 0.5, close - 0.5
-            signal = RuntimeSignal("SHORT", close, close + 2.0, "soak short")
+            signal = RuntimeSignal("SHORT", close, close + 2.0, "soak short", symbol="SOAK")
         else:
             close = price
             high, low = price + 0.5, price - 5.0
