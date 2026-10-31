@@ -17,7 +17,7 @@ engine = PaperRuntimeEngine(checkpoint_path=r"CHECKPOINT", history_path=r"HISTOR
 engine.start()
 engine.process_bar(
     RuntimeBar("2026-01-01T00:00:00+00:00", 1.10, 1.11, 1.09, 1.105),
-    RuntimeSignal(action="LONG", entry=1.105, stop=1.100),
+    RuntimeSignal(action="LONG", entry=1.105, stop=1.100, symbol="EURUSD"),
 )
 # Kill the interpreter without normal cleanup: this is an actual process-death test.
 import os
