@@ -130,7 +130,7 @@ def certify_three_way_parity(*, candles: Sequence[dict], symbol: str, timeframe:
     """
     if not candles:
         return ParityCertificate(False, 0, 0, ("no candles supplied",), "", "", "", 0, 0.0, 0.0, 0.0)
-    first = max(102, 0 if start_index is None else start_index)
+    first = 102 if start_index is None else start_index
     if first >= len(candles):
         raise ValueError("start_index leaves no replay candles")
 
