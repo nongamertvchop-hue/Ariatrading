@@ -136,7 +136,7 @@ def test_massive_deterministic_soak_is_replayable(tmp_path: Path):
     first = replay(PaperRuntimeEngine(checkpoint_path=tmp_path / "a.json"), case.bars, case.signals)
     second = replay(PaperRuntimeEngine(checkpoint_path=tmp_path / "b.json"), case.bars, case.signals)
     assert first.bars == second.bars == 10_000
-    assert first.halted is False
+    assert first.halted is False, first.halt_reason
     assert first.trades == second.trades
     assert first.final_balance == second.final_balance
     assert first.final_equity == second.final_equity
